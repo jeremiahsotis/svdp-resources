@@ -1,0 +1,109 @@
+=============================================
+MONDAY.COM RESOURCES PLUGIN - QUICK START
+=============================================
+
+INSTALLATION STEPS:
+-------------------
+
+1. UPLOAD TO WORDPRESS
+   - Zip the entire 'monday-resources-plugin' folder
+   - In WordPress: Go to Plugins > Add New > Upload Plugin
+   - Choose the zip file and click "Install Now"
+   - Click "Activate Plugin"
+
+   OR
+
+   - Upload the 'monday-resources-plugin' folder to:
+     /wp-content/plugins/
+   - Go to Plugins in WordPress admin
+   - Activate "Monday.com Resources Integration"
+
+2. CONFIGURE SETTINGS
+   - Go to: WordPress Admin > Monday Resources > Settings
+   - Enter your Monday.com API Token
+   - Enter your Monday.com Board ID
+   - Click "Save Changes"
+   - Click "Sync Now" to fetch your first batch of resources
+
+3. ADD TO A PAGE
+   - Create or edit a WordPress page
+   - Add the shortcode: [monday_resources]
+   - Publish the page
+   - Visit the page to see your resources!
+
+GETTING YOUR MONDAY.COM CREDENTIALS:
+------------------------------------
+
+API TOKEN:
+1. Log in to Monday.com
+2. Click your avatar (top right)
+3. Select "Developers"
+4. Click "My Access Tokens"
+5. Generate or view your token
+6. Copy and paste into plugin settings
+
+BOARD ID:
+1. Open your board in Monday.com
+2. Look at the browser URL
+3. The board ID is the number at the end
+   Example: monday.com/boards/1234567890
+   Board ID: 1234567890
+4. Copy and paste into plugin settings
+
+USING THE SHORTCODE:
+--------------------
+
+Basic (all resources):
+[monday_resources]
+
+Filter by geography:
+[monday_resources geography="Mecklenburg"]
+
+Filter by service type:
+[monday_resources service_type="Food Assistance"]
+
+Filter by both:
+[monday_resources geography="Mecklenburg" service_type="Food Assistance, Housing"]
+
+NEW FEATURES:
+-------------
+
+✓ REPORT AN ISSUE
+  - Each resource card has a "Report an Issue" button
+  - Users can report incorrect/outdated information
+  - View reports in: Admin > Monday Resources > Issue Reports
+
+✓ SUBMIT A NEW RESOURCE
+  - Blue button at top of resource list
+  - Users can submit new resources for review
+  - View submissions in: Admin > Monday Resources > Resource Submissions
+
+IMPORTANT NOTES:
+----------------
+
+- The plugin syncs data twice daily automatically
+- Use "Sync Now" button for immediate updates
+- Column IDs may need to be updated for your specific board
+  (See README.md for instructions)
+
+ADMIN DASHBOARD:
+----------------
+
+Access all plugin features at:
+WordPress Admin > Monday Resources
+
+Pages available:
+- Settings (API configuration & manual sync)
+- Issue Reports (user-reported problems)
+- Resource Submissions (new resources submitted by users)
+
+NEED HELP?
+----------
+
+Check README.md for detailed documentation including:
+- Column ID mapping
+- Customization options
+- Troubleshooting
+- File structure
+
+=============================================
