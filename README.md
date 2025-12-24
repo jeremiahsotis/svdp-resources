@@ -14,6 +14,9 @@ A WordPress plugin that integrates with Monday.com to display resource listings 
 - **Report Issues**: Allow users to report problems with resource listings
 - **Submit Resources**: Let users submit new resources for review
 - **Admin Dashboard**: Manage API settings, view issue reports, and review submissions
+- **Same as Office Hours**: Automatically sync service/program hours with office hours
+- **Save & Add Another**: Quick successive resource entry workflow
+- **Duplicate Resources**: Copy existing resources to create similar entries
 - **Fully Accessible**: Large text, clear labels, and helpful instructions for all users
 - **Responsive Design**: Works on desktop, tablet, and mobile devices
 
