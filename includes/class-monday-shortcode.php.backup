@@ -46,30 +46,14 @@ class Monday_Resources_Shortcode {
             'geography' => '',
             'service_type' => ''
         ), $atts);
-    
+
         // Get resources from database with optional filters
         $filters = array();
-    
-        // Handle geography filter - split comma-separated values into array
         if (!empty($atts['geography'])) {
-            // Split by comma and trim whitespace from each value
-            $geographies = array_map('trim', explode(',', $atts['geography']));
-            // Remove any empty values
-            $geographies = array_filter($geographies);
-            
-            if (!empty($geographies)) {
-                $filters['geography'] = $geographies; // Pass as array
-            }
+            $filters['geography'] = $atts['geography'];
         }
-    
-        // Handle service_type filter - also support multiple values
         if (!empty($atts['service_type'])) {
-            $service_types = array_map('trim', explode(',', $atts['service_type']));
-            $service_types = array_filter($service_types);
-        
-            if (!empty($service_types)) {
-                $filters['service_type'] = $service_types; // Pass as array
-            }
+            $filters['service_type'] = $atts['service_type'];
         }
 
         $items = Resources_Manager::get_all_resources($filters);
@@ -85,52 +69,27 @@ class Monday_Resources_Shortcode {
         $always_visible = array(
             'primary_service_type' => 'Primary Service Type',
             'phone' => 'Phone',
-            'target_population' => 'Target Population'
+            'target_population' => 'Target Population',
+            'income_requirements' => 'Income Requirements',
+            'website' => 'Website'
         );
 
         $hidden_details = array(
-            'contact_info' => array(
-                'label' => 'Contact Information',
-                'fields' => array(
-                    'alternate_phone' => 'Alternate Phone',
-                    'email' => 'Email',
-                    'website' => 'Website'
-                )
-            ),
-            'location_hours' => array(
-                'label' => 'Location & Hours',
-                'fields' => array(
-                    'physical_address' => 'Physical Address',
-                    'counties_served' => 'Counties Served',
-                    'hours_of_operation' => 'Hours of Operation'
-                )
-            ),
-            'eligibility' => array(
-                'label' => 'Eligibility Requirements',
-                'fields' => array(
-                    'income_requirements' => 'Income Requirements',
-                    'residency_requirements' => 'Residency Requirements',
-                    'other_eligibility' => 'Other Eligibility Requirements',
-                    'eligibility_notes' => 'Eligibility Notes'
-                )
-            ),
-            'how_to_apply' => array(
-                'label' => 'How to Apply',
-                'fields' => array(
-                    'how_to_apply' => 'Application Process',
-                    'documents_required' => 'Documents Required',
-                    'wait_time' => 'Typical Wait Time'
-                )
-            ),
-            'additional_info' => array(
-                'label' => 'Additional Information',
-                'fields' => array(
-                    'organization' => 'Organization/Agency',
-                    'secondary_service_type' => 'Secondary Service Type',
-                    'what_they_provide' => 'What They Provide',
-                    'notes_and_tips' => 'Notes & Tips'
-                )
-            )
+            'organization' => 'Organization/Agency',
+            'secondary_service_type' => 'Secondary Service Type',
+            'what_they_provide' => 'What They Provide',
+            'email' => 'Email',
+            'alternate_phone' => 'Alternate Phone',
+            'physical_address' => 'Physical Address',
+            'how_to_apply' => 'How to Apply',
+            'documents_required' => 'Documents Required',
+            'hours_of_operation' => 'Hours of Operation',
+            'wait_time' => 'Wait Time',
+            'residency_requirements' => 'Residency Requirements',
+            'other_eligibility' => 'Other Eligibility Requirements',
+            'eligibility_notes' => 'Eligibility Notes',
+            'counties_served' => 'Counties Served',
+            'notes_and_tips' => 'Notes & Tips'
         );
 
         // Collect unique service types for dropdown (Primary + Secondary)
@@ -354,19 +313,19 @@ class Monday_Resources_Shortcode {
             .resources-grid {
                 display: grid;
                 grid-template-columns: 1fr;
-                gap: 25px;
+                gap: 20px;
                 margin-top: 20px;
                 justify-content: center;
             }
-            @media (min-width: 900px) {
+            @media (min-width: 1080px) {
                 .resources-grid {
-                    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+                    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
                 }
             }
             .resource-card {
                 border: 1px solid #ddd;
                 border-radius: 8px;
-                padding: 28px;
+                padding: 20px;
                 background: #fff;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
                 transition: box-shadow 0.3s ease;
@@ -394,20 +353,18 @@ class Monday_Resources_Shortcode {
                 border-bottom: 1px solid #eee;
             }
             .resource-field {
-                margin-bottom: 20px;
+                margin-bottom: 12px;
             }
             .resource-field-label {
                 font-weight: bold;
                 color: #666;
                 font-size: 0.9em;
                 display: block;
-                margin-bottom: 6px;
-                line-height: 1.5;
+                margin-bottom: 3px;
             }
             .resource-field-value {
                 color: #333;
                 font-size: 1em;
-                line-height: 1.6;
                 word-wrap: break-word;
                 overflow-wrap: break-word;
                 word-break: break-word;
@@ -420,27 +377,6 @@ class Monday_Resources_Shortcode {
             }
             .resource-field-value a:hover {
                 text-decoration: underline;
-            }
-            /* Section Styles for Organized Expandable Area */
-            .resource-section {
-                margin-bottom: 25px;
-                padding-bottom: 20px;
-                border-bottom: 1px solid #eee;
-            }
-            .resource-section:last-child {
-                border-bottom: none;
-                margin-bottom: 0;
-                padding-bottom: 0;
-            }
-            .resource-section-heading {
-                font-weight: 700;
-                font-size: 1.05em;
-                color: #0073aa;
-                margin-bottom: 15px;
-                padding-bottom: 8px;
-                border-bottom: 2px solid #e0e0e0;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
             }
             /* Hours of Operation Styles */
             .resource-hours {
@@ -566,7 +502,7 @@ class Monday_Resources_Shortcode {
                     gap: 10px;
                 }
                 .resource-card {
-                    padding: 20px;
+                    padding: 15px;
                 }
                 .resources-help-section {
                     padding: 15px;
@@ -599,7 +535,7 @@ class Monday_Resources_Shortcode {
                     gap: 8px;
                 }
                 .resource-card {
-                    padding: 16px;
+                    padding: 12px;
                 }
                 .resources-help-section {
                     padding: 12px;
@@ -761,121 +697,94 @@ class Monday_Resources_Shortcode {
                         <?php endforeach; ?>
 
                         <!-- Hidden details -->
-                        <div class="resource-details-hidden" id="details-<?php echo $index; ?>" aria-hidden="true">
-                            <?php foreach ($hidden_details as $section_key => $section): ?>
+                        <div class="resource-details-hidden" id="details-<?php echo $index; ?>">
+                            <?php foreach ($hidden_details as $field_name => $label): ?>
                                 <?php
-                                // Check if section has any non-empty fields before rendering
-                                $has_content = false;
-                                foreach ($section['fields'] as $field_name => $label) {
-                                    if (!empty($item[$field_name])) {
-                                        $has_content = true;
-                                        break;
-                                    }
+                                // Skip Organization since it's now shown above
+                                if ($field_name === 'organization') {
+                                    continue;
                                 }
 
-                                if (!$has_content) continue;
-                                ?>
+                                // Special handling for hours_of_operation - show structured hours
+                                if ($field_name === 'hours_of_operation') {
+                                    $hours_data = Resource_Hours_Manager::get_hours($item['id']);
 
-                                <div class="resource-section">
-                                    <h4 class="resource-section-heading"><?php echo esc_html($section['label']); ?></h4>
-
-                                    <?php foreach ($section['fields'] as $field_name => $label): ?>
-                                        <?php
-                                        // Skip organization (already shown above resource name)
-                                        if ($field_name === 'organization') {
-                                            continue;
-                                        }
-                                    
-                                        // Special handling for hours_of_operation - show structured hours
-                                        if ($field_name === 'hours_of_operation') {
-                                            $hours_data = Resource_Hours_Manager::get_hours($item['id']);
-
-                                            if ($hours_data) {
-                                                ?>
-                                                <div class="resource-field resource-hours">
-                                                    <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
-                                                    <div class="resource-field-value">
-                                                        <?php if ($hours_data['flags']['is_24_7']): ?>
-                                                            <div class="hours-special-flag hours-24-7">⏰ Open 24/7</div>
-                                                        <?php elseif ($hours_data['flags']['is_by_appointment']): ?>
-                                                            <div class="hours-special-flag">📅 By Appointment Only</div>
-                                                        <?php elseif ($hours_data['flags']['is_call_for_availability']): ?>
-                                                            <div class="hours-special-flag">📞 Call for Availability</div>
-                                                        <?php elseif ($hours_data['flags']['is_currently_closed']): ?>
-                                                            <div class="hours-special-flag hours-closed">🚫 Currently Closed</div>
-                                                        <?php else: ?>
-                                                            <div class="hours-breakdown">
-                                                                <?php if (!empty($hours_data['office_hours'])): ?>
-                                                                    <div class="hours-section">
-                                                                        <strong>Office Hours:</strong><br>
-                                                                        <?php echo Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact'); ?>
-                                                                    </div>
-                                                                <?php endif; ?>
-                                    
-                                                                <?php
-                                                                // Only show service hours if they're different from office hours
-                                                                $show_service_hours = false;
-                                                                if (!empty($hours_data['service_hours'])) {
-                                                                    $office_formatted = Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact');
-                                                                    $service_formatted = Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact');
-                                                                    $show_service_hours = ($office_formatted !== $service_formatted);
-                                                                }
-
-                                                                if ($show_service_hours):
-                                                                ?>
-                                                                    <div class="hours-section">
-                                                                        <strong>Service Hours:</strong><br>
-                                                                        <?php echo Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact'); ?>
-                                                                    </div>
-                                                                <?php endif; ?>
+                                    if ($hours_data) {
+                                        ?>
+                                        <div class="resource-field resource-hours">
+                                            <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
+                                            <div class="resource-field-value">
+                                                <?php if ($hours_data['flags']['is_24_7']): ?>
+                                                    <div class="hours-special-flag hours-24-7">⏰ Open 24/7</div>
+                                                <?php elseif ($hours_data['flags']['is_by_appointment']): ?>
+                                                    <div class="hours-special-flag">📅 By Appointment Only</div>
+                                                <?php elseif ($hours_data['flags']['is_call_for_availability']): ?>
+                                                    <div class="hours-special-flag">📞 Call for Availability</div>
+                                                <?php elseif ($hours_data['flags']['is_currently_closed']): ?>
+                                                    <div class="hours-special-flag hours-closed">🚫 Currently Closed</div>
+                                                <?php else: ?>
+                                                    <div class="hours-breakdown">
+                                                        <?php if (!empty($hours_data['office_hours'])): ?>
+                                                            <div class="hours-section">
+                                                                <strong>Office Hours:</strong><br>
+                                                                <?php echo Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact'); ?>
                                                             </div>
                                                         <?php endif; ?>
 
-                                                        <?php if (!empty($hours_data['special_notes'])): ?>
-                                                            <div class="hours-notes">
-                                                                <em><?php echo esc_html($hours_data['special_notes']); ?></em>
+                                                        <?php
+                                                        // Only show service hours if they're different from office hours
+                                                        $show_service_hours = false;
+                                                        if (!empty($hours_data['service_hours'])) {
+                                                            // Compare the formatted output to see if they're actually different
+                                                            $office_formatted = Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact');
+                                                            $service_formatted = Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact');
+                                                            $show_service_hours = ($office_formatted !== $service_formatted);
+                                                        }
+
+                                                        if ($show_service_hours):
+                                                        ?>
+                                                            <div class="hours-section">
+                                                                <strong>Service Hours:</strong><br>
+                                                                <?php echo Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact'); ?>
                                                             </div>
                                                         <?php endif; ?>
                                                     </div>
-                                                </div>
-                                                <?php
-                                            } elseif (!empty($item[$field_name])) {
-                                                // Fallback to legacy text format if no structured hours
-                                                ?>
-                                                <div class="resource-field">
-                                                    <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
-                                                    <span class="resource-field-value"><?php echo esc_html($item[$field_name]); ?></span>
-                                                </div>
-                                                <?php
-                                            }
-                                        } elseif (!empty($item[$field_name])) {
-                                            // Special formatting for list-style fields (Documents Required, Other Eligibility)
-                                            if (in_array($field_name, array('documents_required', 'other_eligibility'))) {
-                                                $formatted_value = Resources_Manager::format_as_list($item[$field_name]);
-                                            } else {
-                                                $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
-                                            }
-                                            ?>
-                                            <div class="resource-field">
-                                                <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
-                                                <div class="resource-field-value"><?php echo $formatted_value; ?></div>
+                                                <?php endif; ?>
+
+                                                <?php if (!empty($hours_data['special_notes'])): ?>
+                                                    <div class="hours-notes">
+                                                        <em><?php echo esc_html($hours_data['special_notes']); ?></em>
+                                                    </div>
+                                                <?php endif; ?>
                                             </div>
+                                        </div>
                                         <?php
-                                        }
+                                    } elseif (!empty($item[$field_name])) {
+                                        // Fallback to legacy text format if no structured hours
                                         ?>
-                                    <?php endforeach; ?>
-                                </div>
+                                        <div class="resource-field">
+                                            <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
+                                            <span class="resource-field-value"><?php echo esc_html($item[$field_name]); ?></span>
+                                        </div>
+                                        <?php
+                                    }
+                                } elseif (!empty($item[$field_name])) {
+                                    $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
+                                ?>
+                                    <div class="resource-field">
+                                        <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
+                                        <span class="resource-field-value"><?php echo $formatted_value; ?></span>
+                                    </div>
+                                <?php
+                                }
+                                ?>
                             <?php endforeach; ?>
                         </div>
 
                         <!-- Toggle button -->
                         <div class="resource-toggle">
-                            <button class="resource-toggle-button"
-                                    onclick="toggleDetails(<?php echo $index; ?>)"
-                                    id="toggle-<?php echo $index; ?>"
-                                    aria-expanded="false"
-                                    aria-controls="details-<?php echo $index; ?>">
-                                Show Full Details
+                            <button class="resource-toggle-button" onclick="toggleDetails(<?php echo $index; ?>)" id="toggle-<?php echo $index; ?>">
+                                Click for more info...
                             </button>
                             <br>
                             <button class="resource-report-btn" onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo $index; ?>)">
@@ -942,14 +851,10 @@ class Monday_Resources_Shortcode {
 
                 if (details.style.display === 'none' || details.style.display === '') {
                     details.style.display = 'block';
-                    details.setAttribute('aria-hidden', 'false');
-                    button.setAttribute('aria-expanded', 'true');
-                    button.textContent = 'Hide Details';
+                    button.textContent = 'Show less';
                 } else {
                     details.style.display = 'none';
-                    details.setAttribute('aria-hidden', 'true');
-                    button.setAttribute('aria-expanded', 'false');
-                    button.textContent = 'Show Full Details';
+                    button.textContent = 'Click for more info...';
                 }
             }
 

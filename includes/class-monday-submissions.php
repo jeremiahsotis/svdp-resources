@@ -11,6 +11,9 @@ class Monday_Resources_Submissions {
 
         add_action('wp_ajax_submit_new_resource', array($this, 'handle_resource_submission'));
         add_action('wp_ajax_nopriv_submit_new_resource', array($this, 'handle_resource_submission'));
+
+        // Add approve & publish handler
+        add_action('admin_post_approve_and_publish_submission', array($this, 'approve_and_publish_submission'));
     }
 
     /**
@@ -107,5 +110,87 @@ class Monday_Resources_Submissions {
         } else {
             wp_send_json_success(array('message' => 'Thank you! Your resource has been submitted for review.'));
         }
+    }
+
+    /**
+     * Approve and publish a submission to the main resources database
+     */
+    public function approve_and_publish_submission() {
+        // Check permissions
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        $submission_id = isset($_POST['submission_id']) ? intval($_POST['submission_id']) : 0;
+
+        if (!$submission_id) {
+            wp_die('Invalid submission ID');
+        }
+
+        check_admin_referer('approve_submission_' . $submission_id);
+
+        global $wpdb;
+        $submissions_table = $wpdb->prefix . 'monday_resource_submissions';
+
+        // Get the submission
+        $submission = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $submissions_table WHERE id = %d",
+            $submission_id
+        ));
+
+        if (!$submission) {
+            wp_die('Submission not found');
+        }
+
+        // Create the resource in the main database
+        // Resources are marked as verified at the moment of entry
+        $resource_id = Resources_Manager::create_resource(array(
+            'resource_name' => $submission->organization_name,
+            'primary_service_type' => $submission->service_type,
+            'website' => $submission->website,
+            'phone' => $submission->contact_phone,
+            'email' => $submission->contact_email,
+            'physical_address' => $submission->address,
+            'counties_served' => $submission->counties_served,
+            'what_they_provide' => $submission->description,
+            'last_verified_date' => current_time('mysql'),
+            'last_verified_by' => get_current_user_id(),
+            'verification_status' => 'fresh',
+            'verification_notes' => 'Resource approved from user submission',
+            'created_by' => get_current_user_id()
+        ));
+
+        if ($resource_id) {
+            // Update submission status to approved
+            $wpdb->update(
+                $submissions_table,
+                array('status' => 'approved'),
+                array('id' => $submission_id),
+                array('%s'),
+                array('%d')
+            );
+
+            // Redirect with success message
+            $redirect_url = add_query_arg(
+                array(
+                    'page' => 'monday-resources-submissions',
+                    'published' => '1',
+                    'resource_id' => $resource_id
+                ),
+                admin_url('admin.php')
+            );
+        } else {
+            // Redirect with error message
+            $redirect_url = add_query_arg(
+                array(
+                    'page' => 'monday-resources-submissions',
+                    'error' => '1'
+                ),
+                admin_url('admin.php')
+            );
+        }
+
+        wp_redirect($redirect_url);
+        exit;
     }
 }
