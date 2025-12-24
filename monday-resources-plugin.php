@@ -36,6 +36,7 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-question-manager.php'
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-outcome-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-session-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-location-service.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-questionnaire-admin.php';
 
 // Activation hook
 register_activation_hook(__FILE__, 'monday_resources_activate');
