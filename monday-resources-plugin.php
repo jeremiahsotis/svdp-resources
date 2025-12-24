@@ -30,13 +30,14 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-shortcode.php'
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-admin.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-submissions.php';
 
-// Include questionnaire system classes
+// Include questionnaire system classes (Phases 1-4)
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-questionnaire-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-question-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-outcome-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-session-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-location-service.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-questionnaire-admin.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-questionnaire-shortcode.php';
 
 // Activation hook
 register_activation_hook(__FILE__, 'monday_resources_activate');

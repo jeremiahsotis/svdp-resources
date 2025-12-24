@@ -1,0 +1,478 @@
+/**
+ * Frontend Questionnaire Styles
+ *
+ * Mobile-first, trauma-informed design
+ * High contrast, large touch targets, accessibility-first
+ * Phase 4: Location Service & Frontend Foundation
+ */
+
+/* ========================================
+   BASE STYLES
+   ======================================== */
+
+.questionnaire-container {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 20px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    line-height: 1.6;
+}
+
+/* ========================================
+   HEADER
+   ======================================== */
+
+.questionnaire-header {
+    text-align: center;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.questionnaire-title {
+    font-size: 2em;
+    color: #2c3e50;
+    margin: 0 0 15px 0;
+    font-weight: 700;
+}
+
+.questionnaire-description {
+    font-size: 1.1em;
+    color: #555;
+    line-height: 1.6;
+    margin-bottom: 0;
+}
+
+.volunteer-mode-notice {
+    background: #e3f2fd;
+    border-left: 4px solid #2196f3;
+    padding: 12px 15px;
+    margin-top: 15px;
+    font-size: 0.95em;
+    color: #1565c0;
+    border-radius: 4px;
+}
+
+.volunteer-mode-notice .dashicons {
+    vertical-align: middle;
+    margin-right: 5px;
+}
+
+/* ========================================
+   WELCOME SECTION
+   ======================================== */
+
+.questionnaire-welcome {
+    background: #f8f9fa;
+    padding: 25px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+    text-align: center;
+}
+
+.questionnaire-welcome h3 {
+    color: #2c3e50;
+    margin-top: 0;
+    font-size: 1.5em;
+    font-weight: 600;
+}
+
+.questionnaire-welcome p {
+    font-size: 1.1em;
+    color: #666;
+    margin-bottom: 0;
+    line-height: 1.6;
+}
+
+/* ========================================
+   LOCATION SELECTION FORM
+   ======================================== */
+
+.location-selection-form {
+    background: #ffffff;
+    padding: 30px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.location-method {
+    margin-bottom: 30px;
+}
+
+.location-method h4 {
+    font-size: 1.3em;
+    color: #2c3e50;
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.location-method h4 .dashicons {
+    color: #4CAF50;
+    vertical-align: middle;
+    margin-right: 8px;
+    width: 24px;
+    height: 24px;
+    font-size: 24px;
+}
+
+.method-description {
+    color: #666;
+    margin-bottom: 20px;
+    font-size: 1.05em;
+}
+
+/* ========================================
+   FORM INPUTS
+   ======================================== */
+
+.address-input,
+.conference-select {
+    width: 100%;
+    padding: 15px;
+    font-size: 1.1em;
+    border: 2px solid #ddd;
+    border-radius: 6px;
+    transition: all 0.3s ease;
+    background: white;
+    box-sizing: border-box;
+}
+
+.address-input:focus,
+.conference-select:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+}
+
+.address-input::placeholder {
+    color: #999;
+}
+
+.help-text {
+    font-size: 0.9em;
+    color: #888;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    font-style: italic;
+}
+
+/* ========================================
+   BUTTONS
+   ======================================== */
+
+.btn {
+    padding: 15px 30px;
+    font-size: 1.1em;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-block;
+    text-align: center;
+    min-height: 44px; /* Touch target size */
+}
+
+.btn-primary {
+    background: #4CAF50;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.btn-primary:focus {
+    outline: 3px solid rgba(76, 175, 80, 0.5);
+    outline-offset: 2px;
+}
+
+.btn-primary:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+    transform: none;
+    box-shadow: none;
+}
+
+.btn-large {
+    width: 100%;
+    padding: 18px;
+    font-size: 1.3em;
+}
+
+.btn-lookup-address {
+    margin-top: 15px;
+    width: 100%;
+}
+
+/* Button loading states */
+.btn .btn-loading {
+    display: none;
+}
+
+.btn.loading .btn-text {
+    display: none;
+}
+
+.btn.loading .btn-loading {
+    display: inline-block;
+}
+
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ========================================
+   DIVIDERS
+   ======================================== */
+
+.or-divider {
+    text-align: center;
+    margin: 30px 0;
+    position: relative;
+}
+
+.or-divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #ddd;
+}
+
+.or-divider span {
+    background: white;
+    padding: 0 15px;
+    position: relative;
+    color: #999;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.9em;
+}
+
+/* ========================================
+   BEGIN BUTTON CONTAINER
+   ======================================== */
+
+.begin-button-container {
+    text-align: center;
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.privacy-notice {
+    margin-top: 15px;
+    font-size: 0.9em;
+    color: #777;
+    font-style: italic;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* ========================================
+   MESSAGES & ALERTS
+   ======================================== */
+
+.address-result,
+.address-error,
+.questionnaire-error-container,
+.questionnaire-success {
+    padding: 15px;
+    border-radius: 6px;
+    margin-top: 15px;
+}
+
+.address-result,
+.questionnaire-success {
+    background: #e8f5e9;
+    border: 1px solid #4CAF50;
+    color: #2e7d32;
+}
+
+.address-error,
+.questionnaire-error-container {
+    background: #ffebee;
+    border: 1px solid #f44336;
+    color: #c62828;
+}
+
+.questionnaire-success {
+    text-align: center;
+    padding: 40px 20px;
+    margin: 20px 0;
+}
+
+.questionnaire-success h3 {
+    margin-top: 0;
+    color: #2e7d32;
+}
+
+/* ========================================
+   ACCESSIBILITY
+   ======================================== */
+
+.screen-reader-text,
+.sr-only {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(1px, 1px, 1px, 1px);
+}
+
+/* Skip link */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 6px;
+    background: #4CAF50;
+    color: white;
+    padding: 8px;
+    text-decoration: none;
+    z-index: 100000;
+}
+
+.skip-link:focus {
+    top: 6px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .address-input,
+    .conference-select {
+        border-width: 3px;
+    }
+
+    .btn-primary {
+        border: 2px solid #2e7d32;
+    }
+
+    .questionnaire-welcome {
+        border: 2px solid #2c3e50;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .spinner {
+        animation: none;
+        border-top-color: transparent;
+    }
+}
+
+/* ========================================
+   RESPONSIVE - MOBILE
+   ======================================== */
+
+@media (max-width: 600px) {
+    .questionnaire-container {
+        padding: 15px;
+    }
+
+    .questionnaire-title {
+        font-size: 1.6em;
+    }
+
+    .questionnaire-welcome h3 {
+        font-size: 1.3em;
+    }
+
+    .location-selection-form {
+        padding: 20px;
+    }
+
+    .location-method h4 {
+        font-size: 1.2em;
+    }
+
+    .btn {
+        font-size: 1em;
+        padding: 12px 20px;
+    }
+
+    .btn-large {
+        font-size: 1.2em;
+        padding: 16px;
+    }
+
+    .address-input,
+    .conference-select {
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+
+    .or-divider {
+        margin: 20px 0;
+    }
+}
+
+/* ========================================
+   RESPONSIVE - TABLET
+   ======================================== */
+
+@media (min-width: 601px) and (max-width: 960px) {
+    .questionnaire-container {
+        padding: 30px;
+    }
+
+    .location-selection-form {
+        padding: 35px;
+    }
+}
+
+/* ========================================
+   PRINT STYLES
+   ======================================== */
+
+@media print {
+    .btn,
+    .spinner,
+    .btn-loading {
+        display: none !important;
+    }
+
+    .questionnaire-container {
+        max-width: 100%;
+        box-shadow: none;
+    }
+
+    .location-selection-form {
+        border: 1px solid #000;
+        box-shadow: none;
+    }
+}
+
+/* ========================================
+   DARK MODE SUPPORT (Optional)
+   ======================================== */
+
+@media (prefers-color-scheme: dark) {
+    /* Dark mode styles could be added here if desired */
+    /* Currently maintaining light design for consistency */
+}
