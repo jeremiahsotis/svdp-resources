@@ -30,6 +30,13 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-shortcode.php'
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-admin.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-submissions.php';
 
+// Include questionnaire system classes
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-questionnaire-manager.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-question-manager.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-outcome-manager.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-session-manager.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-location-service.php';
+
 // Activation hook
 register_activation_hook(__FILE__, 'monday_resources_activate');
 
@@ -155,12 +162,138 @@ function monday_resources_activate() {
             REFERENCES $resources_table(id) ON DELETE CASCADE
     ) $charset_collate;";
 
+    // Create questionnaire tables
+    $questionnaires_table = $wpdb->prefix . 'questionnaires';
+    $sql_questionnaires = "CREATE TABLE IF NOT EXISTS $questionnaires_table (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        name varchar(255) NOT NULL,
+        slug varchar(255) NOT NULL,
+        description text DEFAULT NULL,
+        geography text DEFAULT NULL,
+        status varchar(50) DEFAULT 'active',
+        start_question_id bigint(20) DEFAULT NULL,
+        sort_order int DEFAULT 0,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        created_by bigint(20) DEFAULT NULL,
+        updated_by bigint(20) DEFAULT NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY slug (slug),
+        KEY status (status)
+    ) $charset_collate;";
+
+    $questions_table = $wpdb->prefix . 'questionnaire_questions';
+    $sql_questions = "CREATE TABLE IF NOT EXISTS $questions_table (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        questionnaire_id bigint(20) NOT NULL,
+        question_text text NOT NULL,
+        question_type varchar(50) NOT NULL,
+        help_text text DEFAULT NULL,
+        required tinyint(1) DEFAULT 1,
+        sort_order int DEFAULT 0,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY questionnaire_id (questionnaire_id),
+        CONSTRAINT fk_questions_questionnaire FOREIGN KEY (questionnaire_id)
+            REFERENCES $questionnaires_table(id) ON DELETE CASCADE
+    ) $charset_collate;";
+
+    $answer_options_table = $wpdb->prefix . 'questionnaire_answer_options';
+    $sql_answer_options = "CREATE TABLE IF NOT EXISTS $answer_options_table (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        question_id bigint(20) NOT NULL,
+        answer_text varchar(500) NOT NULL,
+        next_question_id bigint(20) DEFAULT NULL,
+        outcome_id bigint(20) DEFAULT NULL,
+        sort_order int DEFAULT 0,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY question_id (question_id),
+        CONSTRAINT fk_answers_question FOREIGN KEY (question_id)
+            REFERENCES $questions_table(id) ON DELETE CASCADE
+    ) $charset_collate;";
+
+    $outcomes_table = $wpdb->prefix . 'questionnaire_outcomes';
+    $sql_outcomes = "CREATE TABLE IF NOT EXISTS $outcomes_table (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        questionnaire_id bigint(20) NOT NULL,
+        name varchar(255) NOT NULL,
+        outcome_type varchar(50) NOT NULL,
+        guidance_text text DEFAULT NULL,
+        resource_filter_type varchar(50) DEFAULT NULL,
+        resource_filter_data text DEFAULT NULL,
+        sort_order int DEFAULT 0,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY questionnaire_id (questionnaire_id),
+        CONSTRAINT fk_outcomes_questionnaire FOREIGN KEY (questionnaire_id)
+            REFERENCES $questionnaires_table(id) ON DELETE CASCADE
+    ) $charset_collate;";
+
+    $sessions_table = $wpdb->prefix . 'questionnaire_sessions';
+    $sql_sessions = "CREATE TABLE IF NOT EXISTS $sessions_table (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        session_id varchar(255) NOT NULL,
+        questionnaire_id bigint(20) NOT NULL,
+        conference varchar(255) DEFAULT NULL,
+        user_id bigint(20) DEFAULT NULL,
+        is_volunteer_assisted tinyint(1) DEFAULT 0,
+        status varchar(50) DEFAULT 'in_progress',
+        started_at datetime DEFAULT CURRENT_TIMESTAMP,
+        completed_at datetime DEFAULT NULL,
+        last_activity_at datetime DEFAULT CURRENT_TIMESTAMP,
+        outcome_id bigint(20) DEFAULT NULL,
+        PRIMARY KEY (id),
+        UNIQUE KEY session_id (session_id),
+        KEY questionnaire_id (questionnaire_id),
+        KEY conference (conference),
+        KEY started_at (started_at),
+        KEY status (status)
+    ) $charset_collate;";
+
+    $responses_table = $wpdb->prefix . 'questionnaire_responses';
+    $sql_responses = "CREATE TABLE IF NOT EXISTS $responses_table (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        session_id bigint(20) NOT NULL,
+        question_id bigint(20) NOT NULL,
+        answer_option_id bigint(20) DEFAULT NULL,
+        answer_text text DEFAULT NULL,
+        answered_at datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY session_id (session_id),
+        KEY question_id (question_id),
+        CONSTRAINT fk_responses_session FOREIGN KEY (session_id)
+            REFERENCES $sessions_table(id) ON DELETE CASCADE
+    ) $charset_collate;";
+
+    $resource_views_table = $wpdb->prefix . 'questionnaire_resource_views';
+    $sql_resource_views = "CREATE TABLE IF NOT EXISTS $resource_views_table (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        session_id bigint(20) NOT NULL,
+        resource_id bigint(20) NOT NULL,
+        viewed_at datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY session_id (session_id),
+        KEY resource_id (resource_id),
+        CONSTRAINT fk_views_session FOREIGN KEY (session_id)
+            REFERENCES $sessions_table(id) ON DELETE CASCADE
+    ) $charset_collate;";
+
     require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
     dbDelta($sql_resources);
     dbDelta($sql_verification);
     dbDelta($sql_issues);
     dbDelta($sql_submissions);
     dbDelta($sql_hours);
+    dbDelta($sql_questionnaires);
+    dbDelta($sql_questions);
+    dbDelta($sql_answer_options);
+    dbDelta($sql_outcomes);
+    dbDelta($sql_sessions);
+    dbDelta($sql_responses);
+    dbDelta($sql_resource_views);
 
     // Add hours-related columns to resources table if they don't exist
     // Check and add each column individually for MySQL compatibility
