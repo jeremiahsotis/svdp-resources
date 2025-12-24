@@ -151,10 +151,14 @@ if ($has_data && !empty($questionnaire['geography'])) {
 
         <?php if ($is_edit): ?>
             <div style="background: #f0f0f1; padding: 15px; margin: 20px 0; border-left: 4px solid #2271b1;">
-                <p style="margin: 0;">
-                    <strong>Next Step:</strong> After saving, you'll need to add questions to this questionnaire.
-                    Click "Manage Questions" to build the questionnaire flow. (Coming in Phase 3)
+                <p style="margin: 0 0 15px 0;">
+                    <strong>Next Step:</strong> Add questions and outcomes to build the questionnaire flow.
                 </p>
+                <a href="<?php echo admin_url('admin.php?page=questionnaires-builder&id=' . $questionnaire['id']); ?>"
+                   class="button button-primary button-large">
+                    <span class="dashicons dashicons-format-chat" style="margin-top: 3px;"></span>
+                    Manage Questions & Outcomes
+                </a>
             </div>
         <?php endif; ?>
 

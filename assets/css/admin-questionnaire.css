@@ -2,8 +2,309 @@
  * Admin Questionnaire Styles
  *
  * Styles for questionnaire admin interface
- * Phase 2: Basic Admin Interface
+ * Phase 3: Question Builder UI
  */
 
-/* Placeholder for future styles */
-/* Question builder styles will be added in Phase 3 */
+/* ========================================
+   QUESTION BUILDER CONTAINER
+   ======================================== */
+
+.questionnaire-builder-wrap {
+    margin: 20px;
+}
+
+.questionnaire-builder-wrap .nav-tab-wrapper {
+    margin-bottom: 0;
+    border-bottom: 1px solid #ccd0d4;
+}
+
+.questionnaire-builder-wrap .tab-content {
+    min-height: 400px;
+}
+
+/* ========================================
+   QUESTION ITEMS
+   ======================================== */
+
+.question-item {
+    margin-bottom: 15px;
+    transition: all 0.2s ease;
+}
+
+.question-item:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.question-header {
+    position: relative;
+}
+
+.question-header .dashicons {
+    vertical-align: middle;
+}
+
+.question-details {
+    background: #ffffff;
+}
+
+.question-details .form-table th {
+    width: 180px;
+    padding: 15px 10px 15px 0;
+}
+
+.question-details .form-table td {
+    padding: 15px 10px;
+}
+
+/* ========================================
+   ANSWER OPTIONS
+   ======================================== */
+
+.answer-options-section {
+    background: #f9f9f9;
+    padding: 20px;
+    margin-top: 20px;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+}
+
+.answer-options-section h3 {
+    margin-top: 0;
+    color: #1d2327;
+}
+
+.answer-option-row {
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.answer-option-row:hover {
+    background: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.answer-option-row input[type="text"],
+.answer-option-row select {
+    width: 100%;
+}
+
+.answer-option-row label {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+/* ========================================
+   OUTCOME ITEMS
+   ======================================== */
+
+.outcome-item {
+    transition: all 0.2s ease;
+}
+
+.outcome-item:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.outcome-header {
+    position: relative;
+}
+
+.outcome-header .dashicons {
+    vertical-align: middle;
+}
+
+.outcome-details {
+    background: #ffffff;
+}
+
+.outcome-details .form-table th {
+    width: 180px;
+    padding: 15px 10px 15px 0;
+}
+
+.outcome-details .form-table td {
+    padding: 15px 10px;
+}
+
+/* ========================================
+   BUTTONS AND ACTIONS
+   ======================================== */
+
+.questionnaire-builder-wrap .button-large {
+    height: auto;
+    line-height: 2;
+    padding: 8px 16px;
+    font-size: 15px;
+}
+
+.questionnaire-builder-wrap .button .dashicons {
+    margin-top: 3px;
+    margin-right: 5px;
+}
+
+.toggle-question-details,
+.toggle-outcome-details {
+    transition: transform 0.2s ease;
+}
+
+.delete-question-btn,
+.delete-outcome-btn,
+.delete-answer-option-btn {
+    color: #b32d2e;
+}
+
+.delete-question-btn:hover,
+.delete-outcome-btn:hover,
+.delete-answer-option-btn:hover {
+    color: #8a2424;
+    border-color: #b32d2e;
+}
+
+/* ========================================
+   START QUESTION SELECTOR
+   ======================================== */
+
+.start-question-selector {
+    background: #fffbcc;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-left: 4px solid #ffb900;
+}
+
+.start-question-selector .dashicons {
+    color: #ffb900;
+    vertical-align: middle;
+}
+
+.start-question-selector select {
+    min-width: 300px;
+}
+
+/* ========================================
+   EMPTY STATES
+   ======================================== */
+
+.questionnaire-builder-wrap .empty-state {
+    background: #f0f0f1;
+    padding: 40px;
+    text-align: center;
+    border: 2px dashed #c3c4c7;
+    border-radius: 4px;
+}
+
+.questionnaire-builder-wrap .empty-state p {
+    font-size: 16px;
+    color: #666;
+    margin: 0;
+}
+
+/* ========================================
+   RESPONSIVE
+   ======================================== */
+
+@media (max-width: 782px) {
+    .answer-option-row > div {
+        grid-template-columns: 1fr !important;
+    }
+
+    .answer-option-row .button {
+        width: 100%;
+        margin-top: 10px;
+    }
+
+    .start-question-selector select {
+        display: block;
+        width: 100%;
+        margin: 10px 0;
+    }
+
+    .start-question-selector .button {
+        width: 100%;
+    }
+}
+
+/* ========================================
+   LOADING AND TRANSITIONS
+   ======================================== */
+
+.questionnaire-builder-wrap .fade-out {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.questionnaire-builder-wrap .fade-in {
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+/* ========================================
+   FORM VALIDATION
+   ======================================== */
+
+.questionnaire-builder-wrap input.error,
+.questionnaire-builder-wrap textarea.error,
+.questionnaire-builder-wrap select.error {
+    border-color: #d63638 !important;
+    box-shadow: 0 0 0 1px #d63638;
+}
+
+/* ========================================
+   QUESTION TYPE INDICATORS
+   ======================================== */
+
+.question-type-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 3px;
+    margin-left: 8px;
+}
+
+.question-type-multiple_choice {
+    background: #e7f5ff;
+    color: #0073aa;
+}
+
+.question-type-yes_no {
+    background: #f0f6fc;
+    color: #2c3338;
+}
+
+.question-type-text {
+    background: #fcf8e3;
+    color: #8a6d3b;
+}
+
+.question-type-info_only {
+    background: #f0f0f1;
+    color: #50575e;
+}
+
+/* ========================================
+   OUTCOME TYPE INDICATORS
+   ======================================== */
+
+.outcome-type-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 3px;
+    margin-left: 8px;
+}
+
+.outcome-type-resources {
+    background: #edfaef;
+    color: #1e8e3e;
+}
+
+.outcome-type-guidance {
+    background: #f0f6fc;
+    color: #0073aa;
+}
+
+.outcome-type-hybrid {
+    background: #fcf8e3;
+    color: #8a6d3b;
+}
