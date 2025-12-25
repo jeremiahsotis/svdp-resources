@@ -88,6 +88,12 @@ class Questionnaire_Shortcode {
             return '<div class="questionnaire-error">This questionnaire is not currently available.</div>';
         }
 
+        // Check if displaying outcome
+        if (isset($_GET['outcome'])) {
+            $outcome_id = intval($_GET['outcome']);
+            return $this->render_outcome($outcome_id, $questionnaire, $atts);
+        }
+
         // Check for existing session
         $session_id = $this->get_session_cookie();
         $session = null;
@@ -95,10 +101,17 @@ class Questionnaire_Shortcode {
         if ($session_id) {
             $session = Session_Manager::get_session($session_id);
 
+            // If session is completed, show outcome
+            if ($session && $session['status'] == 'completed' && !empty($session['outcome_id'])) {
+                return $this->render_outcome($session['outcome_id'], $questionnaire, $atts);
+            }
+
             // Only use session if it's for this questionnaire and still in progress
             if ($session && $session['questionnaire_id'] == $questionnaire['id'] && $session['status'] == 'in_progress') {
-                // Session exists - could allow resume here in future
-                // For now, we'll start fresh
+                // Session exists - render questionnaire flow
+                ob_start();
+                $this->render_questionnaire_flow($questionnaire, $session_id, $atts);
+                return ob_get_clean();
             } else {
                 $session = null;
             }
@@ -261,6 +274,50 @@ class Questionnaire_Shortcode {
         echo '</div>';
 
         echo '</div>'; // .questionnaire-container
+    }
+
+    /**
+     * Render outcome (results) page
+     *
+     * @param int $outcome_id Outcome ID
+     * @param array $questionnaire Questionnaire data
+     * @param array $atts Shortcode attributes
+     * @return string HTML output
+     */
+    private function render_outcome($outcome_id, $questionnaire, $atts) {
+        // Get outcome
+        $outcome = Outcome_Manager::get_outcome($outcome_id);
+
+        if (!$outcome) {
+            return '<div class="questionnaire-error">Error: Outcome not found.</div>';
+        }
+
+        // Get session
+        $session_id = $this->get_session_cookie();
+        $session = Session_Manager::get_session($session_id);
+
+        if (!$session) {
+            return '<div class="questionnaire-error">Error: Session not found.</div>';
+        }
+
+        // Get resources if outcome shows resources
+        $resources = array();
+        if (in_array($outcome['outcome_type'], array('resources', 'hybrid'))) {
+            $resources = Outcome_Manager::get_resources_for_outcome($outcome_id, $session['conference']);
+        }
+
+        // Start output buffering
+        ob_start();
+
+        // Wrapper for consistency
+        echo '<div class="questionnaire-container questionnaire-outcome-container" data-session-id="' . esc_attr($session_id) . '">';
+
+        // Include outcome template
+        include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/questionnaire-outcome.php';
+
+        echo '</div>';
+
+        return ob_get_clean();
     }
 
     // ========================================

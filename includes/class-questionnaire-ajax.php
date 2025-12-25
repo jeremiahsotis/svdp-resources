@@ -21,6 +21,9 @@ class Questionnaire_Ajax {
 
         add_action('wp_ajax_questionnaire_get_progress', array($this, 'ajax_get_progress'));
         add_action('wp_ajax_nopriv_questionnaire_get_progress', array($this, 'ajax_get_progress'));
+
+        add_action('wp_ajax_questionnaire_track_resource_view', array($this, 'ajax_track_resource_view'));
+        add_action('wp_ajax_nopriv_questionnaire_track_resource_view', array($this, 'ajax_track_resource_view'));
     }
 
     /**
@@ -190,6 +193,29 @@ class Questionnaire_Ajax {
             'status' => $session['status'],
             'session_path' => $path
         ));
+    }
+
+    /**
+     * AJAX: Track resource view
+     */
+    public function ajax_track_resource_view() {
+        check_ajax_referer('questionnaire_frontend_nonce', 'nonce');
+
+        $session_id = isset($_POST['session_id']) ? sanitize_text_field($_POST['session_id']) : '';
+        $resource_id = isset($_POST['resource_id']) ? intval($_POST['resource_id']) : 0;
+
+        if (!$session_id || !$resource_id) {
+            wp_send_json_error(array('message' => 'Missing required parameters.'));
+        }
+
+        // Track the view
+        $tracked = Session_Manager::track_resource_view($session_id, $resource_id);
+
+        if ($tracked) {
+            wp_send_json_success(array('message' => 'Resource view tracked.'));
+        } else {
+            wp_send_json_error(array('message' => 'Failed to track resource view.'));
+        }
     }
 }
 
