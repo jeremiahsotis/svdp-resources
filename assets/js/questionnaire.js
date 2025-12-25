@@ -134,28 +134,9 @@
                 },
                 success: function(response) {
                     if (response.success) {
-                        // Session created successfully
-                        var sessionId = response.data.session_id;
-
-                        // Store session ID in data attribute
-                        $container.data('session-id', sessionId);
-
-                        // Phase 5: Redirect to first question (placeholder for now)
-                        // For Phase 4, just show success message
-                        $container.html(
-                            '<div class="questionnaire-success">' +
-                            '<h3>Session Started!</h3>' +
-                            '<p>Session ID: ' + sessionId + '</p>' +
-                            '<p><strong>Phase 5 Preview:</strong> The first question will appear here.</p>' +
-                            '<p><em>Question rendering will be implemented in Phase 5.</em></p>' +
-                            '</div>'
-                        );
-
-                        // Scroll to top
-                        $('html, body').animate({
-                            scrollTop: $container.offset().top - 50
-                        }, 500);
-
+                        // Session created successfully - page will reload with first question
+                        // The shortcode will handle rendering the question flow
+                        window.location.reload();
                     } else {
                         $beginButton.removeClass('loading').prop('disabled', false);
                         showError(response.data.message || 'Error creating session. Please try again.');
@@ -167,6 +148,164 @@
                 }
             });
         });
+
+        // ========================================
+        // QUESTION NAVIGATION (Phase 5)
+        // ========================================
+
+        // Multiple choice - enable Continue button when option selected
+        $(document).on('change', '.answer-option input[type="radio"]', function() {
+            $('.btn-submit-answer').prop('disabled', false);
+        });
+
+        // Yes/No buttons - submit immediately
+        $(document).on('click', '.btn-answer', function() {
+            var answerOptionId = $(this).data('answer-option-id');
+            submitAnswer(answerOptionId, null);
+        });
+
+        // Continue button (for multiple choice and text)
+        $(document).on('click', '.btn-submit-answer', function() {
+            var $question = $(this).closest('.questionnaire-question');
+            var questionType = $question.data('question-type');
+
+            if (questionType === 'multiple_choice') {
+                var answerOptionId = $question.find('input[name="answer"]:checked').val();
+                if (!answerOptionId) {
+                    showQuestionError('Please select an answer.');
+                    return;
+                }
+                submitAnswer(parseInt(answerOptionId), null);
+            } else if (questionType === 'text') {
+                var answerText = $question.find('.text-answer-field').val().trim();
+                if (!answerText && $question.find('.text-answer-field').prop('required')) {
+                    showQuestionError('Please provide an answer.');
+                    return;
+                }
+                submitAnswer(null, answerText);
+            }
+        });
+
+        // Continue button for info_only questions
+        $(document).on('click', '.btn-continue', function() {
+            // For info_only, we just record that they saw it and move on
+            submitAnswer(null, null);
+        });
+
+        // Skip button
+        $(document).on('click', '.btn-skip', function() {
+            submitAnswer(null, ''); // Empty string indicates skipped
+        });
+
+        // Submit answer function
+        function submitAnswer(answerOptionId, answerText) {
+            var $container = $('.questionnaire-flow');
+            var sessionId = $container.data('session-id');
+            var $question = $('.questionnaire-question');
+            var questionId = $question.data('question-id');
+
+            if (!sessionId || !questionId) {
+                showQuestionError('Session error. Please refresh the page.');
+                return;
+            }
+
+            // Show loading state
+            var $button = $('.btn-submit-answer, .btn-answer, .btn-continue').filter(':visible').first();
+            $button.addClass('loading').prop('disabled', true);
+            $('.question-error').hide();
+
+            // Submit via AJAX
+            $.ajax({
+                url: questionnaireFrontend.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'questionnaire_submit_answer',
+                    nonce: questionnaireFrontend.nonce,
+                    session_id: sessionId,
+                    question_id: questionId,
+                    answer_option_id: answerOptionId,
+                    answer_text: answerText
+                },
+                success: function(response) {
+                    if (response.success) {
+                        if (response.data.next_type === 'question') {
+                            // Load next question
+                            loadNextQuestion(response.data.question_html);
+                            announceToScreenReader('Next question loaded.');
+                        } else if (response.data.next_type === 'outcome') {
+                            // Redirect to outcome (Phase 6)
+                            window.location.href = window.location.href.split('?')[0] + '?outcome=' + response.data.outcome_id;
+                        }
+                    } else {
+                        $button.removeClass('loading').prop('disabled', false);
+                        showQuestionError(response.data.message || 'Error submitting answer. Please try again.');
+                    }
+                },
+                error: function() {
+                    $button.removeClass('loading').prop('disabled', false);
+                    showQuestionError('Error submitting answer. Please try again.');
+                }
+            });
+        }
+
+        // Load next question
+        function loadNextQuestion(questionHtml) {
+            var $questionContainer = $('.question-container');
+
+            // Fade out current question
+            $questionContainer.fadeOut(200, function() {
+                // Replace with new question
+                $questionContainer.html(questionHtml);
+
+                // Update progress
+                updateProgress();
+
+                // Fade in new question
+                $questionContainer.fadeIn(200);
+
+                // Scroll to question
+                $('html, body').animate({
+                    scrollTop: $questionContainer.offset().top - 50
+                }, 300);
+            });
+        }
+
+        // Update progress indicator
+        function updateProgress() {
+            var $container = $('.questionnaire-flow');
+            var sessionId = $container.data('session-id');
+
+            if (!sessionId) return;
+
+            $.ajax({
+                url: questionnaireFrontend.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'questionnaire_get_progress',
+                    nonce: questionnaireFrontend.nonce,
+                    session_id: sessionId
+                },
+                success: function(response) {
+                    if (response.success) {
+                        var count = response.data.questions_answered;
+                        var text = count === 1 ? 'question' : 'questions';
+
+                        // Update progress display
+                        $('.progress-count').html('<strong>' + count + '</strong> ' + text + ' answered');
+
+                        // Update progress bar width (visual feedback)
+                        var percentage = Math.min(count * 10, 90); // Max 90% until complete
+                        $('.progress-bar-fill').css('width', percentage + '%');
+                    }
+                }
+            });
+        }
+
+        // Show question-specific error
+        function showQuestionError(message) {
+            $('.question-error').html('<strong>Error:</strong> ' + message).fadeIn();
+            announceToScreenReader('Error: ' + message);
+        }
 
         // ========================================
         // HELPER FUNCTIONS

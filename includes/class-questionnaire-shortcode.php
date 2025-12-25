@@ -115,11 +115,8 @@ class Questionnaire_Shortcode {
                 $session_id = $this->create_session($questionnaire['id'], $atts['geography'], $atts['mode']);
 
                 if ($session_id) {
-                    // Redirect to first question (Phase 5)
-                    echo '<div class="questionnaire-container" data-questionnaire-id="' . esc_attr($questionnaire['id']) . '" data-session-id="' . esc_attr($session_id) . '">';
-                    echo '<p>Loading questionnaire...</p>';
-                    echo '<p><em>Phase 5: Question rendering will go here</em></p>';
-                    echo '</div>';
+                    // Render first question
+                    $this->render_questionnaire_flow($questionnaire, $session_id, $atts);
                 } else {
                     echo '<div class="questionnaire-error">Error creating session. Please try again.</div>';
                 }
@@ -197,6 +194,73 @@ class Questionnaire_Shortcode {
      */
     private function clear_session_cookie() {
         setcookie('svdp_questionnaire_session', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN);
+    }
+
+    /**
+     * Render questionnaire flow (first question)
+     *
+     * @param array $questionnaire Questionnaire data
+     * @param string $session_id Session ID
+     * @param array $atts Shortcode attributes
+     */
+    private function render_questionnaire_flow($questionnaire, $session_id, $atts) {
+        // Get session
+        $session = Session_Manager::get_session($session_id);
+
+        if (!$session) {
+            echo '<div class="questionnaire-error">Error: Session not found.</div>';
+            return;
+        }
+
+        // Check if questionnaire has a start question
+        if (empty($questionnaire['start_question_id'])) {
+            echo '<div class="questionnaire-error">Error: This questionnaire has no starting question. Please contact the administrator.</div>';
+            return;
+        }
+
+        // Get first question
+        $question = Question_Manager::get_question($questionnaire['start_question_id']);
+
+        if (!$question) {
+            echo '<div class="questionnaire-error">Error: Starting question not found.</div>';
+            return;
+        }
+
+        // Get answer options if applicable
+        $answer_options = array();
+        if (in_array($question['question_type'], array('multiple_choice', 'yes_no'))) {
+            $answer_options = Question_Manager::get_answer_options($question['id']);
+        }
+
+        // Get questions answered count
+        $session_path = Session_Manager::get_session_path($session_id);
+        $questions_answered = count($session_path);
+
+        // Output container
+        echo '<div class="questionnaire-container questionnaire-flow" data-questionnaire-id="' . esc_attr($questionnaire['id']) . '" data-session-id="' . esc_attr($session_id) . '" data-mode="' . esc_attr($atts['mode']) . '">';
+
+        // Header
+        echo '<div class="questionnaire-header">';
+        echo '<h2 class="questionnaire-title">' . esc_html($questionnaire['name']) . '</h2>';
+        if ($atts['mode'] === 'volunteer') {
+            echo '<div class="volunteer-mode-notice">';
+            echo '<span class="dashicons dashicons-groups"></span>';
+            echo '<strong>Volunteer Mode:</strong> You are guiding someone through this questionnaire.';
+            echo '</div>';
+        }
+        echo '</div>';
+
+        // Progress indicator (if enabled)
+        if ($atts['show_progress'] === 'true') {
+            include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/questionnaire-progress.php';
+        }
+
+        // Question container (will be replaced by AJAX)
+        echo '<div class="question-container">';
+        include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/questionnaire-question.php';
+        echo '</div>';
+
+        echo '</div>'; // .questionnaire-container
     }
 
     // ========================================
