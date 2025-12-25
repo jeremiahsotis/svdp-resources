@@ -34,6 +34,14 @@ $wpgmaps_available = Location_Service::is_wpgmaps_available();
         <?php endif; ?>
     </div>
 
+    <!-- Volunteer Helper (if in volunteer mode) -->
+    <?php if ($atts['mode'] === 'volunteer'): ?>
+        <?php
+        $context = 'location';
+        include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/volunteer-helper.php';
+        ?>
+    <?php endif; ?>
+
     <!-- Welcome Message -->
     <div class="questionnaire-welcome">
         <h3>Welcome! Let's get started.</h3>

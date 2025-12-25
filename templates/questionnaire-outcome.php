@@ -155,29 +155,75 @@ $has_resources = !empty($resources);
         </div>
     <?php endif; ?>
 
-    <!-- Next Steps -->
-    <div class="outcome-actions">
-        <h3>What's Next?</h3>
+    <!-- Volunteer-Specific Next Steps -->
+    <?php if (isset($session['is_volunteer_assisted']) && $session['is_volunteer_assisted']): ?>
+        <div class="outcome-actions volunteer-next-steps">
+            <h3>Next Steps for You and the Person You're Helping:</h3>
 
-        <div class="action-buttons">
-            <a href="<?php echo esc_url(remove_query_arg('outcome')); ?>" class="btn btn-primary btn-large btn-start-over">
-                <span class="dashicons dashicons-update"></span>
-                Start a New Questionnaire
-            </a>
+            <div class="volunteer-action-checklist">
+                <h4>Before They Leave:</h4>
+                <ul class="checklist">
+                    <li>
+                        <input type="checkbox" id="check-resources">
+                        <label for="check-resources">Review the resources together and identify 1-2 to start with</label>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="check-write">
+                        <label for="check-write">Write down or print the contact information for chosen resources</label>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="check-questions">
+                        <label for="check-questions">Ask if they have questions about any resources</label>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="check-call">
+                        <label for="check-call">Offer to help them make the first call if they're nervous</label>
+                    </li>
+                    <li>
+                        <input type="checkbox" id="check-followup">
+                        <label for="check-followup">Discuss if/when they'd like to check in again</label>
+                    </li>
+                </ul>
 
-            <a href="<?php echo esc_url(home_url('/resources')); ?>" class="btn btn-secondary btn-large">
-                <span class="dashicons dashicons-search"></span>
-                Browse All Resources
-            </a>
+                <button type="button" class="btn btn-secondary" onclick="window.print();">
+                    <span class="dashicons dashicons-printer"></span>
+                    Print Results for Them
+                </button>
+            </div>
+
+            <div class="action-buttons">
+                <a href="<?php echo esc_url(remove_query_arg('outcome')); ?>" class="btn btn-primary btn-large">
+                    <span class="dashicons dashicons-update"></span>
+                    Help Another Person
+                </a>
+            </div>
         </div>
 
-        <div class="help-contact">
-            <p>
-                <strong>Need additional help?</strong><br>
-                Call 211 for free, confidential assistance 24/7.
-            </p>
+    <?php else: ?>
+        <!-- Standard Next Steps (Non-Volunteer) -->
+        <div class="outcome-actions">
+            <h3>What's Next?</h3>
+
+            <div class="action-buttons">
+                <a href="<?php echo esc_url(remove_query_arg('outcome')); ?>" class="btn btn-primary btn-large btn-start-over">
+                    <span class="dashicons dashicons-update"></span>
+                    Start a New Questionnaire
+                </a>
+
+                <a href="<?php echo esc_url(home_url('/resources')); ?>" class="btn btn-secondary btn-large">
+                    <span class="dashicons dashicons-search"></span>
+                    Browse All Resources
+                </a>
+            </div>
+
+            <div class="help-contact">
+                <p>
+                    <strong>Need additional help?</strong><br>
+                    Call 211 for free, confidential assistance 24/7.
+                </p>
+            </div>
         </div>
-    </div>
+    <?php endif; ?>
 
     <!-- Session Summary (optional) -->
     <?php if (isset($session['conference'])): ?>
@@ -528,15 +574,86 @@ $has_resources = !empty($resources);
     }
 }
 
+/* Volunteer-Specific Styles */
+.volunteer-next-steps {
+    background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+    border: 2px solid #2196f3;
+}
+
+.volunteer-action-checklist {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.volunteer-action-checklist h4 {
+    color: #1565c0;
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+.checklist {
+    list-style: none;
+    margin: 0 0 20px 0;
+    padding: 0;
+}
+
+.checklist li {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    transition: background 0.3s ease;
+}
+
+.checklist li:hover {
+    background: #e8f5e9;
+}
+
+.checklist input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    margin-top: 2px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.checklist label {
+    cursor: pointer;
+    line-height: 1.6;
+    color: #2c3e50;
+}
+
+.checklist input[type="checkbox"]:checked + label {
+    text-decoration: line-through;
+    color: #999;
+}
+
 /* Print Styles */
 @media print {
-    .outcome-actions,
-    .btn-view-details {
-        display: none;
+    .outcome-actions .action-buttons,
+    .btn-view-details,
+    .volunteer-helper-box,
+    .volunteer-action-checklist {
+        display: none !important;
     }
 
     .resource-full-details {
         display: block !important;
+    }
+
+    .volunteer-next-steps h3 {
+        page-break-before: always;
+    }
+
+    /* Show conference prominently */
+    .outcome-subtitle {
+        font-size: 1.4em;
+        font-weight: bold;
     }
 }
 </style>

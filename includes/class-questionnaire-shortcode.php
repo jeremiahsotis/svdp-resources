@@ -263,6 +263,12 @@ class Questionnaire_Shortcode {
         }
         echo '</div>';
 
+        // Volunteer Helper (if in volunteer mode)
+        if ($atts['mode'] === 'volunteer') {
+            $context = 'questions';
+            include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/volunteer-helper.php';
+        }
+
         // Progress indicator (if enabled)
         if ($atts['show_progress'] === 'true') {
             include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/questionnaire-progress.php';
@@ -311,6 +317,12 @@ class Questionnaire_Shortcode {
 
         // Wrapper for consistency
         echo '<div class="questionnaire-container questionnaire-outcome-container" data-session-id="' . esc_attr($session_id) . '">';
+
+        // Volunteer Helper (if in volunteer mode)
+        if ($atts['mode'] === 'volunteer') {
+            $context = 'outcome';
+            include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/volunteer-helper.php';
+        }
 
         // Include outcome template
         include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/questionnaire-outcome.php';
