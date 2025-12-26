@@ -209,7 +209,15 @@ $context = isset($context) ? $context : 'questions';
 jQuery(document).ready(function($) {
     // Toggle volunteer helper box
     $('.volunteer-helper-toggle').on('click', function() {
-        $(this).closest('.volunteer-helper-box').toggleClass('collapsed');
+        var $box = $(this).closest('.volunteer-helper-box');
+        var isCollapsed = $box.hasClass('collapsed');
+
+        // Toggle the collapsed class
+        $box.toggleClass('collapsed');
+
+        // Explicitly control button text visibility to prevent blank state
+        $(this).find('.toggle-show').toggle(!isCollapsed);
+        $(this).find('.toggle-hide').toggle(isCollapsed);
     });
 
     // Start collapsed on mobile

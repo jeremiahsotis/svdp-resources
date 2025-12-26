@@ -88,6 +88,14 @@ class Questionnaire_Shortcode {
             return '<div class="questionnaire-error">This questionnaire is not currently available.</div>';
         }
 
+        // Handle session clearing (for "Start New" buttons)
+        if (isset($_GET['clear_session'])) {
+            $this->clear_session_cookie();
+            // Redirect to clean URL without query params
+            wp_redirect(remove_query_arg('clear_session'));
+            exit;
+        }
+
         // Check if displaying outcome
         if (isset($_GET['outcome'])) {
             $outcome_id = intval($_GET['outcome']);
@@ -108,7 +116,14 @@ class Questionnaire_Shortcode {
 
             // Only use session if it's for this questionnaire and still in progress
             if ($session && $session['questionnaire_id'] == $questionnaire['id'] && $session['status'] == 'in_progress') {
-                // Session exists - render questionnaire flow
+                // If user hasn't explicitly chosen to resume, show session options
+                if (!isset($_GET['resume_session'])) {
+                    ob_start();
+                    include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/questionnaire-session-options.php';
+                    return ob_get_clean();
+                }
+
+                // User chose to resume - render questionnaire flow
                 ob_start();
                 $this->render_questionnaire_flow($questionnaire, $session_id, $atts);
                 return ob_get_clean();

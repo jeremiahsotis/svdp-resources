@@ -3,7 +3,7 @@
  * Plugin Name: Monday.com Resources Integration
  * Plugin URI: https://example.com
  * Description: Integrates Monday.com board data as searchable resource cards with filtering, issue reporting, and submission features
- * Version: 1.0.0
+ * Version: 1.0.6
  * Author: Your Name
  * Author URI: https://example.com
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MONDAY_RESOURCES_VERSION', '1.0.0');
+define('MONDAY_RESOURCES_VERSION', '1.0.6');
 define('MONDAY_RESOURCES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('MONDAY_RESOURCES_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -42,6 +42,34 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-questionnaire-ajax.ph
 
 // Activation hook
 register_activation_hook(__FILE__, 'monday_resources_activate');
+
+// Run database upgrade check on admin_init to add any missing columns
+add_action('admin_init', 'monday_resources_maybe_upgrade_db');
+
+function monday_resources_maybe_upgrade_db() {
+    $db_version = get_option('monday_resources_db_version', '1.0.0');
+
+    // Only run upgrade if version is older than 1.0.4
+    if (version_compare($db_version, '1.0.4', '<')) {
+        global $wpdb;
+        $questions_table = $wpdb->prefix . 'questionnaire_questions';
+
+        // Add next_question_id column if it doesn't exist
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $questions_table LIKE 'next_question_id'");
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE $questions_table ADD COLUMN next_question_id bigint(20) DEFAULT NULL AFTER required");
+        }
+
+        // Add outcome_id column if it doesn't exist
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $questions_table LIKE 'outcome_id'");
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE $questions_table ADD COLUMN outcome_id bigint(20) DEFAULT NULL AFTER next_question_id");
+        }
+
+        // Update version
+        update_option('monday_resources_db_version', '1.0.4');
+    }
+}
 
 function monday_resources_activate() {
     global $wpdb;
@@ -193,6 +221,8 @@ function monday_resources_activate() {
         question_type varchar(50) NOT NULL,
         help_text text DEFAULT NULL,
         required tinyint(1) DEFAULT 1,
+        next_question_id bigint(20) DEFAULT NULL,
+        outcome_id bigint(20) DEFAULT NULL,
         sort_order int DEFAULT 0,
         created_at datetime DEFAULT CURRENT_TIMESTAMP,
         updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -312,6 +342,20 @@ function monday_resources_activate() {
     foreach ($columns_to_add as $column => $query) {
         // Check if column exists
         $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $resources_table LIKE '$column'");
+        if (empty($column_exists)) {
+            $wpdb->query($query);
+        }
+    }
+
+    // Add next_question_id and outcome_id to questions table (for text and info_only question types)
+    $questions_table = $wpdb->prefix . 'questionnaire_questions';
+    $questions_columns_to_add = array(
+        'next_question_id' => "ALTER TABLE $questions_table ADD next_question_id bigint(20) DEFAULT NULL AFTER required",
+        'outcome_id' => "ALTER TABLE $questions_table ADD outcome_id bigint(20) DEFAULT NULL AFTER next_question_id"
+    );
+
+    foreach ($questions_columns_to_add as $column => $query) {
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $questions_table LIKE '$column'");
         if (empty($column_exists)) {
             $wpdb->query($query);
         }

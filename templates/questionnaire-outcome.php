@@ -192,7 +192,7 @@ $has_resources = !empty($resources);
             </div>
 
             <div class="action-buttons">
-                <a href="<?php echo esc_url(remove_query_arg('outcome')); ?>" class="btn btn-primary btn-large">
+                <a href="<?php echo esc_url(add_query_arg('clear_session', '1', remove_query_arg('outcome'))); ?>" class="btn btn-primary btn-large">
                     <span class="dashicons dashicons-update"></span>
                     Help Another Person
                 </a>
@@ -205,7 +205,7 @@ $has_resources = !empty($resources);
             <h3>What's Next?</h3>
 
             <div class="action-buttons">
-                <a href="<?php echo esc_url(remove_query_arg('outcome')); ?>" class="btn btn-primary btn-large btn-start-over">
+                <a href="<?php echo esc_url(add_query_arg('clear_session', '1', remove_query_arg('outcome'))); ?>" class="btn btn-primary btn-large btn-start-over">
                     <span class="dashicons dashicons-update"></span>
                     Start a New Questionnaire
                 </a>

@@ -32,6 +32,8 @@ class Questionnaire_Admin {
         add_action('wp_ajax_delete_answer_option', array($this, 'ajax_delete_answer_option'));
         add_action('wp_ajax_add_new_outcome', array($this, 'ajax_add_new_outcome'));
         add_action('wp_ajax_delete_outcome', array($this, 'ajax_delete_outcome'));
+        add_action('wp_ajax_reorder_questions', array($this, 'ajax_reorder_questions'));
+        add_action('wp_ajax_reorder_answer_options', array($this, 'ajax_reorder_answer_options'));
     }
 
     /**
@@ -125,6 +127,9 @@ class Questionnaire_Admin {
         $is_questionnaire_page = strpos($page, 'questionnaires') !== false;
 
         if (in_array($hook, $questionnaire_pages) || $is_questionnaire_page) {
+            // Enqueue jQuery UI for drag-and-drop sorting
+            wp_enqueue_script('jquery-ui-sortable');
+
             wp_enqueue_style(
                 'questionnaire-admin',
                 MONDAY_RESOURCES_PLUGIN_URL . 'assets/css/admin-questionnaire.css',
@@ -135,10 +140,21 @@ class Questionnaire_Admin {
             wp_enqueue_script(
                 'questionnaire-admin',
                 MONDAY_RESOURCES_PLUGIN_URL . 'assets/js/admin-questionnaire.js',
-                array('jquery'),
+                array('jquery', 'jquery-ui-sortable'),
                 MONDAY_RESOURCES_VERSION,
                 true
             );
+
+            // Enqueue Mermaid.js for flow preview (only on builder page)
+            if (strpos($page, 'questionnaires-builder') !== false || $hook === 'admin_page_questionnaires-builder') {
+                wp_enqueue_script(
+                    'mermaid-js',
+                    'https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js',
+                    array(),
+                    '10.6.1',
+                    true
+                );
+            }
 
             wp_localize_script('questionnaire-admin', 'questionnaireAdmin', array(
                 'ajaxUrl' => admin_url('admin-ajax.php'),
@@ -279,6 +295,212 @@ class Questionnaire_Admin {
 
         // Include template
         include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/admin-question-builder.php';
+    }
+
+    /**
+     * Generate Mermaid.js flowchart syntax from questionnaire data
+     *
+     * @param array $questionnaire Questionnaire data
+     * @param array $questions Array of questions
+     * @param array $outcomes Array of outcomes
+     * @return array Array with 'mermaid' syntax and 'validation' warnings
+     */
+    private function generate_flow_diagram($questionnaire, $questions, $outcomes) {
+        if (empty($questions)) {
+            return array(
+                'mermaid' => '',
+                'validation' => array(),
+                'empty' => true
+            );
+        }
+
+        $mermaid = "graph TD\n";
+        $validation_warnings = array();
+        $node_connections = array(); // Track which nodes have incoming edges
+
+        // Create lookup maps
+        $questions_map = array();
+        foreach ($questions as $q) {
+            $questions_map[$q['id']] = $q;
+        }
+
+        $outcomes_map = array();
+        foreach ($outcomes as $o) {
+            $outcomes_map[$o['id']] = $o;
+        }
+
+        // Define start node
+        if ($questionnaire['start_question_id']) {
+            $mermaid .= "    START([Start]):::startNode\n";
+            $mermaid .= "    START --> Q" . $questionnaire['start_question_id'] . "\n";
+            $node_connections['Q' . $questionnaire['start_question_id']] = true;
+        } else {
+            $validation_warnings[] = array(
+                'type' => 'error',
+                'message' => 'No start question set. Please set a start question in the Questions tab.',
+                'node' => null
+            );
+        }
+
+        // Generate question nodes
+        foreach ($questions as $question) {
+            $q_id = 'Q' . $question['id'];
+            $label = $this->escape_mermaid_label($question['question_text']);
+
+            // Determine node shape and style based on question type
+            switch ($question['question_type']) {
+                case 'multiple_choice':
+                    $mermaid .= "    {$q_id}{{{$label}}}:::mcNode\n";
+                    break;
+                case 'yes_no':
+                    $mermaid .= "    {$q_id}{{{$label}}}:::ynNode\n";
+                    break;
+                case 'text':
+                    $mermaid .= "    {$q_id}[{$label}]:::textNode\n";
+                    break;
+                case 'info_only':
+                    $mermaid .= "    {$q_id}[/{$label}/]:::infoNode\n";
+                    break;
+            }
+
+            // Handle edges based on question type
+            if (in_array($question['question_type'], array('multiple_choice', 'yes_no'))) {
+                // Get answer options
+                $options = Question_Manager::get_answer_options($question['id']);
+
+                if (empty($options)) {
+                    $validation_warnings[] = array(
+                        'type' => 'warning',
+                        'message' => "Question has no answer options: " . $question['question_text'],
+                        'node' => $q_id,
+                        'question_id' => $question['id']
+                    );
+                } else {
+                    foreach ($options as $option) {
+                        $edge_label = $this->escape_mermaid_label($option['answer_text']);
+
+                        if ($option['next_question_id']) {
+                            $target = 'Q' . $option['next_question_id'];
+                            $mermaid .= "    {$q_id} -->|{$edge_label}| {$target}\n";
+                            $node_connections[$target] = true;
+                        } elseif ($option['outcome_id']) {
+                            $target = 'O' . $option['outcome_id'];
+                            $mermaid .= "    {$q_id} -->|{$edge_label}| {$target}\n";
+                            $node_connections[$target] = true;
+                        } else {
+                            $validation_warnings[] = array(
+                                'type' => 'error',
+                                'message' => "Answer option '{$option['answer_text']}' has no next step",
+                                'node' => $q_id,
+                                'question_id' => $question['id']
+                            );
+                        }
+                    }
+                }
+            } else {
+                // text or info_only - direct navigation
+                if (isset($question['next_question_id']) && $question['next_question_id']) {
+                    $target = 'Q' . $question['next_question_id'];
+                    $mermaid .= "    {$q_id} --> {$target}\n";
+                    $node_connections[$target] = true;
+                } elseif (isset($question['outcome_id']) && $question['outcome_id']) {
+                    $target = 'O' . $question['outcome_id'];
+                    $mermaid .= "    {$q_id} --> {$target}\n";
+                    $node_connections[$target] = true;
+                } else {
+                    $validation_warnings[] = array(
+                        'type' => 'error',
+                        'message' => "Question has no next step: " . $question['question_text'],
+                        'node' => $q_id,
+                        'question_id' => $question['id']
+                    );
+                }
+            }
+        }
+
+        // Generate outcome nodes
+        foreach ($outcomes as $outcome) {
+            $o_id = 'O' . $outcome['id'];
+            $label = $this->escape_mermaid_label($outcome['name']);
+
+            // Different shapes based on outcome type
+            switch ($outcome['outcome_type']) {
+                case 'resources':
+                    $mermaid .= "    {$o_id}[({$label})]:::resourcesOutcome\n";
+                    break;
+                case 'guidance':
+                    $mermaid .= "    {$o_id}[({$label})]:::guidanceOutcome\n";
+                    break;
+                case 'hybrid':
+                    $mermaid .= "    {$o_id}[({$label})]:::hybridOutcome\n";
+                    break;
+            }
+        }
+
+        // Detect orphaned questions (no incoming edges except start)
+        foreach ($questions as $question) {
+            $q_id = 'Q' . $question['id'];
+            if (!isset($node_connections[$q_id])) {
+                $validation_warnings[] = array(
+                    'type' => 'warning',
+                    'message' => "Orphaned question (not reachable): " . $question['question_text'],
+                    'node' => $q_id,
+                    'question_id' => $question['id']
+                );
+                // Add styling for orphaned nodes
+                $mermaid .= "    class {$q_id} orphanedNode\n";
+            }
+        }
+
+        // Detect unreachable outcomes
+        foreach ($outcomes as $outcome) {
+            $o_id = 'O' . $outcome['id'];
+            if (!isset($node_connections[$o_id])) {
+                $validation_warnings[] = array(
+                    'type' => 'warning',
+                    'message' => "Unreachable outcome: " . $outcome['name'],
+                    'node' => $o_id,
+                    'outcome_id' => $outcome['id']
+                );
+                $mermaid .= "    class {$o_id} orphanedNode\n";
+            }
+        }
+
+        // Add style definitions
+        $mermaid .= "\n    %% Node Styles\n";
+        $mermaid .= "    classDef startNode fill:#d4edda,stroke:#28a745,stroke-width:3px\n";
+        $mermaid .= "    classDef mcNode fill:#cfe2ff,stroke:#0d6efd,stroke-width:2px\n";
+        $mermaid .= "    classDef ynNode fill:#d1e7dd,stroke:#198754,stroke-width:2px\n";
+        $mermaid .= "    classDef textNode fill:#fff3cd,stroke:#ffc107,stroke-width:2px\n";
+        $mermaid .= "    classDef infoNode fill:#e2e3e5,stroke:#6c757d,stroke-width:2px\n";
+        $mermaid .= "    classDef resourcesOutcome fill:#d1ecf1,stroke:#0dcaf0,stroke-width:3px\n";
+        $mermaid .= "    classDef guidanceOutcome fill:#f8d7da,stroke:#dc3545,stroke-width:3px\n";
+        $mermaid .= "    classDef hybridOutcome fill:#fce5cd,stroke:#fd7e14,stroke-width:3px\n";
+        $mermaid .= "    classDef orphanedNode fill:#fff,stroke:#dc3545,stroke-width:3px,stroke-dasharray: 5 5\n";
+
+        return array(
+            'mermaid' => $mermaid,
+            'validation' => $validation_warnings,
+            'empty' => false
+        );
+    }
+
+    /**
+     * Escape special characters for Mermaid.js labels
+     */
+    private function escape_mermaid_label($text) {
+        // Truncate long text
+        if (strlen($text) > 60) {
+            $text = substr($text, 0, 57) . '...';
+        }
+
+        // Escape quotes and special characters
+        $text = str_replace('"', '&quot;', $text);
+        $text = str_replace('#', '&num;', $text);
+        $text = str_replace('[', '&lsqb;', $text);
+        $text = str_replace(']', '&rsqb;', $text);
+
+        return $text;
     }
 
     /**
@@ -439,16 +661,76 @@ class Questionnaire_Admin {
             'required' => isset($_POST['required']) ? 1 : 0,
         );
 
+        // Handle direct next step for text and info_only questions
+        // Only include these columns if they exist in the database
+        global $wpdb;
+        $table = $wpdb->prefix . 'questionnaire_questions';
+        $columns_exist = $wpdb->get_results("SHOW COLUMNS FROM $table LIKE 'next_question_id'");
+
+        if (!empty($columns_exist) && in_array($data['question_type'], array('text', 'info_only'))) {
+            $next_action = isset($_POST['direct_next_action_type']) ? $_POST['direct_next_action_type'] : 'question';
+            if ($next_action === 'question') {
+                $data['next_question_id'] = isset($_POST['direct_next_question_id']) && $_POST['direct_next_question_id'] ? intval($_POST['direct_next_question_id']) : null;
+                $data['outcome_id'] = null;
+            } else {
+                $data['next_question_id'] = null;
+                $data['outcome_id'] = isset($_POST['direct_outcome_id']) && $_POST['direct_outcome_id'] ? intval($_POST['direct_outcome_id']) : null;
+            }
+        }
+        // Note: For multiple_choice and yes_no, next step is stored on answer options, not the question
+
         // Update question
         $success = Question_Manager::update_question($question_id, $data);
 
         // Handle answer options
         if (in_array($data['question_type'], array('multiple_choice', 'yes_no'))) {
+            // Auto-create or fix Yes/No options
+            if ($data['question_type'] === 'yes_no') {
+                $existing_options = Question_Manager::get_answer_options($question_id);
+
+                // Check if we need to create/recreate Yes/No options
+                $needs_fix = false;
+                if (count($existing_options) !== 2) {
+                    $needs_fix = true;
+                } else {
+                    // Check if existing options are exactly "Yes" and "No"
+                    $texts = array_map(function($opt) { return $opt['answer_text']; }, $existing_options);
+                    sort($texts);
+                    if ($texts !== array('No', 'Yes')) {
+                        $needs_fix = true;
+                    }
+                }
+
+                if ($needs_fix) {
+                    // Delete all existing options
+                    foreach ($existing_options as $opt) {
+                        Question_Manager::delete_answer_option($opt['id']);
+                    }
+
+                    // Create Yes option
+                    Question_Manager::create_answer_option(array(
+                        'question_id' => $question_id,
+                        'answer_text' => 'Yes',
+                        'next_question_id' => null,
+                        'outcome_id' => null,
+                        'sort_order' => 0,
+                    ));
+                    // Create No option
+                    Question_Manager::create_answer_option(array(
+                        'question_id' => $question_id,
+                        'answer_text' => 'No',
+                        'next_question_id' => null,
+                        'outcome_id' => null,
+                        'sort_order' => 1,
+                    ));
+                }
+            }
+
             // Update existing answer options
             if (isset($_POST['answer_option_ids']) && is_array($_POST['answer_option_ids'])) {
                 foreach ($_POST['answer_option_ids'] as $option_id) {
                     $option_data = array(
-                        'answer_text' => sanitize_text_field($_POST['answer_texts'][$option_id]),
+                        'answer_text' => sanitize_text_field(wp_unslash($_POST['answer_texts'][$option_id])),
                     );
 
                     // Determine next action
@@ -492,19 +774,19 @@ class Questionnaire_Admin {
 
         // Sanitize outcome data
         $data = array(
-            'name' => sanitize_text_field($_POST['name']),
-            'outcome_type' => sanitize_text_field($_POST['outcome_type']),
-            'guidance_text' => isset($_POST['guidance_text']) ? wp_kses_post($_POST['guidance_text']) : '',
-            'resource_filter_type' => isset($_POST['resource_filter_type']) ? sanitize_text_field($_POST['resource_filter_type']) : 'none',
-            'resource_filter_data' => '', // Placeholder for now
+            'name' => sanitize_text_field(wp_unslash($_POST['name'])),
+            'outcome_type' => sanitize_text_field(wp_unslash($_POST['outcome_type'])),
+            'guidance_text' => isset($_POST['guidance_text']) ? wp_kses_post(wp_unslash($_POST['guidance_text'])) : '',
+            'resource_filter_type' => isset($_POST['resource_filter_type']) ? sanitize_text_field(wp_unslash($_POST['resource_filter_type'])) : 'none',
+            'resource_filter_data' => isset($_POST['resource_filter_data_json']) ? sanitize_text_field(wp_unslash($_POST['resource_filter_data_json'])) : '',
         );
 
         // Update outcome
         $success = Outcome_Manager::update_outcome($outcome_id, $data);
 
-        // Redirect back to builder
+        // Redirect back to builder (JavaScript will handle restoring the Outcomes tab via sessionStorage)
         if ($success) {
-            wp_redirect(admin_url('admin.php?page=questionnaires-builder&id=' . $questionnaire_id . '&saved=1#outcomes'));
+            wp_redirect(admin_url('admin.php?page=questionnaires-builder&id=' . $questionnaire_id . '&saved=1'));
         } else {
             wp_redirect(admin_url('admin.php?page=questionnaires-builder&id=' . $questionnaire_id . '&error=Failed to save outcome'));
         }
@@ -614,6 +896,12 @@ class Questionnaire_Admin {
             wp_send_json_error('Invalid question ID');
         }
 
+        // Get the question to find its questionnaire_id
+        $question = Question_Manager::get_question($question_id);
+        if (!$question) {
+            wp_send_json_error('Question not found');
+        }
+
         // Create new answer option
         $option_id = Question_Manager::create_answer_option(array(
             'question_id' => $question_id,
@@ -624,7 +912,29 @@ class Questionnaire_Admin {
         ));
 
         if ($option_id) {
-            wp_send_json_success(array('option_id' => $option_id));
+            // Get all questions and outcomes for the questionnaire (needed for dropdowns)
+            $all_questions = Question_Manager::get_questions_for_questionnaire($question['questionnaire_id']);
+            $all_outcomes = Outcome_Manager::get_outcomes_for_questionnaire($question['questionnaire_id']);
+
+            // Filter out the current question from the list (can't link to itself)
+            $questions_for_dropdown = array_filter($all_questions, function($q) use ($question_id) {
+                return $q['id'] != $question_id;
+            });
+
+            // Simplify the data sent to JavaScript
+            $questions_simple = array_map(function($q) {
+                return array('id' => $q['id'], 'question_text' => $q['question_text']);
+            }, array_values($questions_for_dropdown));
+
+            $outcomes_simple = array_map(function($o) {
+                return array('id' => $o['id'], 'name' => $o['name']);
+            }, $all_outcomes);
+
+            wp_send_json_success(array(
+                'option_id' => $option_id,
+                'questions' => $questions_simple,
+                'outcomes' => $outcomes_simple
+            ));
         } else {
             wp_send_json_error('Failed to create answer option');
         }
@@ -683,7 +993,11 @@ class Questionnaire_Admin {
         ));
 
         if ($outcome_id) {
-            wp_send_json_success(array('outcome_id' => $outcome_id));
+            wp_send_json_success(array(
+                'outcome_id' => $outcome_id,
+                'outcome_name' => 'New Outcome - Click Edit to customize',
+                'outcome_type' => 'hybrid'
+            ));
         } else {
             wp_send_json_error('Failed to create outcome');
         }
@@ -712,6 +1026,68 @@ class Questionnaire_Admin {
         } else {
             wp_send_json_error('Failed to delete outcome');
         }
+    }
+
+    /**
+     * AJAX: Reorder questions
+     */
+    public function ajax_reorder_questions() {
+        check_ajax_referer('questionnaire_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized');
+        }
+
+        $question_ids = isset($_POST['question_ids']) ? array_map('intval', $_POST['question_ids']) : array();
+
+        if (empty($question_ids)) {
+            wp_send_json_error('No questions provided');
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'questionnaire_questions';
+
+        // Update sort_order for each question
+        foreach ($question_ids as $index => $question_id) {
+            $wpdb->update(
+                $table,
+                array('sort_order' => $index),
+                array('id' => $question_id)
+            );
+        }
+
+        wp_send_json_success();
+    }
+
+    /**
+     * AJAX: Reorder answer options
+     */
+    public function ajax_reorder_answer_options() {
+        check_ajax_referer('questionnaire_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized');
+        }
+
+        $option_ids = isset($_POST['option_ids']) ? array_map('intval', $_POST['option_ids']) : array();
+
+        if (empty($option_ids)) {
+            wp_send_json_error('No options provided');
+        }
+
+        global $wpdb;
+        $table = $wpdb->prefix . 'questionnaire_answer_options';
+
+        // Update sort_order for each option
+        foreach ($option_ids as $index => $option_id) {
+            $wpdb->update(
+                $table,
+                array('sort_order' => $index),
+                array('id' => $option_id)
+            );
+        }
+
+        wp_send_json_success();
     }
 }
 

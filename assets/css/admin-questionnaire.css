@@ -238,6 +238,63 @@
 }
 
 /* ========================================
+   DRAG AND DROP / SORTABLE
+   ======================================== */
+
+/* Make question headers appear draggable */
+.question-header {
+    cursor: move;
+}
+
+.question-header:hover::before {
+    content: "\f333";
+    font-family: dashicons;
+    position: absolute;
+    left: -20px;
+    color: #8c8f94;
+    font-size: 16px;
+}
+
+/* Make answer option rows appear draggable */
+.answer-option-row {
+    cursor: move;
+}
+
+.answer-option-row:hover::before {
+    content: "\f333";
+    font-family: dashicons;
+    position: absolute;
+    left: 5px;
+    top: 18px;
+    color: #8c8f94;
+    font-size: 14px;
+}
+
+/* Sortable placeholder styling */
+.sortable-placeholder {
+    background: #f0f6fc;
+    border: 2px dashed #0073aa;
+    visibility: visible !important;
+    height: 60px !important;
+    margin-bottom: 10px;
+}
+
+/* Item being dragged */
+.ui-sortable-helper {
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    cursor: move;
+}
+
+/* During drag, make other items slightly transparent */
+#questions-list.ui-sortable-disabled .question-item:not(.ui-sortable-helper) {
+    opacity: 0.6;
+}
+
+.answer-options-list.ui-sortable-disabled .answer-option-row:not(.ui-sortable-helper) {
+    opacity: 0.6;
+}
+
+/* ========================================
    FORM VALIDATION
    ======================================== */
 
@@ -307,4 +364,121 @@
 .outcome-type-hybrid {
     background: #fcf8e3;
     color: #8a6d3b;
+}
+
+/* ========================================
+   FLOW PREVIEW TAB
+   ======================================== */
+
+#flow-diagram-container {
+    position: relative;
+    min-height: 400px;
+}
+
+#flow-mermaid-diagram {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 400px;
+}
+
+#flow-mermaid-diagram svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Make Mermaid nodes clickable */
+#flow-mermaid-diagram .node {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#flow-mermaid-diagram .node:hover {
+    opacity: 0.8;
+    filter: brightness(1.1);
+}
+
+#flow-mermaid-diagram .node rect,
+#flow-mermaid-diagram .node polygon,
+#flow-mermaid-diagram .node circle,
+#flow-mermaid-diagram .node ellipse {
+    transition: all 0.2s ease;
+}
+
+#flow-mermaid-diagram .node:hover rect,
+#flow-mermaid-diagram .node:hover polygon,
+#flow-mermaid-diagram .node:hover circle,
+#flow-mermaid-diagram .node:hover ellipse {
+    stroke-width: 3px;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+}
+
+/* Validation warnings styling */
+#flow-validation-warnings {
+    margin-bottom: 20px;
+}
+
+#flow-validation-warnings .notice {
+    padding: 10px 15px;
+}
+
+#flow-validation-warnings ul {
+    margin: 5px 0;
+    padding-left: 20px;
+}
+
+#flow-validation-warnings li {
+    margin: 5px 0;
+}
+
+#flow-validation-warnings a {
+    text-decoration: none;
+    color: #2271b1;
+    font-weight: 600;
+}
+
+#flow-validation-warnings a:hover {
+    text-decoration: underline;
+}
+
+/* Loading spinner */
+#flow-diagram-loading .spinner {
+    margin: 0 auto;
+    float: none;
+}
+
+/* Error state */
+#flow-diagram-error .dashicons {
+    width: 48px;
+    height: 48px;
+    font-size: 48px;
+}
+
+/* Refresh button */
+#refresh-flow-btn .dashicons {
+    margin-top: 3px;
+}
+
+/* Legend styling */
+.flow-legend {
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+.flow-legend > div {
+    display: flex;
+    align-items: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 782px) {
+    #flow-diagram-container {
+        padding: 10px;
+    }
+
+    #flow-mermaid-diagram svg {
+        width: 100% !important;
+    }
 }

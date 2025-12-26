@@ -163,6 +163,46 @@ if (!defined('ABSPATH')) {
                                         </tr>
                                     </table>
 
+                                    <!-- Next Step (for text and info_only questions) -->
+                                    <div class="next-step-section" style="<?php echo in_array($question['question_type'], ['text', 'info_only']) ? '' : 'display: none;'; ?>">
+                                        <h3>Next Step</h3>
+                                        <p class="description">Define what happens after this question.</p>
+
+                                        <table class="form-table">
+                                            <tr>
+                                                <th><label>Then Go To</label></th>
+                                                <td>
+                                                    <select name="direct_next_action_type" class="direct-next-action-type-select">
+                                                        <option value="question" <?php selected(isset($question['next_question_id']) && $question['next_question_id']); ?>>Next Question</option>
+                                                        <option value="outcome" <?php selected(isset($question['outcome_id']) && $question['outcome_id']); ?>>Outcome/Result</option>
+                                                    </select>
+
+                                                    <select name="direct_next_question_id" class="direct-next-question-select" style="margin-top: 10px; <?php echo (isset($question['next_question_id']) && $question['next_question_id']) ? '' : 'display:none;'; ?>">
+                                                        <option value="">-- Select Question --</option>
+                                                        <?php foreach ($questions as $q): ?>
+                                                            <?php if ($q['id'] != $question['id']): // Don't allow loop to self ?>
+                                                                <option value="<?php echo esc_attr($q['id']); ?>"
+                                                                    <?php selected(isset($question['next_question_id']) ? $question['next_question_id'] : '', $q['id']); ?>>
+                                                                    <?php echo esc_html($q['question_text']); ?>
+                                                                </option>
+                                                            <?php endif; ?>
+                                                        <?php endforeach; ?>
+                                                    </select>
+
+                                                    <select name="direct_outcome_id" class="direct-outcome-select" style="margin-top: 10px; <?php echo (isset($question['outcome_id']) && $question['outcome_id']) ? '' : 'display:none;'; ?>">
+                                                        <option value="">-- Select Outcome --</option>
+                                                        <?php foreach ($outcomes as $outcome): ?>
+                                                            <option value="<?php echo esc_attr($outcome['id']); ?>"
+                                                                <?php selected(isset($question['outcome_id']) ? $question['outcome_id'] : '', $outcome['id']); ?>>
+                                                                <?php echo esc_html($outcome['name']); ?>
+                                                            </option>
+                                                        <?php endforeach; ?>
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </div>
+
                                     <!-- Answer Options (for multiple_choice and yes_no) -->
                                     <div class="answer-options-section" style="<?php echo in_array($question['question_type'], ['multiple_choice', 'yes_no']) ? '' : 'display: none;'; ?>">
                                         <h3>Answer Options</h3>
@@ -187,18 +227,18 @@ if (!defined('ABSPATH')) {
                                                             <div>
                                                                 <label style="font-weight: bold; display: block; margin-bottom: 5px;">Then Go To</label>
                                                                 <select name="next_action_type[<?php echo esc_attr($option['id']); ?>]" class="next-action-type-select">
-                                                                    <option value="question" <?php selected(!empty($option['next_question_id'])); ?>>Next Question</option>
-                                                                    <option value="outcome" <?php selected(!empty($option['outcome_id'])); ?>>Outcome/Result</option>
+                                                                    <option value="question" <?php selected(isset($option['next_question_id']) && $option['next_question_id']); ?>>Next Question</option>
+                                                                    <option value="outcome" <?php selected(isset($option['outcome_id']) && $option['outcome_id']); ?>>Outcome/Result</option>
                                                                 </select>
 
                                                                 <select name="next_question_id[<?php echo esc_attr($option['id']); ?>]"
                                                                         class="next-question-select"
-                                                                        style="margin-top: 5px; <?php echo !empty($option['next_question_id']) ? '' : 'display:none;'; ?>">
+                                                                        style="margin-top: 5px; <?php echo (isset($option['next_question_id']) && $option['next_question_id']) ? '' : 'display:none;'; ?>">
                                                                     <option value="">-- Select Question --</option>
                                                                     <?php foreach ($questions as $q): ?>
                                                                         <?php if ($q['id'] != $question['id']): // Don't allow loop to self ?>
                                                                             <option value="<?php echo esc_attr($q['id']); ?>"
-                                                                                <?php selected($option['next_question_id'], $q['id']); ?>>
+                                                                                <?php selected(isset($option['next_question_id']) ? $option['next_question_id'] : '', $q['id']); ?>>
                                                                                 <?php echo esc_html($q['question_text']); ?>
                                                                             </option>
                                                                         <?php endif; ?>
@@ -207,11 +247,11 @@ if (!defined('ABSPATH')) {
 
                                                                 <select name="outcome_id[<?php echo esc_attr($option['id']); ?>]"
                                                                         class="outcome-select"
-                                                                        style="margin-top: 5px; <?php echo !empty($option['outcome_id']) ? '' : 'display:none;'; ?>">
+                                                                        style="margin-top: 5px; <?php echo (isset($option['outcome_id']) && $option['outcome_id']) ? '' : 'display:none;'; ?>">
                                                                     <option value="">-- Select Outcome --</option>
                                                                     <?php foreach ($outcomes as $outcome): ?>
                                                                         <option value="<?php echo esc_attr($outcome['id']); ?>"
-                                                                            <?php selected($option['outcome_id'], $outcome['id']); ?>>
+                                                                            <?php selected(isset($option['outcome_id']) ? $option['outcome_id'] : '', $outcome['id']); ?>>
                                                                             <?php echo esc_html($outcome['name']); ?>
                                                                         </option>
                                                                     <?php endforeach; ?>
@@ -336,19 +376,80 @@ if (!defined('ABSPATH')) {
                                             <td>
                                                 <p style="margin-top: 0;">
                                                     <label>
-                                                        <input type="radio" name="resource_filter_type" value="service_type" <?php checked($outcome['resource_filter_type'], 'service_type'); ?>>
+                                                        <input type="radio" name="resource_filter_type" value="service_type" class="resource-filter-type-radio" <?php checked($outcome['resource_filter_type'], 'service_type'); ?>>
                                                         Filter by Service Type
                                                     </label>
                                                 </p>
+
+                                                <!-- Service Type Selection -->
+                                                <div class="service-type-selection" style="margin-left: 25px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; <?php echo $outcome['resource_filter_type'] === 'service_type' ? '' : 'display:none;'; ?>">
+                                                    <?php
+                                                    // Get unique service types from resources
+                                                    global $wpdb;
+                                                    $service_types_query = "
+                                                        SELECT DISTINCT primary_service_type
+                                                        FROM {$wpdb->prefix}resources
+                                                        WHERE status = 'active'
+                                                        AND primary_service_type IS NOT NULL
+                                                        AND primary_service_type != ''
+                                                        ORDER BY primary_service_type ASC
+                                                    ";
+                                                    $service_types = $wpdb->get_col($service_types_query);
+
+                                                    $selected_service_types = isset($filter_data['service_types']) ? $filter_data['service_types'] : array();
+
+                                                    if (!empty($service_types)):
+                                                    ?>
+                                                        <p style="margin: 0 0 10px 0; font-weight: 600;">Select Service Types:</p>
+                                                        <div style="max-height: 200px; overflow-y: auto; padding: 5px;">
+                                                            <?php foreach ($service_types as $service_type): ?>
+                                                                <label style="display: block; margin: 5px 0;">
+                                                                    <input type="checkbox" name="service_types[]" value="<?php echo esc_attr($service_type); ?>" <?php checked(in_array($service_type, $selected_service_types)); ?>>
+                                                                    <?php echo esc_html($service_type); ?>
+                                                                </label>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <p style="margin: 0; color: #666;">No service types found in active resources.</p>
+                                                    <?php endif; ?>
+                                                </div>
+
                                                 <p>
                                                     <label>
-                                                        <input type="radio" name="resource_filter_type" value="specific_resources" <?php checked($outcome['resource_filter_type'], 'specific_resources'); ?>>
+                                                        <input type="radio" name="resource_filter_type" value="specific_resources" class="resource-filter-type-radio" <?php checked($outcome['resource_filter_type'], 'specific_resources'); ?>>
                                                         Link to Specific Resources
                                                     </label>
                                                 </p>
+
+                                                <!-- Specific Resources Selection -->
+                                                <div class="specific-resources-selection" style="margin-left: 25px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; <?php echo $outcome['resource_filter_type'] === 'specific_resources' ? '' : 'display:none;'; ?>">
+                                                    <?php
+                                                    // Get all active resources
+                                                    if (class_exists('Resources_Manager')) {
+                                                        $all_resources = Resources_Manager::get_all_resources();
+                                                        $selected_resource_ids = isset($filter_data['specific_ids']) ? $filter_data['specific_ids'] : array();
+
+                                                        if (!empty($all_resources)):
+                                                        ?>
+                                                            <p style="margin: 0 0 10px 0; font-weight: 600;">Select Specific Resources:</p>
+                                                            <select name="specific_resource_ids[]" multiple size="10" style="width: 100%; max-width: 500px;">
+                                                                <?php foreach ($all_resources as $resource): ?>
+                                                                    <option value="<?php echo esc_attr($resource['id']); ?>" <?php selected(in_array($resource['id'], $selected_resource_ids)); ?>>
+                                                                        <?php echo esc_html($resource['resource_name']) . ' - ' . esc_html($resource['primary_service_type']); ?>
+                                                                    </option>
+                                                                <?php endforeach; ?>
+                                                            </select>
+                                                            <p class="description">Hold Ctrl (Cmd on Mac) to select multiple resources.</p>
+                                                        <?php else: ?>
+                                                            <p style="margin: 0; color: #666;">No active resources found.</p>
+                                                        <?php endif;
+                                                    }
+                                                    ?>
+                                                </div>
+
                                                 <p>
                                                     <label>
-                                                        <input type="radio" name="resource_filter_type" value="none" <?php checked($outcome['resource_filter_type'], 'none'); ?>>
+                                                        <input type="radio" name="resource_filter_type" value="none" class="resource-filter-type-radio" <?php checked($outcome['resource_filter_type'], 'none'); ?>>
                                                         No Resources (Guidance Only)
                                                     </label>
                                                 </p>
@@ -372,13 +473,71 @@ if (!defined('ABSPATH')) {
     <!-- PREVIEW TAB -->
     <div id="tab-preview" class="tab-content" style="display: none;">
         <div style="background: #fff; padding: 20px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04); margin-top: 20px;">
-            <h2>Questionnaire Flow Preview</h2>
-            <p class="description">Visual representation of your questionnaire's branching logic.</p>
-            <p style="background: #fffbcc; padding: 15px; border-left: 4px solid #ffb900;">
-                <strong>Coming Soon:</strong> Flow diagram showing how questions connect to outcomes.
-            </p>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h2 style="margin: 0;">Questionnaire Flow Preview</h2>
+                    <p class="description" style="margin: 5px 0 0 0;">Visual representation of your questionnaire's branching logic.</p>
+                </div>
+                <button type="button" id="refresh-flow-btn" class="button button-secondary">
+                    <span class="dashicons dashicons-update" style="margin-top: 3px;"></span>
+                    Refresh Diagram
+                </button>
+            </div>
+
+            <!-- Validation Warnings -->
+            <div id="flow-validation-warnings" style="display: none; margin-bottom: 20px;">
+                <!-- Populated by JavaScript -->
+            </div>
+
+            <!-- Flow Diagram Container -->
+            <div id="flow-diagram-container" style="background: #f9f9f9; padding: 20px; border: 1px solid #ddd; border-radius: 4px; min-height: 400px; position: relative;">
+                <div id="flow-diagram-loading" style="text-align: center; padding: 60px;">
+                    <span class="spinner is-active" style="float: none; margin: 0 auto;"></span>
+                    <p style="margin-top: 20px; color: #666;">Generating flow diagram...</p>
+                </div>
+                <div id="flow-diagram-content" style="display: none; overflow-x: auto;">
+                    <div class="mermaid" id="flow-mermaid-diagram">
+                        <!-- Mermaid diagram will be rendered here -->
+                    </div>
+                </div>
+                <div id="flow-diagram-error" style="display: none; padding: 40px; text-align: center;">
+                    <span class="dashicons dashicons-warning" style="font-size: 48px; color: #d63638;"></span>
+                    <p style="font-size: 16px; color: #666; margin-top: 20px;">
+                        Unable to generate flow diagram. Please check the console for errors.
+                    </p>
+                </div>
+                <div id="flow-diagram-empty" style="display: none; background: #f0f0f1; padding: 40px; text-align: center; border: 2px dashed #c3c4c7;">
+                    <p style="font-size: 16px; color: #666; margin: 0;">
+                        No questions yet. Add questions in the Questions tab to see the flow diagram.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Diagram Legend -->
+            <div style="margin-top: 20px; padding: 15px; background: #f0f6fc; border: 1px solid #c3c4c7; border-radius: 4px;">
+                <h3 style="margin-top: 0; font-size: 14px;">Legend</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 13px;">
+                    <div><span style="display: inline-block; width: 12px; height: 12px; background: #cfe2ff; border: 2px solid #0d6efd; margin-right: 8px; vertical-align: middle;"></span>Multiple Choice</div>
+                    <div><span style="display: inline-block; width: 12px; height: 12px; background: #d1e7dd; border: 2px solid #198754; margin-right: 8px; vertical-align: middle;"></span>Yes/No</div>
+                    <div><span style="display: inline-block; width: 12px; height: 12px; background: #fff3cd; border: 2px solid #ffc107; margin-right: 8px; vertical-align: middle;"></span>Text Input</div>
+                    <div><span style="display: inline-block; width: 12px; height: 12px; background: #e2e3e5; border: 2px solid #6c757d; margin-right: 8px; vertical-align: middle;"></span>Info Only</div>
+                    <div><span style="display: inline-block; width: 12px; height: 12px; background: #d1ecf1; border: 2px solid #0dcaf0; margin-right: 8px; vertical-align: middle;"></span>Resources Outcome</div>
+                    <div><span style="display: inline-block; width: 12px; height: 12px; background: #f8d7da; border: 2px solid #dc3545; margin-right: 8px; vertical-align: middle;"></span>Guidance Outcome</div>
+                    <div><span style="display: inline-block; width: 12px; height: 12px; background: #fce5cd; border: 2px solid #fd7e14; margin-right: 8px; vertical-align: middle;"></span>Hybrid Outcome</div>
+                    <div><span style="display: inline-block; width: 12px; height: 12px; background: #fff; border: 2px dashed #dc3545; margin-right: 8px; vertical-align: middle;"></span>Orphaned/Unreachable</div>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Hidden data for JavaScript -->
+    <script type="application/json" id="questionnaire-flow-data">
+    <?php
+    // Generate flow diagram data
+    $flow_data = $this->generate_flow_diagram($questionnaire, $questions, $outcomes);
+    echo json_encode($flow_data);
+    ?>
+    </script>
 </div>
 
 <!-- Hidden template for new answer option row (populated by JS) -->

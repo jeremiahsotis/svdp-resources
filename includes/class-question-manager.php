@@ -168,26 +168,49 @@ class Question_Manager {
      */
     public static function get_next_step($question_id, $answer_option_id) {
         global $wpdb;
-        $table = $wpdb->prefix . 'questionnaire_answer_options';
 
-        $answer = $wpdb->get_row(
+        // For multiple_choice and yes_no questions, get next step from answer option
+        if ($answer_option_id) {
+            $answer_table = $wpdb->prefix . 'questionnaire_answer_options';
+
+            $answer = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT next_question_id, outcome_id FROM $answer_table WHERE id = %d",
+                    $answer_option_id
+                ),
+                ARRAY_A
+            );
+
+            if ($answer) {
+                if ($answer['outcome_id']) {
+                    return array('type' => 'outcome', 'id' => $answer['outcome_id']);
+                }
+
+                if ($answer['next_question_id']) {
+                    return array('type' => 'question', 'id' => $answer['next_question_id']);
+                }
+            }
+        }
+
+        // For text and info_only questions, get next step from question itself
+        $question_table = $wpdb->prefix . 'questionnaire_questions';
+
+        $question = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT next_question_id, outcome_id FROM $table WHERE id = %d",
-                $answer_option_id
+                "SELECT next_question_id, outcome_id FROM $question_table WHERE id = %d",
+                $question_id
             ),
             ARRAY_A
         );
 
-        if (!$answer) {
-            return null;
-        }
+        if ($question) {
+            if ($question['outcome_id']) {
+                return array('type' => 'outcome', 'id' => $question['outcome_id']);
+            }
 
-        if ($answer['outcome_id']) {
-            return array('type' => 'outcome', 'id' => $answer['outcome_id']);
-        }
-
-        if ($answer['next_question_id']) {
-            return array('type' => 'question', 'id' => $answer['next_question_id']);
+            if ($question['next_question_id']) {
+                return array('type' => 'question', 'id' => $question['next_question_id']);
+            }
         }
 
         return null;

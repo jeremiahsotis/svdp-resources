@@ -12,7 +12,17 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Get all available conferences
 $all_conferences = Location_Service::get_all_conferences();
+
+// Filter by questionnaire geography if specified
+if (!empty($questionnaire['geography'])) {
+    $allowed_geographies = array_map('trim', explode(',', $questionnaire['geography']));
+    $all_conferences = array_intersect($all_conferences, $allowed_geographies);
+    // Re-index array to avoid gaps in array keys
+    $all_conferences = array_values($all_conferences);
+}
+
 $wpgmaps_available = Location_Service::is_wpgmaps_available();
 ?>
 

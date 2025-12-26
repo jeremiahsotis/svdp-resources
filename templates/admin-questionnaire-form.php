@@ -69,7 +69,7 @@ if ($has_data && !empty($questionnaire['geography'])) {
                                id="slug"
                                class="regular-text"
                                value="<?php echo $has_data ? esc_attr($questionnaire['slug']) : ''; ?>"
-                               pattern="[a-z0-9-]+"
+                               pattern="[a-z0-9\-]+"
                                placeholder="auto-generated from name">
                         <p class="description">
                             URL-friendly version of the name. Letters, numbers, and hyphens only. Leave blank to auto-generate.
