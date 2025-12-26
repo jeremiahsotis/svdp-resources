@@ -516,28 +516,86 @@ class Monday_Resources_Admin {
             </form>
 
             <!-- Export Modal -->
-            <div id="export-modal" style="display: none; position: fixed; z-index: 100000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4);">
-                <div style="background-color: #fff; margin: 10% auto; padding: 30px; border: 1px solid #888; width: 500px; border-radius: 5px;">
+            <div id="export-modal" style="display: none; position: fixed; z-index: 100000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); overflow-y: auto;">
+                <div style="background-color: #fff; margin: 5% auto; padding: 30px; border: 1px solid #888; width: 700px; border-radius: 5px; max-height: 90vh; overflow-y: auto;">
                     <span class="close-export-modal" style="float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
                     <h2>Export Resources</h2>
-                    <p>Choose a format to export all resources:</p>
 
-                    <div style="margin: 20px 0;">
-                        <button type="button" class="button button-primary button-large export-format-btn" data-format="csv" style="display: block; width: 100%; margin-bottom: 10px; padding: 15px;">
-                            <span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> Export as CSV
-                        </button>
-                        <button type="button" class="button button-primary button-large export-format-btn" data-format="excel" style="display: block; width: 100%; margin-bottom: 10px; padding: 15px;">
-                            <span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> Export as Excel (XLSX)
-                        </button>
-                        <button type="button" class="button button-primary button-large export-format-btn" data-format="json" style="display: block; width: 100%; margin-bottom: 10px; padding: 15px;">
-                            <span class="dashicons dashicons-media-code" style="margin-top: 3px;"></span> Export as JSON
-                        </button>
-                        <button type="button" class="button button-primary button-large export-format-btn" data-format="pdf" style="display: block; width: 100%; margin-bottom: 10px; padding: 15px;">
-                            <span class="dashicons dashicons-media-document" style="margin-top: 3px;"></span> Export as PDF
-                        </button>
+                    <!-- Step 1: Choose What to Export -->
+                    <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 3px solid #0073aa;">
+                        <h3 style="margin-top: 0;">1. Choose Resources to Export</h3>
+                        <label style="display: block; margin: 10px 0;">
+                            <input type="radio" name="export_scope" value="all" checked>
+                            <strong>Export All Resources</strong> (<?php echo count($resources); ?> total)
+                        </label>
+                        <label style="display: block; margin: 10px 0;">
+                            <input type="radio" name="export_scope" value="selected">
+                            <strong>Export Selected Only</strong> <span class="selected-count">(0 selected)</span>
+                        </label>
+                        <label style="display: block; margin: 10px 0;">
+                            <input type="radio" name="export_scope" value="filtered">
+                            <strong>Export Current Filter Results</strong>
+                            <?php if ($search || $status_filter || $service_filter): ?>
+                                (Active filters applied)
+                            <?php else: ?>
+                                (No filters active - same as Export All)
+                            <?php endif; ?>
+                        </label>
                     </div>
 
-                    <p class="description">Excel and PDF formats require Composer dependencies. If not installed, these will show an error.</p>
+                    <!-- Step 2: Choose Fields -->
+                    <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 3px solid #00a32a;">
+                        <h3 style="margin-top: 0;">2. Choose Fields to Include</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                            <label><input type="checkbox" name="export_fields[]" value="id" checked> ID</label>
+                            <label><input type="checkbox" name="export_fields[]" value="resource_name" checked> Resource Name</label>
+                            <label><input type="checkbox" name="export_fields[]" value="organization"> Organization</label>
+                            <label><input type="checkbox" name="export_fields[]" value="primary_service_type" checked> Primary Service Type</label>
+                            <label><input type="checkbox" name="export_fields[]" value="secondary_service_type"> Secondary Service Type</label>
+                            <label><input type="checkbox" name="export_fields[]" value="phone" checked> Phone</label>
+                            <label><input type="checkbox" name="export_fields[]" value="email"> Email</label>
+                            <label><input type="checkbox" name="export_fields[]" value="website"> Website</label>
+                            <label><input type="checkbox" name="export_fields[]" value="physical_address" checked> Physical Address</label>
+                            <label><input type="checkbox" name="export_fields[]" value="what_they_provide"> What They Provide</label>
+                            <label><input type="checkbox" name="export_fields[]" value="how_to_apply"> How to Apply</label>
+                            <label><input type="checkbox" name="export_fields[]" value="documents_required"> Documents Required</label>
+                            <label><input type="checkbox" name="export_fields[]" value="target_population"> Target Population</label>
+                            <label><input type="checkbox" name="export_fields[]" value="income_requirements"> Income Requirements</label>
+                            <label><input type="checkbox" name="export_fields[]" value="geography"> Geography</label>
+                            <label><input type="checkbox" name="export_fields[]" value="office_hours" checked> Office Hours</label>
+                            <label><input type="checkbox" name="export_fields[]" value="service_hours" checked> Service Hours</label>
+                            <label><input type="checkbox" name="export_fields[]" value="last_verified"> Last Verified</label>
+                            <label><input type="checkbox" name="export_fields[]" value="verification_status"> Verification Status</label>
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <button type="button" class="button" id="select-all-fields">Select All</button>
+                            <button type="button" class="button" id="select-none-fields">Select None</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Choose Format -->
+                    <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 3px solid #d63638;">
+                        <h3 style="margin-top: 0;">3. Choose Export Format</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <button type="button" class="button button-primary button-large export-format-btn" data-format="csv" style="padding: 15px;">
+                                <span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> CSV
+                            </button>
+                            <button type="button" class="button button-primary button-large export-format-btn" data-format="excel" style="padding: 15px;">
+                                <span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> Excel (XLSX)
+                            </button>
+                            <button type="button" class="button button-primary button-large export-format-btn" data-format="json" style="padding: 15px;">
+                                <span class="dashicons dashicons-media-code" style="margin-top: 3px;"></span> JSON
+                            </button>
+                            <button type="button" class="button button-primary button-large export-format-btn" data-format="pdf" style="padding: 15px;">
+                                <span class="dashicons dashicons-media-document" style="margin-top: 3px;"></span> PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <p class="description" style="margin-top: 20px;">
+                        <strong>Note:</strong> Excel and PDF formats require Composer dependencies.
+                        Run <code>composer install</code> in the plugin directory if not installed.
+                    </p>
                 </div>
             </div>
 
@@ -552,10 +610,21 @@ class Monday_Resources_Admin {
 
                 // Export modal functionality
                 jQuery(document).ready(function($) {
+                    // Update selected count when checkboxes change
+                    function updateSelectedCount() {
+                        var count = $('input[name="resource_ids[]"]:checked').length;
+                        $('.selected-count').text('(' + count + ' selected)');
+                    }
+
+                    $('input[name="resource_ids[]"]').on('change', updateSelectedCount);
+
+                    // Open export modal
                     $('#export-resources-btn').on('click', function() {
+                        updateSelectedCount();
                         $('#export-modal').fadeIn();
                     });
 
+                    // Close modal
                     $('.close-export-modal').on('click', function() {
                         $('#export-modal').fadeOut();
                     });
@@ -566,19 +635,89 @@ class Monday_Resources_Admin {
                         }
                     });
 
+                    // Field selection helpers
+                    $('#select-all-fields').on('click', function() {
+                        $('input[name="export_fields[]"]').prop('checked', true);
+                    });
+
+                    $('#select-none-fields').on('click', function() {
+                        $('input[name="export_fields[]"]').prop('checked', false);
+                    });
+
+                    // Export button click
                     $('.export-format-btn').on('click', function() {
                         var format = $(this).data('format');
                         var $btn = $(this);
-                        var originalText = $btn.text();
+                        var originalText = $btn.html();
 
-                        $btn.prop('disabled', true).text('Exporting...');
+                        // Get export scope
+                        var scope = $('input[name="export_scope"]:checked').val();
+
+                        // Get selected resource IDs (if scope is 'selected')
+                        var resourceIds = [];
+                        if (scope === 'selected') {
+                            $('input[name="resource_ids[]"]:checked').each(function() {
+                                resourceIds.push($(this).val());
+                            });
+
+                            if (resourceIds.length === 0) {
+                                alert('Please select at least one resource to export.');
+                                return;
+                            }
+                        }
+
+                        // Get selected fields
+                        var fields = [];
+                        $('input[name="export_fields[]"]:checked').each(function() {
+                            fields.push($(this).val());
+                        });
+
+                        if (fields.length === 0) {
+                            alert('Please select at least one field to export.');
+                            return;
+                        }
+
+                        // Build URL with parameters
+                        var params = new URLSearchParams({
+                            action: 'export_resources',
+                            format: format,
+                            scope: scope,
+                            _wpnonce: '<?php echo wp_create_nonce('export_resources'); ?>'
+                        });
+
+                        // Add fields
+                        fields.forEach(function(field) {
+                            params.append('fields[]', field);
+                        });
+
+                        // Add resource IDs if selected scope
+                        if (scope === 'selected') {
+                            resourceIds.forEach(function(id) {
+                                params.append('ids[]', id);
+                            });
+                        }
+
+                        // Add current filters if filtered scope
+                        if (scope === 'filtered') {
+                            <?php if ($search): ?>
+                            params.append('search', '<?php echo esc_js($search); ?>');
+                            <?php endif; ?>
+                            <?php if ($status_filter): ?>
+                            params.append('status', '<?php echo esc_js($status_filter); ?>');
+                            <?php endif; ?>
+                            <?php if ($service_filter): ?>
+                            params.append('service', '<?php echo esc_js($service_filter); ?>');
+                            <?php endif; ?>
+                        }
+
+                        $btn.prop('disabled', true).html('Exporting...');
 
                         // Trigger download
-                        window.location.href = ajaxurl + '?action=export_resources&format=' + format + '&_wpnonce=' + '<?php echo wp_create_nonce('export_resources'); ?>';
+                        window.location.href = ajaxurl + '?' + params.toString();
 
                         // Re-enable button after delay
                         setTimeout(function() {
-                            $btn.prop('disabled', false).text(originalText);
+                            $btn.prop('disabled', false).html(originalText);
                             $('#export-modal').fadeOut();
                         }, 2000);
                     });
@@ -2389,7 +2528,7 @@ class Monday_Resources_Admin {
     }
 
     /**
-     * Export resources AJAX handler
+     * Export resources AJAX handler with full filtering and field selection
      */
     public function export_resources() {
         // Verify nonce
@@ -2400,11 +2539,127 @@ class Monday_Resources_Admin {
             wp_die('Unauthorized');
         }
 
+        global $wpdb;
+        $resources_table = $wpdb->prefix . 'resources';
+
         // Get format
         $format = isset($_GET['format']) ? sanitize_text_field($_GET['format']) : 'csv';
 
-        // Get all resources
-        $resources = Resource_Exporter::get_all_resources_for_export();
+        // Get export scope
+        $scope = isset($_GET['scope']) ? sanitize_text_field($_GET['scope']) : 'all';
+
+        // Get selected fields
+        $selected_fields = isset($_GET['fields']) && is_array($_GET['fields']) ? array_map('sanitize_text_field', $_GET['fields']) : null;
+
+        // Build field map based on selection
+        $field_labels = array(
+            'id' => 'ID',
+            'resource_name' => 'Resource Name',
+            'organization' => 'Organization',
+            'primary_service_type' => 'Primary Service Type',
+            'secondary_service_type' => 'Secondary Service Type',
+            'phone' => 'Phone',
+            'email' => 'Email',
+            'website' => 'Website',
+            'physical_address' => 'Physical Address',
+            'what_they_provide' => 'What They Provide',
+            'how_to_apply' => 'How to Apply',
+            'documents_required' => 'Documents Required',
+            'target_population' => 'Target Population',
+            'income_requirements' => 'Income Requirements',
+            'geography' => 'Geography',
+            'office_hours' => 'Office Hours',
+            'service_hours' => 'Service Hours',
+            'last_verified' => 'Last Verified',
+            'verification_status' => 'Verification Status'
+        );
+
+        // Filter to selected fields only
+        if ($selected_fields) {
+            $fields = array();
+            foreach ($selected_fields as $field) {
+                if (isset($field_labels[$field])) {
+                    $fields[$field] = $field_labels[$field];
+                }
+            }
+        } else {
+            $fields = null; // Use defaults
+        }
+
+        // Get resources based on scope
+        $resources = array();
+
+        if ($scope === 'selected') {
+            // Export only selected IDs
+            $ids = isset($_GET['ids']) && is_array($_GET['ids']) ? array_map('intval', $_GET['ids']) : array();
+            if (empty($ids)) {
+                wp_die('No resources selected');
+            }
+
+            $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+            $resources = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT * FROM $resources_table WHERE id IN ($placeholders) ORDER BY resource_name ASC",
+                    $ids
+                ),
+                ARRAY_A
+            );
+
+        } elseif ($scope === 'filtered') {
+            // Export based on current filters
+            $where = array('1=1');
+            $query_params = array();
+
+            if (isset($_GET['search']) && !empty($_GET['search'])) {
+                $search = '%' . $wpdb->esc_like(sanitize_text_field($_GET['search'])) . '%';
+                $where[] = '(resource_name LIKE %s OR organization LIKE %s OR primary_service_type LIKE %s)';
+                $query_params[] = $search;
+                $query_params[] = $search;
+                $query_params[] = $search;
+            }
+
+            if (isset($_GET['status']) && !empty($_GET['status'])) {
+                $where[] = 'verification_status = %s';
+                $query_params[] = sanitize_text_field($_GET['status']);
+            }
+
+            if (isset($_GET['service']) && !empty($_GET['service'])) {
+                $where[] = 'primary_service_type = %s';
+                $query_params[] = sanitize_text_field($_GET['service']);
+            }
+
+            $sql = "SELECT * FROM $resources_table WHERE " . implode(' AND ', $where) . " ORDER BY resource_name ASC";
+
+            if (!empty($query_params)) {
+                $resources = $wpdb->get_results($wpdb->prepare($sql, $query_params), ARRAY_A);
+            } else {
+                $resources = $wpdb->get_results($sql, ARRAY_A);
+            }
+
+        } else {
+            // Export all resources
+            $resources = $wpdb->get_results(
+                "SELECT * FROM $resources_table ORDER BY resource_name ASC",
+                ARRAY_A
+            );
+        }
+
+        if (empty($resources)) {
+            wp_die('No resources to export');
+        }
+
+        // Enhance with hours data if hours fields are selected
+        if (!$selected_fields || in_array('office_hours', $selected_fields) || in_array('service_hours', $selected_fields)) {
+            foreach ($resources as &$resource) {
+                if (class_exists('Resource_Hours_Manager')) {
+                    $hours_data = Resource_Hours_Manager::get_hours($resource['id']);
+                    if ($hours_data) {
+                        $resource['office_hours'] = $hours_data['office_hours'];
+                        $resource['service_hours'] = $hours_data['service_hours'];
+                    }
+                }
+            }
+        }
 
         // Generate export based on format
         $content = null;
@@ -2413,13 +2668,13 @@ class Monday_Resources_Admin {
 
         switch ($format) {
             case 'csv':
-                $content = Resource_Exporter::export_csv($resources);
+                $content = Resource_Exporter::export_csv($resources, $fields);
                 $filename .= 'csv';
                 $mime_type = 'text/csv';
                 break;
 
             case 'excel':
-                $content = Resource_Exporter::export_excel($resources);
+                $content = Resource_Exporter::export_excel($resources, $fields);
                 if (is_wp_error($content)) {
                     wp_die('Error: ' . $content->get_error_message());
                 }
@@ -2434,7 +2689,7 @@ class Monday_Resources_Admin {
                 break;
 
             case 'pdf':
-                $content = Resource_Exporter::export_pdf($resources);
+                $content = Resource_Exporter::export_pdf($resources, $fields);
                 if (is_wp_error($content)) {
                     wp_die('Error: ' . $content->get_error_message());
                 }
