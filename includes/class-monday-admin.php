@@ -20,6 +20,9 @@ class Monday_Resources_Admin {
         add_action('admin_post_delete_submission', array($this, 'delete_submission'));
         add_action('admin_post_update_issue_status', array($this, 'update_issue_status'));
         add_action('admin_post_update_submission_status', array($this, 'update_submission_status'));
+
+        // Export AJAX endpoint
+        add_action('wp_ajax_export_resources', array($this, 'export_resources'));
     }
 
     /**
@@ -353,6 +356,7 @@ class Monday_Resources_Admin {
         <div class="wrap">
             <h1 class="wp-heading-inline">Community Resources</h1>
             <a href="<?php echo admin_url('admin.php?page=monday-resources-add'); ?>" class="page-title-action">Add New</a>
+            <button type="button" class="page-title-action" id="export-resources-btn" style="margin-left: 5px;">Export Resources</button>
             <hr class="wp-header-end">
 
             <?php if (isset($_GET['deleted']) && $_GET['deleted'] == '1'): ?>
@@ -511,6 +515,32 @@ class Monday_Resources_Admin {
                 <?php endif; ?>
             </form>
 
+            <!-- Export Modal -->
+            <div id="export-modal" style="display: none; position: fixed; z-index: 100000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4);">
+                <div style="background-color: #fff; margin: 10% auto; padding: 30px; border: 1px solid #888; width: 500px; border-radius: 5px;">
+                    <span class="close-export-modal" style="float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+                    <h2>Export Resources</h2>
+                    <p>Choose a format to export all resources:</p>
+
+                    <div style="margin: 20px 0;">
+                        <button type="button" class="button button-primary button-large export-format-btn" data-format="csv" style="display: block; width: 100%; margin-bottom: 10px; padding: 15px;">
+                            <span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> Export as CSV
+                        </button>
+                        <button type="button" class="button button-primary button-large export-format-btn" data-format="excel" style="display: block; width: 100%; margin-bottom: 10px; padding: 15px;">
+                            <span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> Export as Excel (XLSX)
+                        </button>
+                        <button type="button" class="button button-primary button-large export-format-btn" data-format="json" style="display: block; width: 100%; margin-bottom: 10px; padding: 15px;">
+                            <span class="dashicons dashicons-media-code" style="margin-top: 3px;"></span> Export as JSON
+                        </button>
+                        <button type="button" class="button button-primary button-large export-format-btn" data-format="pdf" style="display: block; width: 100%; margin-bottom: 10px; padding: 15px;">
+                            <span class="dashicons dashicons-media-document" style="margin-top: 3px;"></span> Export as PDF
+                        </button>
+                    </div>
+
+                    <p class="description">Excel and PDF formats require Composer dependencies. If not installed, these will show an error.</p>
+                </div>
+            </div>
+
             <script>
                 // Select all checkbox functionality
                 document.getElementById('cb-select-all').addEventListener('change', function() {
@@ -518,6 +548,40 @@ class Monday_Resources_Admin {
                     checkboxes.forEach(function(checkbox) {
                         checkbox.checked = this.checked;
                     }, this);
+                });
+
+                // Export modal functionality
+                jQuery(document).ready(function($) {
+                    $('#export-resources-btn').on('click', function() {
+                        $('#export-modal').fadeIn();
+                    });
+
+                    $('.close-export-modal').on('click', function() {
+                        $('#export-modal').fadeOut();
+                    });
+
+                    $(window).on('click', function(e) {
+                        if (e.target.id === 'export-modal') {
+                            $('#export-modal').fadeOut();
+                        }
+                    });
+
+                    $('.export-format-btn').on('click', function() {
+                        var format = $(this).data('format');
+                        var $btn = $(this);
+                        var originalText = $btn.text();
+
+                        $btn.prop('disabled', true).text('Exporting...');
+
+                        // Trigger download
+                        window.location.href = ajaxurl + '?action=export_resources&format=' + format + '&_wpnonce=' + '<?php echo wp_create_nonce('export_resources'); ?>';
+
+                        // Re-enable button after delay
+                        setTimeout(function() {
+                            $btn.prop('disabled', false).text(originalText);
+                            $('#export-modal').fadeOut();
+                        }, 2000);
+                    });
                 });
             </script>
         </div>
@@ -1532,139 +1596,397 @@ class Monday_Resources_Admin {
                             }
                             ?>
 
+                            <?php
+                            // Ensure we have separate flags for office and service
+                            if (!isset($hours_data['office_flags'])) {
+                                $hours_data['office_flags'] = isset($hours_data['flags']) ? $hours_data['flags'] : array(
+                                    'is_24_7' => false,
+                                    'is_by_appointment' => false,
+                                    'is_call_for_availability' => false,
+                                    'is_currently_closed' => false,
+                                    'special_notes' => ''
+                                );
+                            }
+                            if (!isset($hours_data['service_flags'])) {
+                                $hours_data['service_flags'] = array(
+                                    'is_24_7' => false,
+                                    'is_by_appointment' => false,
+                                    'is_call_for_availability' => false,
+                                    'is_currently_closed' => false,
+                                    'special_notes' => ''
+                                );
+                            }
+                            ?>
+
                             <div class="hours-of-operation-section" style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9;">
-                                <!-- Special Situations -->
-                                <div style="margin-bottom: 20px;">
-                                    <h4 style="margin-top: 0;">Special Situations:</h4>
+
+                                <!-- Office Hours Special Situations -->
+                                <div style="margin-bottom: 20px; padding: 10px; background: #fff; border-left: 3px solid #0073aa;">
+                                    <h4 style="margin-top: 0;">Office Hours Special Situations</h4>
+                                    <p class="description">These apply to when your office is reachable by phone/email</p>
                                     <label style="display: block; margin: 5px 0;">
-                                        <input type="checkbox" name="hours_24_7" id="hours_24_7" value="1"
-                                               <?php checked($hours_data['flags']['is_24_7']); ?>>
-                                        Open 24/7
+                                        <input type="checkbox" name="office_flags[is_24_7]" value="1"
+                                               <?php checked(!empty($hours_data['office_flags']['is_24_7'])); ?>>
+                                        Office Open 24/7
                                     </label>
                                     <label style="display: block; margin: 5px 0;">
-                                        <input type="checkbox" name="hours_by_appointment" id="hours_by_appointment" value="1"
-                                               <?php checked($hours_data['flags']['is_by_appointment']); ?>>
-                                        By Appointment Only
+                                        <input type="checkbox" name="office_flags[is_by_appointment]" value="1"
+                                               <?php checked(!empty($hours_data['office_flags']['is_by_appointment'])); ?>>
+                                        Office By Appointment Only
                                     </label>
                                     <label style="display: block; margin: 5px 0;">
-                                        <input type="checkbox" name="hours_call_for_availability" id="hours_call_for_availability" value="1"
-                                               <?php checked($hours_data['flags']['is_call_for_availability']); ?>>
-                                        Call for Availability
+                                        <input type="checkbox" name="office_flags[is_call_for_availability]" value="1"
+                                               <?php checked(!empty($hours_data['office_flags']['is_call_for_availability'])); ?>>
+                                        Call for Office Availability
                                     </label>
                                     <label style="display: block; margin: 5px 0;">
-                                        <input type="checkbox" name="hours_currently_closed" id="hours_currently_closed" value="1"
-                                               <?php checked($hours_data['flags']['is_currently_closed']); ?>>
-                                        Currently Closed
+                                        <input type="checkbox" name="office_flags[is_currently_closed]" value="1"
+                                               <?php checked(!empty($hours_data['office_flags']['is_currently_closed'])); ?>>
+                                        Office Currently Closed
                                     </label>
+                                    <div style="margin-top: 10px;">
+                                        <label><strong>Office Special Notes:</strong></label>
+                                        <textarea name="office_flags[special_notes]" class="large-text" rows="2"
+                                                  placeholder="Holiday closures, special office hours, etc."><?php
+                                            echo esc_textarea(!empty($hours_data['office_flags']['special_notes']) ? $hours_data['office_flags']['special_notes'] : '');
+                                        ?></textarea>
+                                    </div>
                                 </div>
 
-                                <!-- Office Hours -->
+                                <!-- Office Hours (Full Implementation) -->
                                 <div id="office_hours_section" style="margin-bottom: 20px;">
                                     <h4 style="margin-bottom: 10px;">Office Hours</h4>
                                     <p class="description" style="margin-bottom: 10px;">When the admin office is open for calls/inquiries</p>
 
-                                    <table class="widefat" style="max-width: 600px;">
-                                        <thead>
-                                            <tr>
-                                                <th style="width: 25%;">Day</th>
-                                                <th style="width: 15%;">Closed</th>
-                                                <th style="width: 30%;">Opens</th>
-                                                <th style="width: 30%;">Closes</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php
-                                            $days = Resource_Hours_Manager::DAY_NAMES;
-                                            for ($day = 0; $day <= 6; $day++):
-                                                $day_hours = isset($hours_data['office_hours'][$day]) ? $hours_data['office_hours'][$day] : null;
-                                                $is_closed = $day_hours ? $day_hours['is_closed'] : ($day == 0 || $day == 6); // Default Sat/Sun closed
-                                                $open_time = $day_hours && !$is_closed ? substr($day_hours['open_time'], 0, 5) : '09:00';
-                                                $close_time = $day_hours && !$is_closed ? substr($day_hours['close_time'], 0, 5) : '17:00';
-                                            ?>
-                                            <tr>
-                                                <td><strong><?php echo $days[$day]; ?></strong></td>
-                                                <td>
-                                                    <input type="checkbox" name="office_hours[<?php echo $day; ?>][is_closed]"
-                                                           class="office-closed-checkbox" data-day="<?php echo $day; ?>"
-                                                           value="1" <?php checked($is_closed); ?>>
-                                                </td>
-                                                <td>
-                                                    <input type="time" name="office_hours[<?php echo $day; ?>][open_time]"
-                                                           class="office-time-input" data-day="<?php echo $day; ?>"
-                                                           value="<?php echo esc_attr($open_time); ?>"
-                                                           <?php if ($is_closed) echo 'disabled'; ?>>
-                                                </td>
-                                                <td>
-                                                    <input type="time" name="office_hours[<?php echo $day; ?>][close_time]"
-                                                           class="office-time-input" data-day="<?php echo $day; ?>"
-                                                           value="<?php echo esc_attr($close_time); ?>"
-                                                           <?php if ($is_closed) echo 'disabled'; ?>>
-                                                </td>
-                                            </tr>
-                                            <?php endfor; ?>
-                                        </tbody>
-                                    </table>
+                                    <?php
+                                    $days = Resource_Hours_Manager::DAY_NAMES;
+                                    for ($day = 0; $day <= 6; $day++):
+                                        $day_hours = isset($hours_data['office_hours'][$day]) ? $hours_data['office_hours'][$day] : null;
+
+                                        // Detect mode from existing data
+                                        $current_mode = 'simple';
+                                        $is_closed = false;
+                                        $simple_open = '09:00';
+                                        $simple_close = '17:00';
+                                        $blocks = array();
+                                        $recurring = array('pattern' => 'weekly', 'week' => 2, 'open' => '14:00', 'close' => '17:00');
+
+                                        if ($day_hours) {
+                                            if (isset($day_hours['mode'])) {
+                                                $current_mode = $day_hours['mode'];
+                                            }
+                                            $is_closed = isset($day_hours['is_closed']) ? $day_hours['is_closed'] : false;
+
+                                            if ($is_closed) {
+                                                $current_mode = 'closed';
+                                            } elseif (isset($day_hours['simple'])) {
+                                                $simple_open = substr($day_hours['simple']['open'], 0, 5);
+                                                $simple_close = substr($day_hours['simple']['close'], 0, 5);
+                                            } elseif (isset($day_hours['blocks'])) {
+                                                $blocks = $day_hours['blocks'];
+                                            } elseif (isset($day_hours['recurring'])) {
+                                                $recurring = $day_hours['recurring'];
+                                            } elseif (isset($day_hours['open_time'])) {
+                                                // Old format
+                                                $simple_open = substr($day_hours['open_time'], 0, 5);
+                                                $simple_close = substr($day_hours['close_time'], 0, 5);
+                                            }
+                                        } else {
+                                            // Default: weekends closed
+                                            if ($day == 0 || $day == 6) {
+                                                $is_closed = true;
+                                                $current_mode = 'closed';
+                                            }
+                                        }
+                                    ?>
+                                        <div class="hours-day-container" style="border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; background: #fff;" data-day="<?php echo $day; ?>" data-type="office">
+                                            <h5 style="margin-top: 0;"><?php echo $days[$day]; ?></h5>
+
+                                            <!-- Mode Selector -->
+                                            <div class="hours-mode-selector" style="margin-bottom: 10px;">
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="office_hours[<?php echo $day; ?>][mode]" value="closed"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="office"
+                                                           <?php checked($current_mode, 'closed'); ?>>
+                                                    Closed
+                                                </label>
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="office_hours[<?php echo $day; ?>][mode]" value="simple"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="office"
+                                                           <?php checked($current_mode, 'simple'); ?>>
+                                                    Regular Hours
+                                                </label>
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="office_hours[<?php echo $day; ?>][mode]" value="multiple"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="office"
+                                                           <?php checked($current_mode, 'multiple'); ?>>
+                                                    Multiple Blocks
+                                                </label>
+                                                <label>
+                                                    <input type="radio" name="office_hours[<?php echo $day; ?>][mode]" value="recurring"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="office"
+                                                           <?php checked($current_mode, 'recurring'); ?>>
+                                                    Recurring Pattern
+                                                </label>
+                                            </div>
+
+                                            <!-- Simple Hours -->
+                                            <div class="hours-simple-container" style="<?php echo $current_mode !== 'simple' ? 'display:none;' : ''; ?>">
+                                                <input type="time" name="office_hours[<?php echo $day; ?>][simple][open]"
+                                                       value="<?php echo esc_attr($simple_open); ?>" style="margin-right: 5px;">
+                                                to
+                                                <input type="time" name="office_hours[<?php echo $day; ?>][simple][close]"
+                                                       value="<?php echo esc_attr($simple_close); ?>" style="margin-left: 5px;">
+                                            </div>
+
+                                            <!-- Multiple Blocks -->
+                                            <div class="hours-multiple-container" style="<?php echo $current_mode !== 'multiple' ? 'display:none;' : ''; ?>">
+                                                <div class="hours-blocks-list" data-day="<?php echo $day; ?>" data-type="office">
+                                                    <?php if (!empty($blocks)): ?>
+                                                        <?php foreach ($blocks as $index => $block): ?>
+                                                            <div class="hours-block-row" style="margin-bottom: 8px;">
+                                                                <span style="margin-right: 5px;">Block <?php echo $index + 1; ?>:</span>
+                                                                <input type="time" name="office_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][open]"
+                                                                       value="<?php echo esc_attr(substr($block['open'], 0, 5)); ?>" style="margin-right: 5px;">
+                                                                to
+                                                                <input type="time" name="office_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][close]"
+                                                                       value="<?php echo esc_attr(substr($block['close'], 0, 5)); ?>" style="margin: 0 5px;">
+                                                                <input type="text" name="office_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][label]"
+                                                                       value="<?php echo esc_attr($block['label'] ?? ''); ?>"
+                                                                       placeholder="Label (optional)" style="width: 120px; margin-right: 5px;">
+                                                                <button type="button" class="button remove-block-btn" style="color: #a00;">Remove</button>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <button type="button" class="button add-block-btn" data-day="<?php echo $day; ?>" data-type="office">+ Add Time Block</button>
+                                            </div>
+
+                                            <!-- Recurring Pattern -->
+                                            <div class="hours-recurring-container" style="<?php echo $current_mode !== 'recurring' ? 'display:none;' : ''; ?>">
+                                                <select name="office_hours[<?php echo $day; ?>][recurring][pattern]"
+                                                        class="recurring-pattern-select" data-day="<?php echo $day; ?>" data-type="office"
+                                                        style="margin-right: 10px;">
+                                                    <option value="weekly" <?php selected($recurring['pattern'] ?? 'weekly', 'weekly'); ?>>Weekly</option>
+                                                    <option value="biweekly" <?php selected($recurring['pattern'] ?? '', 'biweekly'); ?>>Every Other Week</option>
+                                                    <option value="monthly_week" <?php selected($recurring['pattern'] ?? '', 'monthly_week'); ?>>Monthly (Specific Week)</option>
+                                                    <option value="monthly_date" <?php selected($recurring['pattern'] ?? '', 'monthly_date'); ?>>Monthly (Specific Date)</option>
+                                                </select>
+
+                                                <div class="recurring-monthly-week-fields" style="display: <?php echo ($recurring['pattern'] ?? '') === 'monthly_week' ? 'inline-block' : 'none'; ?>; margin-right: 10px;">
+                                                    <select name="office_hours[<?php echo $day; ?>][recurring][week]">
+                                                        <option value="1" <?php selected($recurring['week'] ?? 1, 1); ?>>1st</option>
+                                                        <option value="2" <?php selected($recurring['week'] ?? 1, 2); ?>>2nd</option>
+                                                        <option value="3" <?php selected($recurring['week'] ?? 1, 3); ?>>3rd</option>
+                                                        <option value="4" <?php selected($recurring['week'] ?? 1, 4); ?>>4th</option>
+                                                        <option value="5" <?php selected($recurring['week'] ?? 1, 5); ?>>Last</option>
+                                                    </select>
+                                                    <?php echo $days[$day]; ?> of the month
+                                                </div>
+
+                                                <div class="recurring-monthly-date-fields" style="display: <?php echo ($recurring['pattern'] ?? '') === 'monthly_date' ? 'inline-block' : 'none'; ?>; margin-right: 10px;">
+                                                    Day <input type="number" name="office_hours[<?php echo $day; ?>][recurring][day_of_month]"
+                                                               value="<?php echo esc_attr($recurring['day_of_month'] ?? 15); ?>"
+                                                               min="1" max="31" style="width: 60px;"> of the month
+                                                </div>
+
+                                                <div style="margin-top: 10px;">
+                                                    <input type="time" name="office_hours[<?php echo $day; ?>][recurring][open]"
+                                                           value="<?php echo esc_attr(substr($recurring['open'] ?? '14:00', 0, 5)); ?>" style="margin-right: 5px;">
+                                                    to
+                                                    <input type="time" name="office_hours[<?php echo $day; ?>][recurring][close]"
+                                                           value="<?php echo esc_attr(substr($recurring['close'] ?? '17:00', 0, 5)); ?>" style="margin-left: 5px;">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endfor; ?>
                                 </div>
 
-                                <!-- Service/Program Hours -->
+                                <!-- Service Hours Special Situations -->
+                                <div style="margin-bottom: 20px; padding: 10px; background: #fff; border-left: 3px solid #00a32a;">
+                                    <h4 style="margin-top: 0;">Service/Program Hours Special Situations</h4>
+                                    <p class="description">These apply to when services/programs are actually available</p>
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="checkbox" name="service_flags[is_24_7]" value="1"
+                                               <?php checked(!empty($hours_data['service_flags']['is_24_7'])); ?>>
+                                        Service Available 24/7
+                                    </label>
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="checkbox" name="service_flags[is_by_appointment]" value="1"
+                                               <?php checked(!empty($hours_data['service_flags']['is_by_appointment'])); ?>>
+                                        Service By Appointment Only
+                                    </label>
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="checkbox" name="service_flags[is_call_for_availability]" value="1"
+                                               <?php checked(!empty($hours_data['service_flags']['is_call_for_availability'])); ?>>
+                                        Call for Service Availability
+                                    </label>
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="checkbox" name="service_flags[is_currently_closed]" value="1"
+                                               <?php checked(!empty($hours_data['service_flags']['is_currently_closed'])); ?>>
+                                        Service Currently Unavailable
+                                    </label>
+                                    <div style="margin-top: 10px;">
+                                        <label><strong>Service Special Notes:</strong></label>
+                                        <textarea name="service_flags[special_notes]" class="large-text" rows="2"
+                                                  placeholder="Service-specific notes, availability details, etc."><?php
+                                            echo esc_textarea(!empty($hours_data['service_flags']['special_notes']) ? $hours_data['service_flags']['special_notes'] : '');
+                                        ?></textarea>
+                                    </div>
+                                </div>
+
+                                <!-- Service/Program Hours (Full Implementation) -->
                                 <div id="service_hours_section" style="margin-bottom: 20px;">
                                     <h4 style="margin-bottom: 10px;">Service/Program Hours</h4>
                                     <p class="description" style="margin-bottom: 10px;">When services/programs are actually available</p>
 
-                                    <label style="display: block; margin-bottom: 10px;">
+                                    <label style="display: block; margin-bottom: 15px; padding: 10px; background: #fffbcc; border-left: 3px solid #ffb900;">
                                         <input type="checkbox" id="service_same_as_office" name="service_same_as_office" value="1"
                                                <?php if (!empty($hours_data['service_same_as_office'])) echo 'checked'; ?>>
-                                        Same as Office Hours
+                                        <strong>Same as Office Hours</strong> - Automatically copies all office hours settings and flags
                                     </label>
 
-                                    <table class="widefat" id="service_hours_table" style="max-width: 600px;">
-                                        <thead>
-                                            <tr>
-                                                <th style="width: 25%;">Day</th>
-                                                <th style="width: 15%;">Closed</th>
-                                                <th style="width: 30%;">Opens</th>
-                                                <th style="width: 30%;">Closes</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php
-                                            for ($day = 0; $day <= 6; $day++):
-                                                $day_hours = isset($hours_data['service_hours'][$day]) ? $hours_data['service_hours'][$day] : null;
-                                                $is_closed = $day_hours ? $day_hours['is_closed'] : ($day == 0 || $day == 6);
-                                                $open_time = $day_hours && !$is_closed ? substr($day_hours['open_time'], 0, 5) : '09:00';
-                                                $close_time = $day_hours && !$is_closed ? substr($day_hours['close_time'], 0, 5) : '17:00';
-                                            ?>
-                                            <tr>
-                                                <td><strong><?php echo $days[$day]; ?></strong></td>
-                                                <td>
-                                                    <input type="checkbox" name="service_hours[<?php echo $day; ?>][is_closed]"
-                                                           class="service-closed-checkbox" data-day="<?php echo $day; ?>"
-                                                           value="1" <?php checked($is_closed); ?>>
-                                                </td>
-                                                <td>
-                                                    <input type="time" name="service_hours[<?php echo $day; ?>][open_time]"
-                                                           class="service-time-input" data-day="<?php echo $day; ?>"
-                                                           value="<?php echo esc_attr($open_time); ?>"
-                                                           <?php if ($is_closed) echo 'disabled'; ?>>
-                                                </td>
-                                                <td>
-                                                    <input type="time" name="service_hours[<?php echo $day; ?>][close_time]"
-                                                           class="service-time-input" data-day="<?php echo $day; ?>"
-                                                           value="<?php echo esc_attr($close_time); ?>"
-                                                           <?php if ($is_closed) echo 'disabled'; ?>>
-                                                </td>
-                                            </tr>
-                                            <?php endfor; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
+                                    <?php
+                                    for ($day = 0; $day <= 6; $day++):
+                                        $day_hours = isset($hours_data['service_hours'][$day]) ? $hours_data['service_hours'][$day] : null;
 
-                                <!-- Special Notes -->
-                                <div style="margin-bottom: 10px;">
-                                    <h4>Special Notes (Optional):</h4>
-                                    <textarea name="hours_special_notes" id="hours_special_notes"
-                                              class="large-text" rows="2"
-                                              placeholder="Additional hours info, holiday closures, etc."><?php echo esc_textarea($hours_data['special_notes']); ?></textarea>
+                                        // Detect mode from existing data
+                                        $current_mode = 'simple';
+                                        $is_closed = false;
+                                        $simple_open = '09:00';
+                                        $simple_close = '17:00';
+                                        $blocks = array();
+                                        $recurring = array('pattern' => 'weekly', 'week' => 2, 'open' => '14:00', 'close' => '17:00');
+
+                                        if ($day_hours) {
+                                            if (isset($day_hours['mode'])) {
+                                                $current_mode = $day_hours['mode'];
+                                            }
+                                            $is_closed = isset($day_hours['is_closed']) ? $day_hours['is_closed'] : false;
+
+                                            if ($is_closed) {
+                                                $current_mode = 'closed';
+                                            } elseif (isset($day_hours['simple'])) {
+                                                $simple_open = substr($day_hours['simple']['open'], 0, 5);
+                                                $simple_close = substr($day_hours['simple']['close'], 0, 5);
+                                            } elseif (isset($day_hours['blocks'])) {
+                                                $blocks = $day_hours['blocks'];
+                                            } elseif (isset($day_hours['recurring'])) {
+                                                $recurring = $day_hours['recurring'];
+                                            } elseif (isset($day_hours['open_time'])) {
+                                                // Old format
+                                                $simple_open = substr($day_hours['open_time'], 0, 5);
+                                                $simple_close = substr($day_hours['close_time'], 0, 5);
+                                            }
+                                        } else {
+                                            // Default: weekends closed
+                                            if ($day == 0 || $day == 6) {
+                                                $is_closed = true;
+                                                $current_mode = 'closed';
+                                            }
+                                        }
+                                    ?>
+                                        <div class="hours-day-container" style="border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; background: #fff;" data-day="<?php echo $day; ?>" data-type="service">
+                                            <h5 style="margin-top: 0;"><?php echo $days[$day]; ?></h5>
+
+                                            <!-- Mode Selector -->
+                                            <div class="hours-mode-selector" style="margin-bottom: 10px;">
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="service_hours[<?php echo $day; ?>][mode]" value="closed"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="service"
+                                                           <?php checked($current_mode, 'closed'); ?>>
+                                                    Closed
+                                                </label>
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="service_hours[<?php echo $day; ?>][mode]" value="simple"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="service"
+                                                           <?php checked($current_mode, 'simple'); ?>>
+                                                    Regular Hours
+                                                </label>
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="service_hours[<?php echo $day; ?>][mode]" value="multiple"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="service"
+                                                           <?php checked($current_mode, 'multiple'); ?>>
+                                                    Multiple Blocks
+                                                </label>
+                                                <label>
+                                                    <input type="radio" name="service_hours[<?php echo $day; ?>][mode]" value="recurring"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="service"
+                                                           <?php checked($current_mode, 'recurring'); ?>>
+                                                    Recurring Pattern
+                                                </label>
+                                            </div>
+
+                                            <!-- Simple Hours -->
+                                            <div class="hours-simple-container" style="<?php echo $current_mode !== 'simple' ? 'display:none;' : ''; ?>">
+                                                <input type="time" name="service_hours[<?php echo $day; ?>][simple][open]"
+                                                       value="<?php echo esc_attr($simple_open); ?>" style="margin-right: 5px;">
+                                                to
+                                                <input type="time" name="service_hours[<?php echo $day; ?>][simple][close]"
+                                                       value="<?php echo esc_attr($simple_close); ?>" style="margin-left: 5px;">
+                                            </div>
+
+                                            <!-- Multiple Blocks -->
+                                            <div class="hours-multiple-container" style="<?php echo $current_mode !== 'multiple' ? 'display:none;' : ''; ?>">
+                                                <div class="hours-blocks-list" data-day="<?php echo $day; ?>" data-type="service">
+                                                    <?php if (!empty($blocks)): ?>
+                                                        <?php foreach ($blocks as $index => $block): ?>
+                                                            <div class="hours-block-row" style="margin-bottom: 8px;">
+                                                                <span style="margin-right: 5px;">Block <?php echo $index + 1; ?>:</span>
+                                                                <input type="time" name="service_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][open]"
+                                                                       value="<?php echo esc_attr(substr($block['open'], 0, 5)); ?>" style="margin-right: 5px;">
+                                                                to
+                                                                <input type="time" name="service_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][close]"
+                                                                       value="<?php echo esc_attr(substr($block['close'], 0, 5)); ?>" style="margin: 0 5px;">
+                                                                <input type="text" name="service_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][label]"
+                                                                       value="<?php echo esc_attr($block['label'] ?? ''); ?>"
+                                                                       placeholder="Label (optional)" style="width: 120px; margin-right: 5px;">
+                                                                <button type="button" class="button remove-block-btn" style="color: #a00;">Remove</button>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <button type="button" class="button add-block-btn" data-day="<?php echo $day; ?>" data-type="service">+ Add Time Block</button>
+                                            </div>
+
+                                            <!-- Recurring Pattern -->
+                                            <div class="hours-recurring-container" style="<?php echo $current_mode !== 'recurring' ? 'display:none;' : ''; ?>">
+                                                <select name="service_hours[<?php echo $day; ?>][recurring][pattern]"
+                                                        class="recurring-pattern-select" data-day="<?php echo $day; ?>" data-type="service"
+                                                        style="margin-right: 10px;">
+                                                    <option value="weekly" <?php selected($recurring['pattern'] ?? 'weekly', 'weekly'); ?>>Weekly</option>
+                                                    <option value="biweekly" <?php selected($recurring['pattern'] ?? '', 'biweekly'); ?>>Every Other Week</option>
+                                                    <option value="monthly_week" <?php selected($recurring['pattern'] ?? '', 'monthly_week'); ?>>Monthly (Specific Week)</option>
+                                                    <option value="monthly_date" <?php selected($recurring['pattern'] ?? '', 'monthly_date'); ?>>Monthly (Specific Date)</option>
+                                                </select>
+
+                                                <div class="recurring-monthly-week-fields" style="display: <?php echo ($recurring['pattern'] ?? '') === 'monthly_week' ? 'inline-block' : 'none'; ?>; margin-right: 10px;">
+                                                    <select name="service_hours[<?php echo $day; ?>][recurring][week]">
+                                                        <option value="1" <?php selected($recurring['week'] ?? 1, 1); ?>>1st</option>
+                                                        <option value="2" <?php selected($recurring['week'] ?? 1, 2); ?>>2nd</option>
+                                                        <option value="3" <?php selected($recurring['week'] ?? 1, 3); ?>>3rd</option>
+                                                        <option value="4" <?php selected($recurring['week'] ?? 1, 4); ?>>4th</option>
+                                                        <option value="5" <?php selected($recurring['week'] ?? 1, 5); ?>>Last</option>
+                                                    </select>
+                                                    <?php echo $days[$day]; ?> of the month
+                                                </div>
+
+                                                <div class="recurring-monthly-date-fields" style="display: <?php echo ($recurring['pattern'] ?? '') === 'monthly_date' ? 'inline-block' : 'none'; ?>; margin-right: 10px;">
+                                                    Day <input type="number" name="service_hours[<?php echo $day; ?>][recurring][day_of_month]"
+                                                               value="<?php echo esc_attr($recurring['day_of_month'] ?? 15); ?>"
+                                                               min="1" max="31" style="width: 60px;"> of the month
+                                                </div>
+
+                                                <div style="margin-top: 10px;">
+                                                    <input type="time" name="service_hours[<?php echo $day; ?>][recurring][open]"
+                                                           value="<?php echo esc_attr(substr($recurring['open'] ?? '14:00', 0, 5)); ?>" style="margin-right: 5px;">
+                                                    to
+                                                    <input type="time" name="service_hours[<?php echo $day; ?>][recurring][close]"
+                                                           value="<?php echo esc_attr(substr($recurring['close'] ?? '17:00', 0, 5)); ?>" style="margin-left: 5px;">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endfor; ?>
                                 </div>
 
                                 <!-- Legacy text field (hidden, for backward compatibility) -->
@@ -1945,45 +2267,39 @@ class Monday_Resources_Admin {
             // Check if "Same as Office Hours" is checked
             $service_same_as_office = isset($_POST['service_same_as_office']) ? 1 : 0;
 
-            // Build hours data structure
+            // Build hours data structure with new separate flags
             $hours_data = array(
-                'flags' => array(
-                    'is_24_7' => isset($_POST['hours_24_7']) ? 1 : 0,
-                    'is_by_appointment' => isset($_POST['hours_by_appointment']) ? 1 : 0,
-                    'is_call_for_availability' => isset($_POST['hours_call_for_availability']) ? 1 : 0,
-                    'is_currently_closed' => isset($_POST['hours_currently_closed']) ? 1 : 0
+                'office_flags' => array(
+                    'is_24_7' => isset($_POST['office_flags']['is_24_7']) ? 1 : 0,
+                    'is_by_appointment' => isset($_POST['office_flags']['is_by_appointment']) ? 1 : 0,
+                    'is_call_for_availability' => isset($_POST['office_flags']['is_call_for_availability']) ? 1 : 0,
+                    'is_currently_closed' => isset($_POST['office_flags']['is_currently_closed']) ? 1 : 0,
+                    'special_notes' => isset($_POST['office_flags']['special_notes']) ? sanitize_textarea_field(wp_unslash($_POST['office_flags']['special_notes'])) : ''
                 ),
-                'special_notes' => isset($_POST['hours_special_notes']) ? sanitize_textarea_field(wp_unslash($_POST['hours_special_notes'])) : '',
+                'service_flags' => array(
+                    'is_24_7' => isset($_POST['service_flags']['is_24_7']) ? 1 : 0,
+                    'is_by_appointment' => isset($_POST['service_flags']['is_by_appointment']) ? 1 : 0,
+                    'is_call_for_availability' => isset($_POST['service_flags']['is_call_for_availability']) ? 1 : 0,
+                    'is_currently_closed' => isset($_POST['service_flags']['is_currently_closed']) ? 1 : 0,
+                    'special_notes' => isset($_POST['service_flags']['special_notes']) ? sanitize_textarea_field(wp_unslash($_POST['service_flags']['special_notes'])) : ''
+                ),
                 'service_same_as_office' => $service_same_as_office,
                 'office_hours' => array(),
                 'service_hours' => array()
             );
 
-            // Process office hours
+            // Process office hours with new structure (mode-based)
             if (isset($_POST['office_hours']) && is_array($_POST['office_hours'])) {
-                foreach ($_POST['office_hours'] as $day => $day_hours) {
-                    $hours_data['office_hours'][$day] = array(
-                        'is_closed' => isset($day_hours['is_closed']) ? 1 : 0,
-                        'open_time' => isset($day_hours['open_time']) ? sanitize_text_field($day_hours['open_time']) . ':00' : null,
-                        'close_time' => isset($day_hours['close_time']) ? sanitize_text_field($day_hours['close_time']) . ':00' : null
-                    );
-                }
+                $hours_data['office_hours'] = $this->process_hours_data($_POST['office_hours']);
             }
 
-            // Process service hours - if "Same as Office Hours" is checked, copy office hours
+            // Process service hours
             if ($service_same_as_office) {
                 // Copy office hours to service hours
                 $hours_data['service_hours'] = $hours_data['office_hours'];
             } else {
-                // Process service hours independently
                 if (isset($_POST['service_hours']) && is_array($_POST['service_hours'])) {
-                    foreach ($_POST['service_hours'] as $day => $day_hours) {
-                        $hours_data['service_hours'][$day] = array(
-                            'is_closed' => isset($day_hours['is_closed']) ? 1 : 0,
-                            'open_time' => isset($day_hours['open_time']) ? sanitize_text_field($day_hours['open_time']) . ':00' : null,
-                            'close_time' => isset($day_hours['close_time']) ? sanitize_text_field($day_hours['close_time']) . ':00' : null
-                        );
-                    }
+                    $hours_data['service_hours'] = $this->process_hours_data($_POST['service_hours']);
                 }
             }
 
@@ -1993,5 +2309,144 @@ class Monday_Resources_Admin {
 
         wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         exit;
+    }
+
+    /**
+     * Process hours data from POST into structured format
+     *
+     * @param array $post_hours Raw POST hours data
+     * @return array Structured hours data
+     */
+    private function process_hours_data($post_hours) {
+        $processed = array();
+
+        foreach ($post_hours as $day => $day_data) {
+            if (!is_array($day_data)) {
+                continue;
+            }
+
+            $mode = isset($day_data['mode']) ? sanitize_text_field($day_data['mode']) : 'simple';
+
+            if ($mode === 'closed') {
+                $processed[$day] = array(
+                    'mode' => 'closed',
+                    'is_closed' => true
+                );
+
+            } elseif ($mode === 'simple') {
+                if (isset($day_data['simple']) && is_array($day_data['simple'])) {
+                    $processed[$day] = array(
+                        'mode' => 'simple',
+                        'is_closed' => false,
+                        'simple' => array(
+                            'open' => isset($day_data['simple']['open']) ? sanitize_text_field($day_data['simple']['open']) . ':00' : '09:00:00',
+                            'close' => isset($day_data['simple']['close']) ? sanitize_text_field($day_data['simple']['close']) . ':00' : '17:00:00'
+                        )
+                    );
+                }
+
+            } elseif ($mode === 'multiple') {
+                if (isset($day_data['blocks']) && is_array($day_data['blocks'])) {
+                    $blocks = array();
+                    foreach ($day_data['blocks'] as $block) {
+                        if (isset($block['open']) && isset($block['close'])) {
+                            $blocks[] = array(
+                                'open' => sanitize_text_field($block['open']) . ':00',
+                                'close' => sanitize_text_field($block['close']) . ':00',
+                                'label' => isset($block['label']) ? sanitize_text_field($block['label']) : ''
+                            );
+                        }
+                    }
+                    if (!empty($blocks)) {
+                        $processed[$day] = array(
+                            'mode' => 'multiple',
+                            'is_closed' => false,
+                            'blocks' => $blocks
+                        );
+                    }
+                }
+
+            } elseif ($mode === 'recurring') {
+                if (isset($day_data['recurring']) && is_array($day_data['recurring'])) {
+                    $recurring = $day_data['recurring'];
+                    $processed[$day] = array(
+                        'mode' => 'recurring',
+                        'is_closed' => false,
+                        'recurring' => array(
+                            'pattern' => isset($recurring['pattern']) ? sanitize_text_field($recurring['pattern']) : 'weekly',
+                            'interval' => isset($recurring['interval']) ? (int)$recurring['interval'] : 1,
+                            'week' => isset($recurring['week']) ? (int)$recurring['week'] : null,
+                            'day_of_month' => isset($recurring['day_of_month']) ? (int)$recurring['day_of_month'] : null,
+                            'open' => isset($recurring['open']) ? sanitize_text_field($recurring['open']) . ':00' : '09:00:00',
+                            'close' => isset($recurring['close']) ? sanitize_text_field($recurring['close']) . ':00' : '17:00:00'
+                        )
+                    );
+                }
+            }
+        }
+
+        return $processed;
+    }
+
+    /**
+     * Export resources AJAX handler
+     */
+    public function export_resources() {
+        // Verify nonce
+        check_ajax_referer('export_resources');
+
+        // Check permissions
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        // Get format
+        $format = isset($_GET['format']) ? sanitize_text_field($_GET['format']) : 'csv';
+
+        // Get all resources
+        $resources = Resource_Exporter::get_all_resources_for_export();
+
+        // Generate export based on format
+        $content = null;
+        $filename = 'resources-' . date('Y-m-d') . '.';
+        $mime_type = 'text/plain';
+
+        switch ($format) {
+            case 'csv':
+                $content = Resource_Exporter::export_csv($resources);
+                $filename .= 'csv';
+                $mime_type = 'text/csv';
+                break;
+
+            case 'excel':
+                $content = Resource_Exporter::export_excel($resources);
+                if (is_wp_error($content)) {
+                    wp_die('Error: ' . $content->get_error_message());
+                }
+                $filename .= 'xlsx';
+                $mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                break;
+
+            case 'json':
+                $content = Resource_Exporter::export_json($resources);
+                $filename .= 'json';
+                $mime_type = 'application/json';
+                break;
+
+            case 'pdf':
+                $content = Resource_Exporter::export_pdf($resources);
+                if (is_wp_error($content)) {
+                    wp_die('Error: ' . $content->get_error_message());
+                }
+                $filename .= 'pdf';
+                $mime_type = 'application/pdf';
+                break;
+
+            default:
+                wp_die('Invalid format');
+        }
+
+        // Send file to browser
+        Resource_Exporter::send_download($content, $filename, $mime_type);
     }
 }

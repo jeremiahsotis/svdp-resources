@@ -3,7 +3,7 @@
  * Plugin Name: Monday.com Resources Integration
  * Plugin URI: https://example.com
  * Description: Integrates Monday.com board data as searchable resource cards with filtering, issue reporting, and submission features
- * Version: 1.0.6
+ * Version: 1.0.7
  * Author: Your Name
  * Author URI: https://example.com
  * License: GPL v2 or later
@@ -17,7 +17,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MONDAY_RESOURCES_VERSION', '1.0.6');
+define('MONDAY_RESOURCES_VERSION', '1.0.7');
 define('MONDAY_RESOURCES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('MONDAY_RESOURCES_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -29,6 +29,12 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-verification-cron.php
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-shortcode.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-admin.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-submissions.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-exporter.php';
+
+// Include Composer autoloader if available (for Excel/PDF export)
+if (file_exists(MONDAY_RESOURCES_PLUGIN_DIR . 'vendor/autoload.php')) {
+    require_once MONDAY_RESOURCES_PLUGIN_DIR . 'vendor/autoload.php';
+}
 
 // Include questionnaire system classes (Phases 1-5)
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-questionnaire-manager.php';
@@ -47,11 +53,11 @@ register_activation_hook(__FILE__, 'monday_resources_activate');
 add_action('admin_init', 'monday_resources_maybe_upgrade_db');
 
 function monday_resources_maybe_upgrade_db() {
+    global $wpdb;
     $db_version = get_option('monday_resources_db_version', '1.0.0');
 
-    // Only run upgrade if version is older than 1.0.4
+    // Upgrade to 1.0.4 - Questionnaire columns
     if (version_compare($db_version, '1.0.4', '<')) {
-        global $wpdb;
         $questions_table = $wpdb->prefix . 'questionnaire_questions';
 
         // Add next_question_id column if it doesn't exist
@@ -68,6 +74,54 @@ function monday_resources_maybe_upgrade_db() {
 
         // Update version
         update_option('monday_resources_db_version', '1.0.4');
+        $db_version = '1.0.4';
+    }
+
+    // Upgrade to 1.0.7 - Enhanced hours system with complex scheduling patterns
+    if (version_compare($db_version, '1.0.7', '<')) {
+        $hours_table = $wpdb->prefix . 'resource_hours';
+        $resources_table = $wpdb->prefix . 'resources';
+
+        // Part A: Add columns to wp_resource_hours table for complex scheduling
+        $hours_columns_to_add = array(
+            'recurrence_pattern' => "ALTER TABLE $hours_table ADD COLUMN recurrence_pattern varchar(20) DEFAULT 'weekly' AFTER hour_type",
+            'recurrence_interval' => "ALTER TABLE $hours_table ADD COLUMN recurrence_interval int DEFAULT 1 AFTER recurrence_pattern",
+            'recurrence_week_of_month' => "ALTER TABLE $hours_table ADD COLUMN recurrence_week_of_month tinyint(1) DEFAULT NULL AFTER recurrence_interval",
+            'recurrence_day_of_month' => "ALTER TABLE $hours_table ADD COLUMN recurrence_day_of_month tinyint(2) DEFAULT NULL AFTER recurrence_week_of_month",
+            'block_label' => "ALTER TABLE $hours_table ADD COLUMN block_label varchar(100) DEFAULT NULL AFTER recurrence_day_of_month",
+            'sort_order' => "ALTER TABLE $hours_table ADD COLUMN sort_order tinyint DEFAULT 0 AFTER block_label"
+        );
+
+        foreach ($hours_columns_to_add as $column => $query) {
+            $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $hours_table LIKE '$column'");
+            if (empty($column_exists)) {
+                $wpdb->query($query);
+            }
+        }
+
+        // Add indexes for performance
+        $wpdb->query("ALTER TABLE $hours_table ADD INDEX idx_recurrence_pattern (recurrence_pattern)");
+        $wpdb->query("ALTER TABLE $hours_table ADD INDEX idx_sort_order (resource_id, hour_type, day_of_week, sort_order)");
+
+        // Part B: Add service-specific flag columns to wp_resources table
+        $service_flag_columns = array(
+            'service_hours_24_7' => "ALTER TABLE $resources_table ADD COLUMN service_hours_24_7 tinyint(1) DEFAULT 0 AFTER service_same_as_office",
+            'service_hours_by_appointment' => "ALTER TABLE $resources_table ADD COLUMN service_hours_by_appointment tinyint(1) DEFAULT 0 AFTER service_hours_24_7",
+            'service_hours_call_for_availability' => "ALTER TABLE $resources_table ADD COLUMN service_hours_call_for_availability tinyint(1) DEFAULT 0 AFTER service_hours_by_appointment",
+            'service_hours_currently_closed' => "ALTER TABLE $resources_table ADD COLUMN service_hours_currently_closed tinyint(1) DEFAULT 0 AFTER service_hours_call_for_availability",
+            'service_hours_special_notes' => "ALTER TABLE $resources_table ADD COLUMN service_hours_special_notes text DEFAULT NULL AFTER service_hours_currently_closed"
+        );
+
+        foreach ($service_flag_columns as $column => $query) {
+            $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $resources_table LIKE '$column'");
+            if (empty($column_exists)) {
+                $wpdb->query($query);
+            }
+        }
+
+        // Update version
+        update_option('monday_resources_db_version', '1.0.7');
+        error_log('Monday Resources: Database upgraded to version 1.0.7 - Enhanced hours system');
     }
 }
 
