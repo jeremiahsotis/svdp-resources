@@ -159,27 +159,8 @@ class Monday_Resources_Shortcode {
         }
         sort($needs_met);
 
-        // Define target audiences for checkboxes
-        $target_audiences = array(
-            'Adults (18 – 64)',
-            'Children (0 – 17)',
-            'Families with Children',
-            'High School Students',
-            'Immigrants/Refugees',
-            'LGBTQ+ Individuals',
-            'Men',
-            'Military Families',
-            'People at Risk of Homelessness',
-            'People Experiencing Homelessness',
-            'People with Disabilities',
-            'People with Substance Use Disorder',
-            'Pregnant Women',
-            'Seniors (55+)',
-            'Seniors (60+)',
-            'Veterans',
-            'Women',
-            'Youth/Young Adults ( 16 – 24)'
-        );
+        // Get target audiences from options (managed in Settings)
+        $target_audiences = get_option('resource_target_population_options', array());
 
         ob_start();
         ?>
