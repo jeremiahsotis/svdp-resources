@@ -60,7 +60,39 @@ class Resources_Manager {
             }
         }
     
-        // Service type filter - now supports multiple values
+        // Primary type (Resource Type) filter - supports multiple values
+        if (!empty($filters['primary_type'])) {
+            // Handle both single string and array of strings
+            $primary_types = is_array($filters['primary_type']) ? $filters['primary_type'] : array($filters['primary_type']);
+        
+            if (!empty($primary_types)) {
+                $primary_conditions = array();
+                foreach ($primary_types as $type) {
+                    $primary_conditions[] = "primary_service_type LIKE %s";
+                    $where_values[] = '%' . $wpdb->esc_like($type) . '%';
+                }
+                // Use OR to match any of the primary types
+                $where[] = '(' . implode(' OR ', $primary_conditions) . ')';
+            }
+        }
+
+        // Need Met filter - supports multiple values
+        if (!empty($filters['need_met'])) {
+            // Handle both single string and array of strings
+            $needs_met = is_array($filters['need_met']) ? $filters['need_met'] : array($filters['need_met']);
+        
+            if (!empty($needs_met)) {
+                $need_conditions = array();
+                foreach ($needs_met as $need) {
+                    $need_conditions[] = "secondary_service_type LIKE %s";
+                    $where_values[] = '%' . $wpdb->esc_like($need) . '%';
+                }
+                // Use OR to match any of the needs met
+                $where[] = '(' . implode(' OR ', $need_conditions) . ')';
+            }
+        }
+
+        // Service type filter - backward compatibility (searches both primary and secondary)
         if (!empty($filters['service_type'])) {
             // Handle both single string and array of strings
             $service_types = is_array($filters['service_type']) ? $filters['service_type'] : array($filters['service_type']);

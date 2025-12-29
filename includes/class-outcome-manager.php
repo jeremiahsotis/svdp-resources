@@ -109,8 +109,27 @@ class Outcome_Manager {
 
         $filters = array('geography' => $conference);
 
-        if ($outcome['resource_filter_type'] === 'service_type' && !empty($filter_data['service_types'])) {
-            $filters['service_type'] = $filter_data['service_types'];
+        if ($outcome['resource_filter_type'] === 'service_type') {
+            // Apply Resource Type filter
+            if (!empty($filter_data['resource_types'])) {
+                $filters['primary_type'] = $filter_data['resource_types'];
+            }
+
+            // Apply Need Met filter
+            if (!empty($filter_data['needs_met'])) {
+                $filters['need_met'] = $filter_data['needs_met'];
+            }
+
+            // Apply Target Audience filter
+            if (!empty($filter_data['target_audiences'])) {
+                $filters['target_audience'] = $filter_data['target_audiences'];
+            }
+
+            // If no filters selected, return empty (or all resources - decide based on requirements)
+            // For now, if no filters are selected, return empty to be safe
+            if (empty($filter_data['resource_types']) && empty($filter_data['needs_met']) && empty($filter_data['target_audiences'])) {
+                return array();
+            }
         } elseif ($outcome['resource_filter_type'] === 'specific_resources' && !empty($filter_data['specific_ids'])) {
             // Get specific resources by ID
             return self::get_specific_resources($filter_data['specific_ids'], $conference);
@@ -120,7 +139,28 @@ class Outcome_Manager {
 
         // Use existing Resources_Manager to filter
         if (class_exists('Resources_Manager')) {
-            return Resources_Manager::get_all_resources($filters);
+            $resources = Resources_Manager::get_all_resources($filters);
+
+            // Apply Target Audience filter manually if needed (since Resources_Manager doesn't have this filter yet)
+            if (!empty($filter_data['target_audiences']) && !empty($resources)) {
+                $filtered_resources = array();
+                foreach ($resources as $resource) {
+                    $resource_target_pop = !empty($resource['target_population']) ? strtolower($resource['target_population']) : '';
+                    $matches_audience = false;
+                    foreach ($filter_data['target_audiences'] as $audience) {
+                        if (stripos($resource_target_pop, strtolower($audience)) !== false) {
+                            $matches_audience = true;
+                            break;
+                        }
+                    }
+                    if ($matches_audience) {
+                        $filtered_resources[] = $resource;
+                    }
+                }
+                return $filtered_resources;
+            }
+
+            return $resources;
         }
 
         return array();

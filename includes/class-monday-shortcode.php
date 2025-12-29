@@ -83,7 +83,7 @@ class Monday_Resources_Shortcode {
 
         // Define which fields are always visible vs hidden
         $always_visible = array(
-            'primary_service_type' => 'Primary Service Type',
+            'primary_service_type' => 'Resource Type',
             'phone' => 'Phone',
             'target_population' => 'Target Population'
         );
@@ -126,36 +126,38 @@ class Monday_Resources_Shortcode {
                 'label' => 'Additional Information',
                 'fields' => array(
                     'organization' => 'Organization/Agency',
-                    'secondary_service_type' => 'Secondary Service Type',
+                    'secondary_service_type' => 'Needs Met',
                     'what_they_provide' => 'What They Provide',
                     'notes_and_tips' => 'Notes & Tips'
                 )
             )
         );
 
-        // Collect unique service types for dropdown (Primary + Secondary)
-        $service_types = array();
+        // Collect unique Resource Types for dropdown (Primary only)
+        $resource_types = array();
         foreach ($items as $item) {
-            // Include primary service type
             if (!empty($item['primary_service_type'])) {
-                $types = array_map('trim', explode(',', $item['primary_service_type']));
-                foreach ($types as $type) {
-                    if (!empty($type) && !in_array($type, $service_types)) {
-                        $service_types[] = $type;
-                    }
+                $type = trim($item['primary_service_type']);
+                if (!empty($type) && !in_array($type, $resource_types)) {
+                    $resource_types[] = $type;
                 }
             }
-            // Include secondary service type
+        }
+        sort($resource_types);
+
+        // Collect unique Needs Met for dropdown (Secondary only)
+        $needs_met = array();
+        foreach ($items as $item) {
             if (!empty($item['secondary_service_type'])) {
                 $types = array_map('trim', explode(',', $item['secondary_service_type']));
                 foreach ($types as $type) {
-                    if (!empty($type) && !in_array($type, $service_types)) {
-                        $service_types[] = $type;
+                    if (!empty($type) && !in_array($type, $needs_met)) {
+                        $needs_met[] = $type;
                     }
                 }
             }
         }
-        sort($service_types);
+        sort($needs_met);
 
         // Define target audiences for checkboxes
         $target_audiences = array(
@@ -636,11 +638,23 @@ class Monday_Resources_Shortcode {
                 <div class="filter-row">
                     <div class="filter-column">
                         <div class="filter-group">
-                            <label for="category-filter">Filter by Category (Optional)</label>
-                            <select id="category-filter" class="category-filter">
-                                <option value="">Show All Categories</option>
-                                <?php foreach ($service_types as $type): ?>
+                            <label for="resource-type-filter">Filter by Resource Type (Optional)</label>
+                            <select id="resource-type-filter" class="resource-type-filter">
+                                <option value="">Show All Resource Types</option>
+                                <?php foreach ($resource_types as $type): ?>
                                     <option value="<?php echo esc_attr($type); ?>"><?php echo esc_html($type); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="filter-column">
+                        <div class="filter-group">
+                            <label for="need-met-filter">Filter by Need Met (Optional)</label>
+                            <select id="need-met-filter" class="need-met-filter">
+                                <option value="">Show All Needs Met</option>
+                                <?php foreach ($needs_met as $need): ?>
+                                    <option value="<?php echo esc_attr($need); ?>"><?php echo esc_html($need); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -697,15 +711,14 @@ class Monday_Resources_Shortcode {
                         }
                     }
 
-                    // Get the service types for category filtering (both Primary and Secondary)
-                    $primary_service = !empty($item['primary_service_type']) ? strtolower($item['primary_service_type']) : '';
-                    $secondary_service = !empty($item['secondary_service_type']) ? strtolower($item['secondary_service_type']) : '';
-                    $combined_services = trim($primary_service . ' ' . $secondary_service);
+                    // Get Resource Type and Need Met for filtering (separated)
+                    $resource_type = !empty($item['primary_service_type']) ? strtolower($item['primary_service_type']) : '';
+                    $needs_met = !empty($item['secondary_service_type']) ? strtolower($item['secondary_service_type']) : '';
 
                     // Get target audience for population filtering
                     $target_population = !empty($item['target_population']) ? strtolower($item['target_population']) : '';
                     ?>
-                    <div class="resource-card" data-search="<?php echo esc_attr($searchable_text); ?>" data-category="<?php echo esc_attr($combined_services); ?>" data-audience="<?php echo esc_attr($target_population); ?>" data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
+                    <div class="resource-card" data-search="<?php echo esc_attr($searchable_text); ?>" data-resource-type="<?php echo esc_attr($resource_type); ?>" data-need-met="<?php echo esc_attr($needs_met); ?>" data-audience="<?php echo esc_attr($target_population); ?>" data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
                         <?php if ($is_svdp): ?>
                             <span class="svdp-badge">SVdP Resource</span>
                         <?php endif; ?>
@@ -849,8 +862,8 @@ class Monday_Resources_Shortcode {
                                                 <?php
                                             }
                                         } elseif (!empty($item[$field_name])) {
-                                            // Special formatting for list-style fields (Documents Required, Other Eligibility)
-                                            if (in_array($field_name, array('documents_required', 'other_eligibility'))) {
+                                            // Special formatting for list-style fields (Documents Required, Other Eligibility, How to Apply)
+                                            if (in_array($field_name, array('documents_required', 'other_eligibility', 'how_to_apply'))) {
                                                 $formatted_value = Resources_Manager::format_as_list($item[$field_name]);
                                             } else {
                                                 $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
@@ -955,15 +968,17 @@ class Monday_Resources_Shortcode {
 
             (function() {
                 const searchInput = document.getElementById('resource-search');
-                const categoryFilter = document.getElementById('category-filter');
+                const resourceTypeFilter = document.getElementById('resource-type-filter');
+                const needMetFilter = document.getElementById('need-met-filter');
                 const audienceCheckboxes = document.querySelectorAll('.audience-checkbox');
                 const cards = document.querySelectorAll('.resource-card');
                 const visibleCount = document.getElementById('visible-count');
 
-                // Combined filter function that handles search, category, and target audience
+                // Combined filter function that handles search, resource type, need met, and target audience
                 function filterResources() {
                     const searchTerm = searchInput.value.toLowerCase().trim();
-                    const selectedCategory = categoryFilter.value.toLowerCase().trim();
+                    const selectedResourceType = resourceTypeFilter.value.toLowerCase().trim();
+                    const selectedNeedMet = needMetFilter.value.toLowerCase().trim();
 
                     // Get all selected audiences
                     const selectedAudiences = Array.from(audienceCheckboxes)
@@ -986,15 +1001,20 @@ class Monday_Resources_Shortcode {
 
                     cards.forEach(function(card) {
                         const searchableText = card.getAttribute('data-search');
-                        const cardCategory = card.getAttribute('data-category');
+                        const cardResourceType = card.getAttribute('data-resource-type');
+                        const cardNeedMet = card.getAttribute('data-need-met');
                         const cardAudience = card.getAttribute('data-audience');
                         const isSvdp = card.getAttribute('data-is-svdp') === '1';
                         let showCard = true;
 
-                        // Check category filter first
-                        if (selectedCategory !== '') {
-                            // Check if card's category contains the selected category
-                            showCard = cardCategory.indexOf(selectedCategory) !== -1;
+                        // Check Resource Type filter
+                        if (selectedResourceType !== '') {
+                            showCard = cardResourceType.indexOf(selectedResourceType) !== -1;
+                        }
+
+                        // Check Need Met filter (AND logic - both must match if both are selected)
+                        if (showCard && selectedNeedMet !== '') {
+                            showCard = cardNeedMet.indexOf(selectedNeedMet) !== -1;
                         }
 
                         // Check target audience filter (if any checkboxes are selected)
@@ -1068,16 +1088,21 @@ class Monday_Resources_Shortcode {
                         noResults.className = 'no-results';
 
                         let message = 'No resources found';
-                        if (selectedCategory !== '' && searchTerm !== '') {
-                            message += ' matching category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '" and search "' + searchTerm + '"';
-                        } else if (selectedCategory !== '') {
-                            message += ' in category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '"';
-                        } else if (searchTerm !== '') {
-                            message += ' matching "' + searchTerm + '"';
+                        const filters = [];
+                        if (selectedResourceType !== '') {
+                            filters.push('Resource Type "' + resourceTypeFilter.options[resourceTypeFilter.selectedIndex].text + '"');
                         }
-
+                        if (selectedNeedMet !== '') {
+                            filters.push('Need Met "' + needMetFilter.options[needMetFilter.selectedIndex].text + '"');
+                        }
+                        if (searchTerm !== '') {
+                            filters.push('search "' + searchTerm + '"');
+                        }
                         if (selectedAudiences.length > 0) {
-                            message += ' for selected population(s)';
+                            filters.push('selected population(s)');
+                        }
+                        if (filters.length > 0) {
+                            message += ' matching ' + filters.join(' and ');
                         }
 
                         noResults.textContent = message;
@@ -1087,7 +1112,8 @@ class Monday_Resources_Shortcode {
 
                 // Add event listeners for all filters
                 searchInput.addEventListener('input', filterResources);
-                categoryFilter.addEventListener('change', filterResources);
+                resourceTypeFilter.addEventListener('change', filterResources);
+                needMetFilter.addEventListener('change', filterResources);
                 audienceCheckboxes.forEach(function(checkbox) {
                     checkbox.addEventListener('change', filterResources);
                 });

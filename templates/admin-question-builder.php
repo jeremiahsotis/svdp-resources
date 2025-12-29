@@ -377,40 +377,70 @@ if (!defined('ABSPATH')) {
                                                 <p style="margin-top: 0;">
                                                     <label>
                                                         <input type="radio" name="resource_filter_type" value="service_type" class="resource-filter-type-radio" <?php checked($outcome['resource_filter_type'], 'service_type'); ?>>
-                                                        Filter by Service Type
+                                                        Filter by Categories
                                                     </label>
                                                 </p>
 
-                                                <!-- Service Type Selection -->
+                                                <!-- Category Filter Selection -->
                                                 <div class="service-type-selection" style="margin-left: 25px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; <?php echo $outcome['resource_filter_type'] === 'service_type' ? '' : 'display:none;'; ?>">
                                                     <?php
-                                                    // Get unique service types from resources
-                                                    global $wpdb;
-                                                    $service_types_query = "
-                                                        SELECT DISTINCT primary_service_type
-                                                        FROM {$wpdb->prefix}resources
-                                                        WHERE status = 'active'
-                                                        AND primary_service_type IS NOT NULL
-                                                        AND primary_service_type != ''
-                                                        ORDER BY primary_service_type ASC
-                                                    ";
-                                                    $service_types = $wpdb->get_col($service_types_query);
+                                                    // Get Resource Types from options
+                                                    $resource_types = get_option('resource_service_types', array());
+                                                    $selected_resource_types = isset($filter_data['resource_types']) ? $filter_data['resource_types'] : array();
 
-                                                    $selected_service_types = isset($filter_data['service_types']) ? $filter_data['service_types'] : array();
+                                                    // Get Need Met options
+                                                    $need_options = get_option('resource_need_options', array());
+                                                    $selected_needs_met = isset($filter_data['needs_met']) ? $filter_data['needs_met'] : array();
 
-                                                    if (!empty($service_types)):
+                                                    // Get Target Audience options
+                                                    $target_audiences = get_option('resource_target_population_options', array());
+                                                    $selected_target_audiences = isset($filter_data['target_audiences']) ? $filter_data['target_audiences'] : array();
                                                     ?>
-                                                        <p style="margin: 0 0 10px 0; font-weight: 600;">Select Service Types:</p>
-                                                        <div style="max-height: 200px; overflow-y: auto; padding: 5px;">
-                                                            <?php foreach ($service_types as $service_type): ?>
+
+                                                    <!-- Resource Type Filter -->
+                                                    <?php if (!empty($resource_types)): ?>
+                                                        <p style="margin: 0 0 10px 0; font-weight: 600;">Resource Type (Type-based):</p>
+                                                        <div style="max-height: 150px; overflow-y: auto; padding: 5px; margin-bottom: 15px; background: #fff; border: 1px solid #ccc; border-radius: 3px;">
+                                                            <?php foreach ($resource_types as $resource_type): ?>
                                                                 <label style="display: block; margin: 5px 0;">
-                                                                    <input type="checkbox" name="service_types[]" value="<?php echo esc_attr($service_type); ?>" <?php checked(in_array($service_type, $selected_service_types)); ?>>
-                                                                    <?php echo esc_html($service_type); ?>
+                                                                    <input type="checkbox" name="resource_types[]" value="<?php echo esc_attr($resource_type); ?>" <?php checked(in_array($resource_type, $selected_resource_types)); ?>>
+                                                                    <?php echo esc_html($resource_type); ?>
                                                                 </label>
                                                             <?php endforeach; ?>
                                                         </div>
                                                     <?php else: ?>
-                                                        <p style="margin: 0; color: #666;">No service types found in active resources.</p>
+                                                        <p style="margin: 0 0 15px 0; color: #666;">No resource types available. Please add resource types in Settings.</p>
+                                                    <?php endif; ?>
+
+                                                    <!-- Need Met Filter -->
+                                                    <?php if (!empty($need_options)): ?>
+                                                        <p style="margin: 0 0 10px 0; font-weight: 600;">Need Met (Need-based):</p>
+                                                        <div style="max-height: 150px; overflow-y: auto; padding: 5px; margin-bottom: 15px; background: #fff; border: 1px solid #ccc; border-radius: 3px;">
+                                                            <?php foreach ($need_options as $need_option): ?>
+                                                                <label style="display: block; margin: 5px 0;">
+                                                                    <input type="checkbox" name="needs_met[]" value="<?php echo esc_attr($need_option); ?>" <?php checked(in_array($need_option, $selected_needs_met)); ?>>
+                                                                    <?php echo esc_html($need_option); ?>
+                                                                </label>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                    <?php else: ?>
+                                                        <p style="margin: 0 0 15px 0; color: #666;">No need met options available. Please add need met options in Settings.</p>
+                                                    <?php endif; ?>
+
+                                                    <!-- Target Audience Filter -->
+                                                    <?php if (!empty($target_audiences)): ?>
+                                                        <p style="margin: 0 0 10px 0; font-weight: 600;">Target Audience:</p>
+                                                        <div style="max-height: 150px; overflow-y: auto; padding: 5px; background: #fff; border: 1px solid #ccc; border-radius: 3px;">
+                                                            <?php foreach ($target_audiences as $target_audience): ?>
+                                                                <label style="display: block; margin: 5px 0;">
+                                                                    <input type="checkbox" name="target_audiences[]" value="<?php echo esc_attr($target_audience); ?>" <?php checked(in_array($target_audience, $selected_target_audiences)); ?>>
+                                                                    <?php echo esc_html($target_audience); ?>
+                                                                </label>
+                                                            <?php endforeach; ?>
+                                                        </div>
+                                                        <p class="description" style="margin-top: 10px; font-style: italic;">All selected filters work together (AND logic). Resources must match all selected categories.</p>
+                                                    <?php else: ?>
+                                                        <p style="margin: 0; color: #666;">No target audience options available. Please add target audience options in Settings.</p>
                                                     <?php endif; ?>
                                                 </div>
 
@@ -432,14 +462,51 @@ if (!defined('ABSPATH')) {
                                                         if (!empty($all_resources)):
                                                         ?>
                                                             <p style="margin: 0 0 10px 0; font-weight: 600;">Select Specific Resources:</p>
-                                                            <select name="specific_resource_ids[]" multiple size="10" style="width: 100%; max-width: 500px;">
-                                                                <?php foreach ($all_resources as $resource): ?>
-                                                                    <option value="<?php echo esc_attr($resource['id']); ?>" <?php selected(in_array($resource['id'], $selected_resource_ids)); ?>>
-                                                                        <?php echo esc_html($resource['resource_name']) . ' - ' . esc_html($resource['primary_service_type']); ?>
-                                                                    </option>
+                                                            <div style="margin-bottom: 10px;">
+                                                                <input type="text" id="resource-search-input" placeholder="Search resources by name or resource type..." style="width: 100%; max-width: 500px; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 3px;">
+                                                                <p class="description" style="margin: 5px 0 0 0; font-size: 12px;">Type to filter the list below. Showing <span id="resource-count"><?php echo count($all_resources); ?></span> of <?php echo count($all_resources); ?> resources</p>
+                                                            </div>
+                                                            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; background: #fff; padding: 10px; border-radius: 3px;">
+                                                                <?php foreach ($all_resources as $resource): 
+                                                                    // Build searchable text from all resource fields
+                                                                    $searchable_fields = array(
+                                                                        $resource['resource_name'],
+                                                                        $resource['organization'],
+                                                                        $resource['primary_service_type'],
+                                                                        $resource['secondary_service_type'],
+                                                                        $resource['target_population'],
+                                                                        $resource['phone'],
+                                                                        $resource['email'],
+                                                                        $resource['what_they_provide'],
+                                                                        $resource['geography'],
+                                                                        $resource['counties_served']
+                                                                    );
+                                                                    $searchable_text = strtolower(implode(' ', array_filter($searchable_fields)));
+                                                                ?>
+                                                                    <label class="resource-checkbox-item" style="display: block; margin: 8px 0; padding: 10px; border: 1px solid #e0e0e0; border-radius: 3px; cursor: pointer; background: #fff; transition: background-color 0.2s;" data-searchable="<?php echo esc_attr($searchable_text); ?>" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='#fff'">
+                                                                        <input type="checkbox" name="specific_resource_ids[]" value="<?php echo esc_attr($resource['id']); ?>" <?php checked(in_array($resource['id'], $selected_resource_ids)); ?> style="margin-right: 8px; vertical-align: top; margin-top: 3px;">
+                                                                        <div style="display: inline-block; width: calc(100% - 30px);">
+                                                                            <div style="font-weight: 600; color: #0073aa; margin-bottom: 4px;"><?php echo esc_html($resource['resource_name']); ?></div>
+                                                                            <?php if (!empty($resource['organization'])): ?>
+                                                                                <div style="font-size: 0.9em; color: #555; margin-bottom: 3px;"><strong>Organization:</strong> <?php echo esc_html($resource['organization']); ?></div>
+                                                                            <?php endif; ?>
+                                                                            <div style="font-size: 0.9em; color: #666; margin-bottom: 3px;">
+                                                                                <?php if (!empty($resource['primary_service_type'])): ?>
+                                                                                    <strong>Type:</strong> <?php echo esc_html($resource['primary_service_type']); ?>
+                                                                                <?php endif; ?>
+                                                                                <?php if (!empty($resource['secondary_service_type'])): ?>
+                                                                                    <?php if (!empty($resource['primary_service_type'])): ?> | <?php endif; ?>
+                                                                                    <strong>Needs Met:</strong> <?php echo esc_html($resource['secondary_service_type']); ?>
+                                                                                <?php endif; ?>
+                                                                            </div>
+                                                                            <?php if (!empty($resource['target_population'])): ?>
+                                                                                <div style="font-size: 0.85em; color: #777; margin-top: 3px;"><strong>Target Population:</strong> <?php echo esc_html($resource['target_population']); ?></div>
+                                                                            <?php endif; ?>
+                                                                        </div>
+                                                                    </label>
                                                                 <?php endforeach; ?>
-                                                            </select>
-                                                            <p class="description">Hold Ctrl (Cmd on Mac) to select multiple resources.</p>
+                                                            </div>
+                                                            <p class="description" style="margin-top: 10px;">Check the boxes to select resources. Use the search box above to quickly find resources.</p>
                                                         <?php else: ?>
                                                             <p style="margin: 0; color: #666;">No active resources found.</p>
                                                         <?php endif;

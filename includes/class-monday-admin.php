@@ -126,6 +126,7 @@ class Monday_Resources_Admin {
         register_setting('monday_resources_settings', 'resource_conference_options');
         register_setting('monday_resources_settings', 'resource_counties_options');
         register_setting('monday_resources_settings', 'resource_service_types');
+        register_setting('monday_resources_settings', 'resource_need_options');
         register_setting('monday_resources_settings', 'resource_target_population_options');
         register_setting('monday_resources_settings', 'resource_income_requirements_options');
         register_setting('monday_resources_settings', 'resource_wait_time_options');
@@ -278,6 +279,11 @@ class Monday_Resources_Admin {
                 'Youth/Young Adults (16 – 24)'
             );
             update_option('resource_target_population_options', $default_target_populations);
+        }
+
+        // Initialize Need Met options (will be populated by migration script)
+        if (!get_option('resource_need_options')) {
+            update_option('resource_need_options', array());
         }
 
         if (!get_option('resource_income_requirements_options')) {
@@ -550,8 +556,8 @@ class Monday_Resources_Admin {
                             <label><input type="checkbox" name="export_fields[]" value="id" checked> ID</label>
                             <label><input type="checkbox" name="export_fields[]" value="resource_name" checked> Resource Name</label>
                             <label><input type="checkbox" name="export_fields[]" value="organization"> Organization</label>
-                            <label><input type="checkbox" name="export_fields[]" value="primary_service_type" checked> Primary Service Type</label>
-                            <label><input type="checkbox" name="export_fields[]" value="secondary_service_type"> Secondary Service Type</label>
+                            <label><input type="checkbox" name="export_fields[]" value="primary_service_type" checked> Resource Type</label>
+                            <label><input type="checkbox" name="export_fields[]" value="secondary_service_type"> Needs Met</label>
                             <label><input type="checkbox" name="export_fields[]" value="phone" checked> Phone</label>
                             <label><input type="checkbox" name="export_fields[]" value="email"> Email</label>
                             <label><input type="checkbox" name="export_fields[]" value="website"> Website</label>
@@ -734,6 +740,49 @@ class Monday_Resources_Admin {
         $stats = Resources_Manager::get_verification_stats();
         $migration_count = get_option('monday_resources_migration_count', 0);
 
+        // Handle migration file upload
+        $migration_result = null;
+        if (isset($_POST['upload_migration_file']) && check_admin_referer('migration_upload')) {
+            if (!empty($_FILES['migration_file']['tmp_name']) && $_FILES['migration_file']['error'] === UPLOAD_ERR_OK) {
+                $uploaded_file = $_FILES['migration_file']['tmp_name'];
+                $file_name = $_FILES['migration_file']['name'];
+                
+                // Validate file type
+                $allowed_extensions = array('csv', 'xlsx', 'xls');
+                $file_extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+                
+                if (in_array($file_extension, $allowed_extensions)) {
+                    // Process the migration
+                    if (class_exists('Resource_Migration')) {
+                        $migration_result = Resource_Migration::process_spreadsheet($uploaded_file, $file_name);
+                        
+                        if ($migration_result['success']) {
+                            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html($migration_result['message']) . '</p></div>';
+                        } else {
+                            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html($migration_result['message']) . '</p></div>';
+                        }
+                    } else {
+                        echo '<div class="notice notice-error is-dismissible"><p>Migration class not found. Please ensure the migration class file is included.</p></div>';
+                    }
+                } else {
+                    echo '<div class="notice notice-error is-dismissible"><p>Invalid file type. Detected extension: ' . esc_html($file_extension) . '. Please upload a CSV or Excel (.xlsx, .xls) file.</p></div>';
+                }
+            } else {
+                $upload_error = !empty($_FILES['migration_file']['error']) ? $_FILES['migration_file']['error'] : 'Unknown error';
+                $error_messages = array(
+                    UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize directive.',
+                    UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive.',
+                    UPLOAD_ERR_PARTIAL => 'File was only partially uploaded.',
+                    UPLOAD_ERR_NO_FILE => 'No file was uploaded.',
+                    UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder.',
+                    UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk.',
+                    UPLOAD_ERR_EXTENSION => 'PHP extension stopped the file upload.'
+                );
+                $error_message = isset($error_messages[$upload_error]) ? $error_messages[$upload_error] : 'Upload error code: ' . $upload_error;
+                echo '<div class="notice notice-error is-dismissible"><p>File upload failed: ' . esc_html($error_message) . '</p></div>';
+            }
+        }
+
         // Handle add/remove actions
         if (isset($_POST['add_conference']) && check_admin_referer('manage_dropdowns')) {
             $new_conference = sanitize_text_field(wp_unslash($_POST['new_conference']));
@@ -807,6 +856,31 @@ class Monday_Resources_Admin {
                 $service_types = array_values($service_types);
                 update_option('resource_service_types', $service_types);
                 echo '<div class="notice notice-success is-dismissible"><p>Service Type removed successfully.</p></div>';
+            }
+        }
+
+        if (isset($_POST['add_need_option']) && check_admin_referer('manage_dropdowns')) {
+            $new_need_option = sanitize_text_field(wp_unslash($_POST['new_need_option']));
+            if (!empty($new_need_option)) {
+                $need_options = get_option('resource_need_options', array());
+                if (!in_array($new_need_option, $need_options)) {
+                    $need_options[] = $new_need_option;
+                    sort($need_options);
+                    update_option('resource_need_options', $need_options);
+                    echo '<div class="notice notice-success is-dismissible"><p>Need Met option added successfully.</p></div>';
+                }
+            }
+        }
+
+        if (isset($_POST['remove_need_option']) && check_admin_referer('manage_dropdowns')) {
+            $remove_need = sanitize_text_field(wp_unslash($_POST['need_option_to_remove']));
+            $need_options = get_option('resource_need_options', array());
+            $key = array_search($remove_need, $need_options);
+            if ($key !== false) {
+                unset($need_options[$key]);
+                $need_options = array_values($need_options);
+                update_option('resource_need_options', $need_options);
+                echo '<div class="notice notice-success is-dismissible"><p>Need Met option removed successfully.</p></div>';
             }
         }
 
@@ -886,6 +960,7 @@ class Monday_Resources_Admin {
         $conferences = get_option('resource_conference_options', array());
         $counties = get_option('resource_counties_options', array());
         $service_types = get_option('resource_service_types', array());
+        $need_options = get_option('resource_need_options', array());
         $target_populations = get_option('resource_target_population_options', array());
         $income_requirements = get_option('resource_income_requirements_options', array());
         $wait_times = get_option('resource_wait_time_options', array());
@@ -967,8 +1042,8 @@ class Monday_Resources_Admin {
 
                 <hr style="margin: 30px 0;">
 
-                <h3>Service Type Options</h3>
-                <p>Manage the Service Types used for both Primary Service Type (single selection) and Secondary Service Type (multiple selection). Include emoji at the beginning (e.g., 🍽️ Food Assistance).</p>
+                <h3>Resource Type Options</h3>
+                <p>Manage the Resource Types used for primary categorization (Type-based, single selection). Include emoji at the beginning (e.g., 🍽️ Food Assistance).</p>
 
                 <form method="post" style="margin-bottom: 20px;">
                     <?php wp_nonce_field('manage_dropdowns'); ?>
@@ -999,6 +1074,48 @@ class Monday_Resources_Admin {
                                             <input type="hidden" name="service_type_to_remove" value="<?php echo esc_attr($service_type); ?>">
                                             <button type="submit" name="remove_service_type" class="button button-small"
                                                     onclick="return confirm('Remove this service type?')">Remove</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+
+                <hr style="margin: 30px 0;">
+
+                <h3>Need Met Options</h3>
+                <p>Manage the Need Met options used for secondary categorization (Need-based, multiple selection). Include emoji at the beginning (e.g., 🍽️ Food Assistance).</p>
+
+                <form method="post" style="margin-bottom: 20px;">
+                    <?php wp_nonce_field('manage_dropdowns'); ?>
+                    <input type="text" name="new_need_option" placeholder="Enter need met option with emoji (e.g., 🍽️ Food Assistance)" style="width: 500px; font-size: 15px;">
+                    <button type="submit" name="add_need_option" class="button button-primary">Add Need Met Option</button>
+                    <p class="description">💡 Tip: Copy emojis from <a href="https://emojipedia.org/" target="_blank">Emojipedia</a> or use your keyboard's emoji picker</p>
+                </form>
+
+                <table class="wp-list-table widefat" style="max-width: 700px;">
+                    <thead>
+                        <tr>
+                            <th>Need Met Option</th>
+                            <th style="width: 100px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($need_options)): ?>
+                            <tr>
+                                <td colspan="2">No need met options defined.</td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($need_options as $need_option): ?>
+                                <tr>
+                                    <td style="font-size: 15px;"><?php echo esc_html($need_option); ?></td>
+                                    <td>
+                                        <form method="post" style="display: inline;">
+                                            <?php wp_nonce_field('manage_dropdowns'); ?>
+                                            <input type="hidden" name="need_option_to_remove" value="<?php echo esc_attr($need_option); ?>">
+                                            <button type="submit" name="remove_need_option" class="button button-small"
+                                                    onclick="return confirm('Remove this need met option?')">Remove</button>
                                         </form>
                                     </td>
                                 </tr>
@@ -1111,6 +1228,52 @@ class Monday_Resources_Admin {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Resource Migration Tool -->
+            <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
+                <h2 style="margin-top: 0;">Resource Migration Tool</h2>
+                <p>Upload a spreadsheet to update Resource Type, Need Met, and Target Population data for all resources. The spreadsheet should contain columns: Resource ID, Resource Name, Primary Category, Secondary Categories, Target Populations (New).</p>
+                <p><strong>Note:</strong> This will REPLACE existing category and target population data for all resources in the spreadsheet.</p>
+
+                <form method="post" enctype="multipart/form-data" style="margin-top: 20px;">
+                    <?php wp_nonce_field('migration_upload'); ?>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="migration_file">Upload Spreadsheet</label></th>
+                            <td>
+                                <input type="file" name="migration_file" id="migration_file" accept=".csv,.xlsx,.xls" required>
+                                <p class="description">Accepted formats: CSV, Excel (.xlsx, .xls). Maximum file size: <?php echo size_format(wp_max_upload_size()); ?></p>
+                            </td>
+                        </tr>
+                    </table>
+                    <p class="submit">
+                        <button type="submit" name="upload_migration_file" class="button button-primary" onclick="return confirm('This will update all resources in the spreadsheet. Are you sure you want to continue?');">
+                            Upload and Process Migration
+                        </button>
+                    </p>
+                </form>
+
+                <?php if ($migration_result && $migration_result['success']): ?>
+                    <div style="margin-top: 20px; padding: 15px; background: #f0f6fc; border-left: 4px solid #0073aa; border-radius: 3px;">
+                        <h3 style="margin-top: 0;">Migration Results</h3>
+                        <ul style="margin: 10px 0; padding-left: 20px;">
+                            <li><strong>Resources Updated:</strong> <?php echo esc_html($migration_result['stats']['resources_updated']); ?></li>
+                            <?php if ($migration_result['stats']['resources_not_found'] > 0): ?>
+                                <li><strong>Resources Not Found:</strong> <?php echo esc_html($migration_result['stats']['resources_not_found']); ?></li>
+                            <?php endif; ?>
+                            <?php if ($migration_result['stats']['resource_types_added'] > 0): ?>
+                                <li><strong>New Resource Types Added:</strong> <?php echo esc_html($migration_result['stats']['resource_types_added']); ?></li>
+                            <?php endif; ?>
+                            <?php if ($migration_result['stats']['needs_met_added'] > 0): ?>
+                                <li><strong>New Need Met Options Added:</strong> <?php echo esc_html($migration_result['stats']['needs_met_added']); ?></li>
+                            <?php endif; ?>
+                            <?php if ($migration_result['stats']['target_populations_added'] > 0): ?>
+                                <li><strong>New Target Population Options Added:</strong> <?php echo esc_html($migration_result['stats']['target_populations_added']); ?></li>
+                            <?php endif; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <!-- System Information -->
@@ -1587,14 +1750,14 @@ class Monday_Resources_Admin {
                     </tr>
 
                     <tr>
-                        <th scope="row"><label for="primary_service_type">Primary Service Type *</label></th>
+                        <th scope="row"><label for="primary_service_type">Resource Type *</label></th>
                         <td>
                             <?php
                             $service_types = get_option('resource_service_types', array());
                             $selected_primary = $has_data ? $resource['primary_service_type'] : '';
                             ?>
                             <select name="primary_service_type" id="primary_service_type" style="width: 500px; font-size: 15px;" required>
-                                <option value="">Select a service type...</option>
+                                <option value="">Select a resource type...</option>
                                 <?php foreach ($service_types as $service_type): ?>
                                     <option value="<?php echo esc_attr($service_type); ?>"
                                             <?php selected($selected_primary, $service_type); ?>>
@@ -1602,34 +1765,35 @@ class Monday_Resources_Admin {
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <p class="description">Select the main category for this resource (single selection)</p>
+                            <p class="description">Select the primary category for this resource (Type-based, single selection)</p>
                         </td>
                     </tr>
 
                     <tr>
-                        <th scope="row"><label>Secondary Service Types</label></th>
+                        <th scope="row"><label>Needs Met</label></th>
                         <td>
                             <?php
+                            $need_options = get_option('resource_need_options', array());
                             $selected_secondary = array();
                             if ($has_data && !empty($resource['secondary_service_type'])) {
                                 $selected_secondary = array_map('trim', explode(',', $resource['secondary_service_type']));
                             }
                             ?>
                             <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f9f9f9;">
-                                <?php if (empty($service_types)): ?>
-                                    <p>No service types available. Please add service types in Settings.</p>
+                                <?php if (empty($need_options)): ?>
+                                    <p>No need met options available. Please add need met options in Settings.</p>
                                 <?php else: ?>
-                                    <?php foreach ($service_types as $service_type): ?>
+                                    <?php foreach ($need_options as $need_option): ?>
                                         <label style="display: block; margin: 5px 0; font-size: 15px;">
                                             <input type="checkbox" name="secondary_service_type[]"
-                                                   value="<?php echo esc_attr($service_type); ?>"
-                                                   <?php checked(in_array($service_type, $selected_secondary)); ?>>
-                                            <?php echo esc_html($service_type); ?>
+                                                   value="<?php echo esc_attr($need_option); ?>"
+                                                   <?php checked(in_array($need_option, $selected_secondary)); ?>>
+                                            <?php echo esc_html($need_option); ?>
                                         </label>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
                             </div>
-                            <p class="description">Select additional service categories (multiple selection allowed)</p>
+                            <p class="description">Select needs met by this resource (Need-based, multiple selection allowed)</p>
                         </td>
                     </tr>
 
@@ -1690,7 +1854,11 @@ class Monday_Resources_Admin {
                     <tr>
                         <th scope="row"><label for="how_to_apply">How to Apply</label></th>
                         <td>
-                            <textarea name="how_to_apply" id="how_to_apply" class="large-text" rows="3"><?php echo $has_data ? esc_textarea($resource['how_to_apply']) : ''; ?></textarea>
+                            <textarea name="how_to_apply" id="how_to_apply" class="large-text" rows="5"
+                                      placeholder="Call to schedule an appointment&#10;Walk-in hours: Monday-Friday 9am-5pm&#10;Complete online application at website&#10;Submit required documents in person"><?php echo $has_data ? esc_textarea($resource['how_to_apply']) : ''; ?></textarea>
+                            <p class="description">
+                                <strong>Enter one step per line</strong> - Each line will display as a bullet point.
+                            </p>
                         </td>
                     </tr>
 
@@ -2556,8 +2724,8 @@ class Monday_Resources_Admin {
             'id' => 'ID',
             'resource_name' => 'Resource Name',
             'organization' => 'Organization',
-            'primary_service_type' => 'Primary Service Type',
-            'secondary_service_type' => 'Secondary Service Type',
+            'primary_service_type' => 'Resource Type',
+            'secondary_service_type' => 'Needs Met',
             'phone' => 'Phone',
             'email' => 'Email',
             'website' => 'Website',

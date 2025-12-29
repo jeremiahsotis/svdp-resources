@@ -880,18 +880,36 @@
             var filterData = {};
 
             if (filterType === 'service_type') {
-                // Collect checked service types
-                var serviceTypes = [];
-                $form.find('input[name="service_types[]"]:checked').each(function() {
-                    serviceTypes.push($(this).val());
+                // Collect Resource Types
+                var resourceTypes = [];
+                $form.find('input[name="resource_types[]"]:checked').each(function() {
+                    resourceTypes.push($(this).val());
                 });
-                if (serviceTypes.length > 0) {
-                    filterData.service_types = serviceTypes;
+                if (resourceTypes.length > 0) {
+                    filterData.resource_types = resourceTypes;
+                }
+
+                // Collect Needs Met
+                var needsMet = [];
+                $form.find('input[name="needs_met[]"]:checked').each(function() {
+                    needsMet.push($(this).val());
+                });
+                if (needsMet.length > 0) {
+                    filterData.needs_met = needsMet;
+                }
+
+                // Collect Target Audiences
+                var targetAudiences = [];
+                $form.find('input[name="target_audiences[]"]:checked').each(function() {
+                    targetAudiences.push($(this).val());
+                });
+                if (targetAudiences.length > 0) {
+                    filterData.target_audiences = targetAudiences;
                 }
             } else if (filterType === 'specific_resources') {
-                // Collect selected resource IDs
+                // Collect selected resource IDs from checkboxes
                 var resourceIds = [];
-                $form.find('select[name="specific_resource_ids[]"] option:selected').each(function() {
+                $form.find('input[name="specific_resource_ids[]"]:checked').each(function() {
                     resourceIds.push(parseInt($(this).val()));
                 });
                 if (resourceIds.length > 0) {
@@ -1021,6 +1039,53 @@
             if ($form.hasClass('outcome-edit-form')) {
                 sessionStorage.setItem('questionnaire_active_tab', 'outcomes');
             }
+        });
+
+        // ========================================
+        // SEARCHABLE RESOURCE SELECTION
+        // ========================================
+
+        // Real-time search filtering for specific resources selection
+        $(document).on('input', '#resource-search-input', function() {
+            var searchTerm = $(this).val().toLowerCase().trim();
+            var $items = $('.resource-checkbox-item');
+            var visibleCount = 0;
+
+            if (searchTerm === '') {
+                // Show all items
+                $items.show();
+                visibleCount = $items.length;
+            } else {
+                // Split search term into words for better matching
+                var searchWords = searchTerm.split(/\s+/).filter(function(word) {
+                    return word.length > 0;
+                });
+
+                // Filter items - search across all resource fields
+                $items.each(function() {
+                    var $item = $(this);
+                    var searchableText = $item.data('searchable') || '';
+
+                    // Check if all search words are found in the searchable text
+                    var matches = true;
+                    for (var i = 0; i < searchWords.length; i++) {
+                        if (searchableText.indexOf(searchWords[i]) === -1) {
+                            matches = false;
+                            break;
+                        }
+                    }
+
+                    if (matches) {
+                        $item.show();
+                        visibleCount++;
+                    } else {
+                        $item.hide();
+                    }
+                });
+            }
+
+            // Update count
+            $('#resource-count').text(visibleCount);
         });
     });
 

@@ -30,6 +30,7 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-shortcode.php'
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-admin.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-submissions.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-exporter.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-migration.php';
 
 // Include Composer autoloader if available (for Excel/PDF export)
 if (file_exists(MONDAY_RESOURCES_PLUGIN_DIR . 'vendor/autoload.php')) {
