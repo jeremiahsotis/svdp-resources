@@ -1089,7 +1089,12 @@
                 $loadMoreBtn.prop('disabled', true).text('Loading...');
             }
 
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1093',message:'AJAX request starting',data:{searchTerm:searchTerm,page:page,ajaxUrl:questionnaireAdmin.ajaxUrl,hasNonce:!!questionnaireAdmin.nonce},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(function(){});
+            // #endregion
+
             // Fetch resources via AJAX
+            var ajaxStartTime = Date.now();
             $.ajax({
                 url: questionnaireAdmin.ajaxUrl,
                 type: 'POST',
@@ -1102,6 +1107,10 @@
                 },
                 timeout: 60000, // 60 second timeout
                 success: function(response) {
+                    // #region agent log
+                    var ajaxTime = Date.now() - ajaxStartTime;
+                    fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1105',message:'AJAX success callback',data:{ajaxTimeMs:ajaxTime,hasSuccess:response.success,hasData:!!response.data,hasResources:!!(response.data&&response.data.resources),resourceCount:response.data&&response.data.resources?response.data.resources.length:0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(function(){});
+                    // #endregion
                     if (response.success && response.data && response.data.resources) {
                         // Hide loading, show list
                         $loadingState.hide();
@@ -1134,6 +1143,10 @@
                     }
                 },
                 error: function(xhr, status, error) {
+                    // #region agent log
+                    var ajaxTime = Date.now() - ajaxStartTime;
+                    fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1136',message:'AJAX error callback',data:{ajaxTimeMs:ajaxTime,status:status,error:error,xhrStatus:xhr.status,xhrStatusText:xhr.statusText,xhrResponseText:xhr.responseText?xhr.responseText.substring(0,200):'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(function(){});
+                    // #endregion
                     if (status === 'timeout') {
                         showResourceError($container, 'Request timed out. Please try a more specific search term.');
                     } else {

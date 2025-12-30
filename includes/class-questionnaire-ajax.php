@@ -226,6 +226,28 @@ class Questionnaire_Ajax {
      * Admin-only endpoint for questionnaire outcome resource selection
      */
     public function ajax_get_resources_for_selection() {
+        // #region agent log
+        $log_file = MONDAY_RESOURCES_PLUGIN_DIR . '.cursor/debug.log';
+        $log_entry = json_encode(array(
+            'sessionId' => 'debug-session',
+            'runId' => 'run1',
+            'hypothesisId' => 'A,B,C,D',
+            'location' => 'class-questionnaire-ajax.php:228',
+            'message' => 'AJAX function entry',
+            'data' => array(
+                'has_post' => isset($_POST),
+                'has_nonce' => isset($_POST['nonce']),
+                'has_action' => isset($_POST['action']),
+                'action_value' => isset($_POST['action']) ? $_POST['action'] : 'missing',
+                'search_term' => isset($_POST['search']) ? substr($_POST['search'], 0, 50) : 'none',
+                'page' => isset($_POST['page']) ? $_POST['page'] : 'missing',
+                'memory_before' => memory_get_usage(true)
+            ),
+            'timestamp' => round(microtime(true) * 1000)
+        )) . "\n";
+        @file_put_contents($log_file, $log_entry, FILE_APPEND);
+        // #endregion
+
         // Increase timeout for large datasets
         if (function_exists('wp_set_time_limit')) {
             @wp_set_time_limit(60);
@@ -233,9 +255,63 @@ class Questionnaire_Ajax {
             @set_time_limit(60);
         }
 
-        check_ajax_referer('questionnaire_admin_nonce', 'nonce');
+        // #region agent log
+        $log_entry = json_encode(array(
+            'sessionId' => 'debug-session',
+            'runId' => 'run1',
+            'hypothesisId' => 'D',
+            'location' => 'class-questionnaire-ajax.php:250',
+            'message' => 'Before nonce check',
+            'data' => array('nonce_present' => isset($_POST['nonce'])),
+            'timestamp' => round(microtime(true) * 1000)
+        )) . "\n";
+        @file_put_contents($log_file, $log_entry, FILE_APPEND);
+        // #endregion
+
+        $nonce_result = check_ajax_referer('questionnaire_admin_nonce', 'nonce', false);
+
+        // #region agent log
+        $log_entry = json_encode(array(
+            'sessionId' => 'debug-session',
+            'runId' => 'run1',
+            'hypothesisId' => 'D',
+            'location' => 'class-questionnaire-ajax.php:258',
+            'message' => 'After nonce check',
+            'data' => array('nonce_valid' => $nonce_result),
+            'timestamp' => round(microtime(true) * 1000)
+        )) . "\n";
+        @file_put_contents($log_file, $log_entry, FILE_APPEND);
+        // #endregion
+
+        if (!$nonce_result) {
+            // #region agent log
+            $log_entry = json_encode(array(
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'D',
+                'location' => 'class-questionnaire-ajax.php:265',
+                'message' => 'Nonce check failed',
+                'data' => array(),
+                'timestamp' => round(microtime(true) * 1000)
+            )) . "\n";
+            @file_put_contents($log_file, $log_entry, FILE_APPEND);
+            // #endregion
+            wp_send_json_error(array('message' => 'Invalid security token. Please refresh the page.'));
+        }
 
         if (!current_user_can('manage_options')) {
+            // #region agent log
+            $log_entry = json_encode(array(
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'A',
+                'location' => 'class-questionnaire-ajax.php:275',
+                'message' => 'User unauthorized',
+                'data' => array('user_id' => get_current_user_id()),
+                'timestamp' => round(microtime(true) * 1000)
+            )) . "\n";
+            @file_put_contents($log_file, $log_entry, FILE_APPEND);
+            // #endregion
             wp_send_json_error(array('message' => 'Unauthorized.'));
         }
 
@@ -253,6 +329,25 @@ class Questionnaire_Ajax {
         $offset = ($page - 1) * $per_page;
 
         try {
+            // #region agent log
+            $log_entry = json_encode(array(
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'C',
+                'location' => 'class-questionnaire-ajax.php:280',
+                'message' => 'Before database query',
+                'data' => array(
+                    'table_name' => $table_name,
+                    'search_term' => $search_term,
+                    'page' => $page,
+                    'per_page' => $per_page,
+                    'offset' => $offset
+                ),
+                'timestamp' => round(microtime(true) * 1000)
+            )) . "\n";
+            @file_put_contents($log_file, $log_entry, FILE_APPEND);
+            // #endregion
+
             // Optimized query - only select needed fields and build searchable text in SQL
             $query = "SELECT 
                 id, 
@@ -296,13 +391,70 @@ class Questionnaire_Ajax {
             $where_values[] = $offset;
 
             // Execute query
+            $query_start = microtime(true);
             if (!empty($where_values)) {
-                $resources = $wpdb->get_results($wpdb->prepare($query, $where_values), ARRAY_A);
+                $prepared_query = $wpdb->prepare($query, $where_values);
+                // #region agent log
+                $log_entry = json_encode(array(
+                    'sessionId' => 'debug-session',
+                    'runId' => 'run1',
+                    'hypothesisId' => 'C',
+                    'location' => 'class-questionnaire-ajax.php:320',
+                    'message' => 'Executing prepared query',
+                    'data' => array('query_length' => strlen($prepared_query)),
+                    'timestamp' => round(microtime(true) * 1000)
+                )) . "\n";
+                @file_put_contents($log_file, $log_entry, FILE_APPEND);
+                // #endregion
+                $resources = $wpdb->get_results($prepared_query, ARRAY_A);
             } else {
+                // #region agent log
+                $log_entry = json_encode(array(
+                    'sessionId' => 'debug-session',
+                    'runId' => 'run1',
+                    'hypothesisId' => 'C',
+                    'location' => 'class-questionnaire-ajax.php:330',
+                    'message' => 'Executing simple query',
+                    'data' => array(),
+                    'timestamp' => round(microtime(true) * 1000)
+                )) . "\n";
+                @file_put_contents($log_file, $log_entry, FILE_APPEND);
+                // #endregion
                 $resources = $wpdb->get_results($query, ARRAY_A);
             }
+            $query_time = microtime(true) - $query_start;
+
+            // #region agent log
+            $log_entry = json_encode(array(
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'C',
+                'location' => 'class-questionnaire-ajax.php:340',
+                'message' => 'After database query',
+                'data' => array(
+                    'query_time_seconds' => round($query_time, 3),
+                    'resources_count' => is_array($resources) ? count($resources) : 'not_array',
+                    'is_false' => ($resources === false),
+                    'last_error' => $wpdb->last_error ? substr($wpdb->last_error, 0, 100) : 'none'
+                ),
+                'timestamp' => round(microtime(true) * 1000)
+            )) . "\n";
+            @file_put_contents($log_file, $log_entry, FILE_APPEND);
+            // #endregion
 
             if ($resources === false) {
+                // #region agent log
+                $log_entry = json_encode(array(
+                    'sessionId' => 'debug-session',
+                    'runId' => 'run1',
+                    'hypothesisId' => 'C',
+                    'location' => 'class-questionnaire-ajax.php:355',
+                    'message' => 'Database query failed',
+                    'data' => array('last_error' => $wpdb->last_error ?: 'unknown'),
+                    'timestamp' => round(microtime(true) * 1000)
+                )) . "\n";
+                @file_put_contents($log_file, $log_entry, FILE_APPEND);
+                // #endregion
                 wp_send_json_error(array('message' => 'Database query failed.'));
             }
 
@@ -335,6 +487,24 @@ class Questionnaire_Ajax {
                 );
             }
 
+            // #region agent log
+            $log_entry = json_encode(array(
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'A,B',
+                'location' => 'class-questionnaire-ajax.php:375',
+                'message' => 'Before sending success response',
+                'data' => array(
+                    'formatted_count' => count($formatted_resources),
+                    'total_count' => intval($total_count),
+                    'has_more' => $has_more,
+                    'memory_usage' => memory_get_usage(true)
+                ),
+                'timestamp' => round(microtime(true) * 1000)
+            )) . "\n";
+            @file_put_contents($log_file, $log_entry, FILE_APPEND);
+            // #endregion
+
             wp_send_json_success(array(
                 'resources' => $formatted_resources,
                 'page' => $page,
@@ -343,7 +513,36 @@ class Questionnaire_Ajax {
                 'has_more' => $has_more
             ));
 
+            // #region agent log
+            $log_entry = json_encode(array(
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'A,B',
+                'location' => 'class-questionnaire-ajax.php:395',
+                'message' => 'After wp_send_json_success (should not reach here)',
+                'data' => array(),
+                'timestamp' => round(microtime(true) * 1000)
+            )) . "\n";
+            @file_put_contents($log_file, $log_entry, FILE_APPEND);
+            // #endregion
+
         } catch (Exception $e) {
+            // #region agent log
+            $log_entry = json_encode(array(
+                'sessionId' => 'debug-session',
+                'runId' => 'run1',
+                'hypothesisId' => 'B',
+                'location' => 'class-questionnaire-ajax.php:405',
+                'message' => 'Exception caught',
+                'data' => array(
+                    'exception_message' => $e->getMessage(),
+                    'exception_file' => $e->getFile(),
+                    'exception_line' => $e->getLine()
+                ),
+                'timestamp' => round(microtime(true) * 1000)
+            )) . "\n";
+            @file_put_contents($log_file, $log_entry, FILE_APPEND);
+            // #endregion
             wp_send_json_error(array('message' => 'Error loading resources: ' . $e->getMessage()));
         }
     }
