@@ -9,6 +9,32 @@
 class Questionnaire_Ajax {
 
     /**
+     * Ensure debug log directory and file exist with proper permissions
+     */
+    private function ensure_log_file() {
+        $log_dir = MONDAY_RESOURCES_PLUGIN_DIR . '.cursor';
+        $log_file = $log_dir . '/debug.log';
+        
+        // Create directory if it doesn't exist
+        if (!file_exists($log_dir)) {
+            if (function_exists('wp_mkdir_p')) {
+                wp_mkdir_p($log_dir);
+            } else {
+                @mkdir($log_dir, 0755, true);
+            }
+            @chmod($log_dir, 0755);
+        }
+        
+        // Create file if it doesn't exist and set permissions
+        if (!file_exists($log_file)) {
+            @touch($log_file);
+            @chmod($log_file, 0644);
+        }
+        
+        return $log_file;
+    }
+
+    /**
      * Constructor
      */
     public function __construct() {
@@ -227,7 +253,7 @@ class Questionnaire_Ajax {
      */
     public function ajax_get_resources_for_selection() {
         // #region agent log
-        $log_file = MONDAY_RESOURCES_PLUGIN_DIR . '.cursor/debug.log';
+        $log_file = $this->ensure_log_file();
         $log_entry = json_encode(array(
             'sessionId' => 'debug-session',
             'runId' => 'run1',
