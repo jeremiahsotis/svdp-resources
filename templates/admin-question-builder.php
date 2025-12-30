@@ -479,6 +479,9 @@ if (!defined('ABSPATH')) {
                                                             <div class="resource-checkbox-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; background: #fff; padding: 10px; border-radius: 3px;">
                                                                 <!-- Resources will be populated here via JavaScript -->
                                                             </div>
+                                                            <div style="margin-top: 10px; text-align: center;">
+                                                                <button type="button" class="button load-more-resources-btn" style="display: none;">Load More Resources</button>
+                                                            </div>
                                                             <p class="description" style="margin-top: 10px;">Check the boxes to select resources. Use the search box above to quickly find resources.</p>
                                                         </div>
                                                         <!-- Error state (shown if loading fails) -->

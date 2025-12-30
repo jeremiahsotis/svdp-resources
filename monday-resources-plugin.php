@@ -124,6 +124,30 @@ function monday_resources_maybe_upgrade_db() {
         update_option('monday_resources_db_version', '1.0.7');
         error_log('Monday Resources: Database upgraded to version 1.0.7 - Enhanced hours system');
     }
+
+    // Upgrade to 1.0.8 - Performance indexes for resource queries
+    if (version_compare($db_version, '1.0.8', '<')) {
+        $resources_table = $wpdb->prefix . 'resources';
+
+        // Check if status index exists
+        $indexes = $wpdb->get_results("SHOW INDEXES FROM $resources_table WHERE Key_name = 'status'");
+        if (empty($indexes)) {
+            $wpdb->query("ALTER TABLE $resources_table ADD INDEX status (status)");
+            error_log('Monday Resources: Added status index to resources table');
+        }
+
+        // Check if composite index exists (status, primary_service_type) for common query patterns
+        $composite_index = $wpdb->get_results("SHOW INDEXES FROM $resources_table WHERE Key_name = 'idx_status_primary_type'");
+        if (empty($composite_index)) {
+            // Only add if status index exists (which we just added)
+            $wpdb->query("ALTER TABLE $resources_table ADD INDEX idx_status_primary_type (status, primary_service_type)");
+            error_log('Monday Resources: Added composite index (status, primary_service_type) to resources table');
+        }
+
+        // Update version
+        update_option('monday_resources_db_version', '1.0.8');
+        error_log('Monday Resources: Database upgraded to version 1.0.8 - Performance indexes');
+    }
 }
 
 function monday_resources_activate() {

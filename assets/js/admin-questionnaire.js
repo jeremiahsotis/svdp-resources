@@ -862,8 +862,9 @@
                 $specificResourcesDiv.show();
                 // Trigger lazy loading when specific resources section is shown
                 var $resourceContainer = $specificResourcesDiv.find('.resource-selection-container');
-                if ($resourceContainer.length && !$resourceContainer.data('loaded')) {
-                    loadResourcesForOutcome($specificResourcesDiv);
+                if ($resourceContainer.length && !$resourceContainer.data('initialized')) {
+                    // Load initial page (empty search, page 1, replace existing)
+                    loadResourcesForOutcome($specificResourcesDiv, '', 1, false);
                 }
             }
             // 'none' type - both stay hidden
@@ -1047,25 +1048,28 @@
         });
 
         // ========================================
-        // LAZY LOADING RESOURCES FOR OUTCOMES
+        // LAZY LOADING RESOURCES FOR OUTCOMES (Search-Based with Pagination)
         // ========================================
 
-        // Global cache for resources (loaded once, reused across all outcomes)
-        var resourcesCache = null;
-        var resourcesLoading = false;
-
         /**
-         * Load resources for a specific outcome via AJAX
+         * Load resources for a specific outcome via AJAX (with search and pagination)
          */
-        function loadResourcesForOutcome($specificResourcesDiv) {
+        function loadResourcesForOutcome($specificResourcesDiv, searchTerm, page, append) {
             var $container = $specificResourcesDiv.find('.resource-selection-container');
             var outcomeId = $specificResourcesDiv.data('outcome-id');
             var $loadingState = $container.find('.resource-loading-state');
             var $listContainer = $container.find('.resource-list-container');
             var $errorState = $container.find('.resource-error-state');
-            var selectedIds = [];
+            var $checkboxList = $container.find('.resource-checkbox-list');
+            var $loadMoreBtn = $container.find('.load-more-resources-btn');
+            
+            // Default values
+            searchTerm = searchTerm || '';
+            page = page || 1;
+            append = append !== undefined ? append : false;
 
             // Get selected IDs from data attribute
+            var selectedIds = [];
             try {
                 var selectedIdsJson = $container.data('selected-ids');
                 if (selectedIdsJson) {
@@ -1075,33 +1079,15 @@
                 console.error('Error parsing selected IDs:', e);
             }
 
-            // If resources are already cached, use them immediately
-            if (resourcesCache !== null) {
-                renderResourcesList($container, resourcesCache, selectedIds);
-                return;
+            // Show loading state (only on first load or new search)
+            if (!append) {
+                $loadingState.show();
+                $listContainer.hide();
+                $errorState.hide();
+                $loadMoreBtn.hide();
+            } else {
+                $loadMoreBtn.prop('disabled', true).text('Loading...');
             }
-
-            // If already loading, wait for it to complete
-            if (resourcesLoading) {
-                // Poll until resources are loaded
-                var checkInterval = setInterval(function() {
-                    if (resourcesCache !== null) {
-                        clearInterval(checkInterval);
-                        renderResourcesList($container, resourcesCache, selectedIds);
-                    } else if (!resourcesLoading) {
-                        // Loading failed
-                        clearInterval(checkInterval);
-                        showResourceError($container);
-                    }
-                }, 100);
-                return;
-            }
-
-            // Show loading state
-            $loadingState.show();
-            $listContainer.hide();
-            $errorState.hide();
-            resourcesLoading = true;
 
             // Fetch resources via AJAX
             $.ajax({
@@ -1109,44 +1095,89 @@
                 type: 'POST',
                 data: {
                     action: 'get_resources_for_selection',
-                    nonce: questionnaireAdmin.nonce
+                    nonce: questionnaireAdmin.nonce,
+                    search: searchTerm,
+                    page: page,
+                    per_page: 100
                 },
+                timeout: 60000, // 60 second timeout
                 success: function(response) {
-                    resourcesLoading = false;
                     if (response.success && response.data && response.data.resources) {
-                        // Cache resources globally
-                        resourcesCache = response.data.resources;
-                        renderResourcesList($container, resourcesCache, selectedIds);
+                        // Hide loading, show list
+                        $loadingState.hide();
+                        $listContainer.show();
+                        $errorState.hide();
+
+                        // Render resources (append or replace)
+                        if (append) {
+                            appendResourcesToList($checkboxList, response.data.resources, selectedIds);
+                        } else {
+                            renderResourcesList($container, response.data.resources, selectedIds, searchTerm);
+                        }
+
+                        // Show/hide "Load more" button
+                        if (response.data.has_more) {
+                            $loadMoreBtn.show().prop('disabled', false).text('Load More Resources');
+                            $loadMoreBtn.data('next-page', page + 1);
+                            $loadMoreBtn.data('search-term', searchTerm);
+                        } else {
+                            $loadMoreBtn.hide();
+                        }
+
+                        // Update count
+                        var $countSpan = $container.find('.resource-count');
+                        if (response.data.total !== undefined) {
+                            $countSpan.text(response.data.total);
+                        }
                     } else {
                         showResourceError($container);
                     }
                 },
-                error: function() {
-                    resourcesLoading = false;
-                    showResourceError($container);
+                error: function(xhr, status, error) {
+                    if (status === 'timeout') {
+                        showResourceError($container, 'Request timed out. Please try a more specific search term.');
+                    } else {
+                        showResourceError($container);
+                    }
+                    $loadMoreBtn.prop('disabled', false).text('Load More Resources');
                 }
             });
         }
 
         /**
-         * Render resources list in the container
+         * Render resources list in the container (replaces existing list)
          */
-        function renderResourcesList($container, resources, selectedIds) {
-            var $loadingState = $container.find('.resource-loading-state');
-            var $listContainer = $container.find('.resource-list-container');
-            var $errorState = $container.find('.resource-error-state');
+        function renderResourcesList($container, resources, selectedIds, searchTerm) {
             var $checkboxList = $container.find('.resource-checkbox-list');
             var $searchInput = $container.find('.resource-search-input');
             var $countSpan = $container.find('.resource-count');
 
-            // Hide loading/error, show list
-            $loadingState.hide();
-            $errorState.hide();
-            $listContainer.show();
+            // Clear existing list
+            $checkboxList.empty();
 
+            // Append resources
+            appendResourcesToList($checkboxList, resources, selectedIds);
+
+            // Update count (will be updated by AJAX response)
+            if (resources.length > 0) {
+                $countSpan.text('Loading...');
+            }
+
+            // Mark as initialized
+            $container.data('initialized', true);
+            $container.data('current-search', searchTerm || '');
+            $container.data('current-page', 1);
+
+            // Initialize search input handler (debounced AJAX search)
+            initializeResourceSearch($container, searchTerm);
+        }
+
+        /**
+         * Append resources to the list (for pagination)
+         */
+        function appendResourcesToList($checkboxList, resources, selectedIds) {
             // Use document fragment for efficient DOM updates
             var fragment = document.createDocumentFragment();
-            var totalCount = resources.length;
 
             // Build resource checkboxes
             resources.forEach(function(resource) {
@@ -1154,8 +1185,8 @@
                 var label = document.createElement('label');
                 label.className = 'resource-checkbox-item';
                 label.style.cssText = 'display: block; margin: 8px 0; padding: 10px; border: 1px solid #e0e0e0; border-radius: 3px; cursor: pointer; background: #fff; transition: background-color 0.2s;';
-                label.setAttribute('data-searchable', resource.searchable);
                 label.setAttribute('data-resource-id', resource.id);
+                label.setAttribute('data-searchable', resource.searchable || '');
 
                 // Checkbox
                 var checkbox = document.createElement('input');
@@ -1211,42 +1242,50 @@
                 fragment.appendChild(label);
             });
 
-            // Clear and append fragment
-            $checkboxList.empty();
+            // Append fragment to list
             $checkboxList[0].appendChild(fragment);
-
-            // Update count
-            $countSpan.text(totalCount);
-
-            // Mark as loaded
-            $container.data('loaded', true);
-
-            // Initialize search for this container (with debouncing)
-            initializeResourceSearch($searchInput, $checkboxList, $countSpan);
         }
 
         /**
          * Show error state for resource loading
          */
-        function showResourceError($container) {
+        function showResourceError($container, errorMessage) {
             var $loadingState = $container.find('.resource-loading-state');
             var $listContainer = $container.find('.resource-list-container');
             var $errorState = $container.find('.resource-error-state');
+            var $loadMoreBtn = $container.find('.load-more-resources-btn');
 
             $loadingState.hide();
             $listContainer.hide();
             $errorState.show();
+            $loadMoreBtn.hide();
+            
+            if (errorMessage) {
+                $errorState.find('p').text(errorMessage);
+            }
         }
 
         /**
          * Initialize search with debouncing for a specific resource container
+         * Triggers AJAX search instead of client-side filtering
          */
-        function initializeResourceSearch($searchInput, $checkboxList, $countSpan) {
+        function initializeResourceSearch($container, initialSearchTerm) {
+            var $searchInput = $container.find('.resource-search-input');
+            var $specificResourcesDiv = $container.closest('.specific-resources-selection');
             var searchTimeout = null;
 
-            $searchInput.off('input.resource-search').on('input.resource-search', function() {
+            // Set initial search term if provided
+            if (initialSearchTerm) {
+                $searchInput.val(initialSearchTerm);
+            }
+
+            // Remove any existing handlers
+            $searchInput.off('input.resource-search');
+
+            // Add debounced search handler
+            $searchInput.on('input.resource-search', function() {
                 var $input = $(this);
-                var searchTerm = $input.val().toLowerCase().trim();
+                var searchTerm = $input.val().trim();
 
                 // Clear previous timeout
                 if (searchTimeout) {
@@ -1255,57 +1294,25 @@
 
                 // Debounce search (300ms delay)
                 searchTimeout = setTimeout(function() {
-                    filterResourceList($checkboxList, $countSpan, searchTerm);
+                    // Load resources with new search term (page 1, replace existing)
+                    loadResourcesForOutcome($specificResourcesDiv, searchTerm, 1, false);
                 }, 300);
             });
         }
 
         /**
-         * Filter resource list based on search term (optimized with document fragment)
+         * Debounce helper function
          */
-        function filterResourceList($checkboxList, $countSpan, searchTerm) {
-            var $items = $checkboxList.find('.resource-checkbox-item');
-            var visibleCount = 0;
-
-            if (searchTerm === '') {
-                // Show all items
-                $items.show();
-                visibleCount = $items.length;
-            } else {
-                // Split search term into words for better matching
-                var searchWords = searchTerm.split(/\s+/).filter(function(word) {
-                    return word.length > 0;
-                });
-
-                // Use document fragment for batch DOM updates
-                var fragment = document.createDocumentFragment();
-                var hiddenItems = [];
-
-                // Filter items - search across all resource fields
-                $items.each(function() {
-                    var $item = $(this);
-                    var searchableText = $item.data('searchable') || '';
-
-                    // Check if all search words are found in the searchable text
-                    var matches = true;
-                    for (var i = 0; i < searchWords.length; i++) {
-                        if (searchableText.indexOf(searchWords[i]) === -1) {
-                            matches = false;
-                            break;
-                        }
-                    }
-
-                    if (matches) {
-                        $item.show();
-                        visibleCount++;
-                    } else {
-                        $item.hide();
-                    }
-                });
-            }
-
-            // Update count
-            $countSpan.text(visibleCount);
+        function debounce(func, wait) {
+            var timeout;
+            return function() {
+                var context = this;
+                var args = arguments;
+                clearTimeout(timeout);
+                timeout = setTimeout(function() {
+                    func.apply(context, args);
+                }, wait);
+            };
         }
 
         // Also load resources when outcome is expanded and has specific_resources selected
@@ -1316,21 +1323,23 @@
             // Check if this outcome has specific_resources selected and is visible
             if ($specificResourcesDiv.length && $specificResourcesDiv.is(':visible')) {
                 var $resourceContainer = $specificResourcesDiv.find('.resource-selection-container');
-                if ($resourceContainer.length && !$resourceContainer.data('loaded')) {
-                    loadResourcesForOutcome($specificResourcesDiv);
+                if ($resourceContainer.length && !$resourceContainer.data('initialized')) {
+                    // Load initial page (empty search, page 1)
+                    loadResourcesForOutcome($specificResourcesDiv, '', 1, false);
                 }
             }
         });
 
-        // ========================================
-        // SEARCHABLE RESOURCE SELECTION (Legacy - kept for compatibility)
-        // ========================================
+        // Handle "Load More" button click
+        $(document).on('click', '.load-more-resources-btn', function() {
+            var $btn = $(this);
+            var $container = $btn.closest('.resource-selection-container');
+            var $specificResourcesDiv = $container.closest('.specific-resources-selection');
+            var nextPage = $btn.data('next-page') || 2;
+            var searchTerm = $btn.data('search-term') || '';
 
-        // Real-time search filtering for specific resources selection (old implementation)
-        // This is now handled by initializeResourceSearch above, but keeping for backwards compatibility
-        $(document).on('input', '#resource-search-input', function() {
-            // This will be handled by the new debounced search system
-            // But we keep this handler for any edge cases
+            // Load next page (append to existing list)
+            loadResourcesForOutcome($specificResourcesDiv, searchTerm, nextPage, true);
         });
     });
 

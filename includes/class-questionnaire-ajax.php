@@ -222,60 +222,130 @@ class Questionnaire_Ajax {
     }
 
     /**
-     * AJAX: Get resources for admin selection (lazy loading)
+     * AJAX: Get resources for admin selection (lazy loading with search and pagination)
      * Admin-only endpoint for questionnaire outcome resource selection
      */
     public function ajax_get_resources_for_selection() {
+        // Increase timeout for large datasets
+        if (function_exists('wp_set_time_limit')) {
+            @wp_set_time_limit(60);
+        } elseif (function_exists('set_time_limit')) {
+            @set_time_limit(60);
+        }
+
         check_ajax_referer('questionnaire_admin_nonce', 'nonce');
 
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array('message' => 'Unauthorized.'));
         }
 
-        // Get all active resources
-        if (!class_exists('Resources_Manager')) {
-            wp_send_json_error(array('message' => 'Resources Manager not available.'));
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'resources';
+
+        // Get parameters
+        $search_term = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
+        $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
+        $per_page = isset($_POST['per_page']) ? intval($_POST['per_page']) : 100;
+        
+        // Validate pagination
+        $page = max(1, $page);
+        $per_page = min(200, max(10, $per_page)); // Limit between 10 and 200
+        $offset = ($page - 1) * $per_page;
+
+        try {
+            // Optimized query - only select needed fields and build searchable text in SQL
+            $query = "SELECT 
+                id, 
+                resource_name, 
+                organization, 
+                primary_service_type, 
+                secondary_service_type, 
+                target_population,
+                LOWER(CONCAT_WS(' ', 
+                    COALESCE(resource_name, ''),
+                    COALESCE(organization, ''),
+                    COALESCE(primary_service_type, ''),
+                    COALESCE(secondary_service_type, ''),
+                    COALESCE(target_population, '')
+                )) as searchable
+            FROM $table_name 
+            WHERE status = 'active'";
+
+            $where_values = array();
+
+            // Add search filter if provided
+            if (!empty($search_term)) {
+                $search_like = '%' . $wpdb->esc_like($search_term) . '%';
+                $query .= " AND (
+                    resource_name LIKE %s OR
+                    organization LIKE %s OR
+                    primary_service_type LIKE %s OR
+                    secondary_service_type LIKE %s OR
+                    target_population LIKE %s
+                )";
+                $where_values[] = $search_like;
+                $where_values[] = $search_like;
+                $where_values[] = $search_like;
+                $where_values[] = $search_like;
+                $where_values[] = $search_like;
+            }
+
+            // Add pagination
+            $query .= " ORDER BY resource_name ASC LIMIT %d OFFSET %d";
+            $where_values[] = $per_page;
+            $where_values[] = $offset;
+
+            // Execute query
+            if (!empty($where_values)) {
+                $resources = $wpdb->get_results($wpdb->prepare($query, $where_values), ARRAY_A);
+            } else {
+                $resources = $wpdb->get_results($query, ARRAY_A);
+            }
+
+            if ($resources === false) {
+                wp_send_json_error(array('message' => 'Database query failed.'));
+            }
+
+            // Check if there are more results
+            $count_query = "SELECT COUNT(*) as total FROM $table_name WHERE status = 'active'";
+            if (!empty($search_term)) {
+                $search_like = '%' . $wpdb->esc_like($search_term) . '%';
+                $count_query .= $wpdb->prepare(" AND (
+                    resource_name LIKE %s OR
+                    organization LIKE %s OR
+                    primary_service_type LIKE %s OR
+                    secondary_service_type LIKE %s OR
+                    target_population LIKE %s
+                )", $search_like, $search_like, $search_like, $search_like, $search_like);
+            }
+            $total_count = $wpdb->get_var($count_query);
+            $has_more = ($offset + count($resources)) < $total_count;
+
+            // Format resources (minimal processing)
+            $formatted_resources = array();
+            foreach ($resources as $resource) {
+                $formatted_resources[] = array(
+                    'id' => intval($resource['id']),
+                    'name' => $resource['resource_name'],
+                    'organization' => !empty($resource['organization']) ? $resource['organization'] : '',
+                    'resource_type' => !empty($resource['primary_service_type']) ? $resource['primary_service_type'] : '',
+                    'needs_met' => !empty($resource['secondary_service_type']) ? $resource['secondary_service_type'] : '',
+                    'target_population' => !empty($resource['target_population']) ? $resource['target_population'] : '',
+                    'searchable' => !empty($resource['searchable']) ? $resource['searchable'] : ''
+                );
+            }
+
+            wp_send_json_success(array(
+                'resources' => $formatted_resources,
+                'page' => $page,
+                'per_page' => $per_page,
+                'total' => intval($total_count),
+                'has_more' => $has_more
+            ));
+
+        } catch (Exception $e) {
+            wp_send_json_error(array('message' => 'Error loading resources: ' . $e->getMessage()));
         }
-
-        $resources = Resources_Manager::get_all_resources();
-
-        if ($resources === false) {
-            wp_send_json_error(array('message' => 'Failed to load resources.'));
-        }
-
-        // Format resources for frontend (include searchable fields)
-        $formatted_resources = array();
-        foreach ($resources as $resource) {
-            // Build searchable text from all resource fields
-            $searchable_fields = array(
-                $resource['resource_name'],
-                $resource['organization'],
-                $resource['primary_service_type'],
-                $resource['secondary_service_type'],
-                $resource['target_population'],
-                $resource['phone'],
-                $resource['email'],
-                $resource['what_they_provide'],
-                $resource['geography'],
-                $resource['counties_served']
-            );
-            $searchable_text = strtolower(implode(' ', array_filter($searchable_fields)));
-
-            $formatted_resources[] = array(
-                'id' => intval($resource['id']),
-                'name' => $resource['resource_name'],
-                'organization' => !empty($resource['organization']) ? $resource['organization'] : '',
-                'resource_type' => !empty($resource['primary_service_type']) ? $resource['primary_service_type'] : '',
-                'needs_met' => !empty($resource['secondary_service_type']) ? $resource['secondary_service_type'] : '',
-                'target_population' => !empty($resource['target_population']) ? $resource['target_population'] : '',
-                'searchable' => $searchable_text
-            );
-        }
-
-        wp_send_json_success(array(
-            'resources' => $formatted_resources,
-            'count' => count($formatted_resources)
-        ));
     }
 }
 
