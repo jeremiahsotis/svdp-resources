@@ -452,66 +452,40 @@ if (!defined('ABSPATH')) {
                                                 </p>
 
                                                 <!-- Specific Resources Selection -->
-                                                <div class="specific-resources-selection" style="margin-left: 25px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; <?php echo $outcome['resource_filter_type'] === 'specific_resources' ? '' : 'display:none;'; ?>">
+                                                <div class="specific-resources-selection" data-outcome-id="<?php echo esc_attr($outcome['id']); ?>" style="margin-left: 25px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; <?php echo $outcome['resource_filter_type'] === 'specific_resources' ? '' : 'display:none;'; ?>">
                                                     <?php
-                                                    // Get all active resources
-                                                    if (class_exists('Resources_Manager')) {
-                                                        $all_resources = Resources_Manager::get_all_resources();
-                                                        $selected_resource_ids = isset($filter_data['specific_ids']) ? $filter_data['specific_ids'] : array();
-
-                                                        if (!empty($all_resources)):
-                                                        ?>
+                                                    // Store selected resource IDs for restoration after AJAX load
+                                                    $selected_resource_ids = isset($filter_data['specific_ids']) ? $filter_data['specific_ids'] : array();
+                                                    ?>
+                                                    <div class="resource-selection-container" data-selected-ids="<?php echo esc_attr(json_encode($selected_resource_ids)); ?>">
+                                                        <!-- Loading state (shown initially or when loading) -->
+                                                        <div class="resource-loading-state" style="text-align: center; padding: 40px 20px;">
+                                                            <p style="margin: 0 0 10px 0; font-weight: 600; color: #666;">Loading resources...</p>
+                                                            <div style="display: inline-block; width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #0073aa; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                                                            <style>
+                                                                @keyframes spin {
+                                                                    0% { transform: rotate(0deg); }
+                                                                    100% { transform: rotate(360deg); }
+                                                                }
+                                                            </style>
+                                                        </div>
+                                                        <!-- Resource list container (populated via AJAX) -->
+                                                        <div class="resource-list-container" style="display: none;">
                                                             <p style="margin: 0 0 10px 0; font-weight: 600;">Select Specific Resources:</p>
                                                             <div style="margin-bottom: 10px;">
-                                                                <input type="text" id="resource-search-input" placeholder="Search resources by name or resource type..." style="width: 100%; max-width: 500px; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 3px;">
-                                                                <p class="description" style="margin: 5px 0 0 0; font-size: 12px;">Type to filter the list below. Showing <span id="resource-count"><?php echo count($all_resources); ?></span> of <?php echo count($all_resources); ?> resources</p>
+                                                                <input type="text" class="resource-search-input" placeholder="Search resources by name, organization, type, or target population..." style="width: 100%; max-width: 500px; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 3px;">
+                                                                <p class="description" style="margin: 5px 0 0 0; font-size: 12px;">Type to filter the list below. Showing <span class="resource-count">0</span> resources</p>
                                                             </div>
-                                                            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; background: #fff; padding: 10px; border-radius: 3px;">
-                                                                <?php foreach ($all_resources as $resource): 
-                                                                    // Build searchable text from all resource fields
-                                                                    $searchable_fields = array(
-                                                                        $resource['resource_name'],
-                                                                        $resource['organization'],
-                                                                        $resource['primary_service_type'],
-                                                                        $resource['secondary_service_type'],
-                                                                        $resource['target_population'],
-                                                                        $resource['phone'],
-                                                                        $resource['email'],
-                                                                        $resource['what_they_provide'],
-                                                                        $resource['geography'],
-                                                                        $resource['counties_served']
-                                                                    );
-                                                                    $searchable_text = strtolower(implode(' ', array_filter($searchable_fields)));
-                                                                ?>
-                                                                    <label class="resource-checkbox-item" style="display: block; margin: 8px 0; padding: 10px; border: 1px solid #e0e0e0; border-radius: 3px; cursor: pointer; background: #fff; transition: background-color 0.2s;" data-searchable="<?php echo esc_attr($searchable_text); ?>" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='#fff'">
-                                                                        <input type="checkbox" name="specific_resource_ids[]" value="<?php echo esc_attr($resource['id']); ?>" <?php checked(in_array($resource['id'], $selected_resource_ids)); ?> style="margin-right: 8px; vertical-align: top; margin-top: 3px;">
-                                                                        <div style="display: inline-block; width: calc(100% - 30px);">
-                                                                            <div style="font-weight: 600; color: #0073aa; margin-bottom: 4px;"><?php echo esc_html($resource['resource_name']); ?></div>
-                                                                            <?php if (!empty($resource['organization'])): ?>
-                                                                                <div style="font-size: 0.9em; color: #555; margin-bottom: 3px;"><strong>Organization:</strong> <?php echo esc_html($resource['organization']); ?></div>
-                                                                            <?php endif; ?>
-                                                                            <div style="font-size: 0.9em; color: #666; margin-bottom: 3px;">
-                                                                                <?php if (!empty($resource['primary_service_type'])): ?>
-                                                                                    <strong>Type:</strong> <?php echo esc_html($resource['primary_service_type']); ?>
-                                                                                <?php endif; ?>
-                                                                                <?php if (!empty($resource['secondary_service_type'])): ?>
-                                                                                    <?php if (!empty($resource['primary_service_type'])): ?> | <?php endif; ?>
-                                                                                    <strong>Needs Met:</strong> <?php echo esc_html($resource['secondary_service_type']); ?>
-                                                                                <?php endif; ?>
-                                                                            </div>
-                                                                            <?php if (!empty($resource['target_population'])): ?>
-                                                                                <div style="font-size: 0.85em; color: #777; margin-top: 3px;"><strong>Target Population:</strong> <?php echo esc_html($resource['target_population']); ?></div>
-                                                                            <?php endif; ?>
-                                                                        </div>
-                                                                    </label>
-                                                                <?php endforeach; ?>
+                                                            <div class="resource-checkbox-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; background: #fff; padding: 10px; border-radius: 3px;">
+                                                                <!-- Resources will be populated here via JavaScript -->
                                                             </div>
                                                             <p class="description" style="margin-top: 10px;">Check the boxes to select resources. Use the search box above to quickly find resources.</p>
-                                                        <?php else: ?>
-                                                            <p style="margin: 0; color: #666;">No active resources found.</p>
-                                                        <?php endif;
-                                                    }
-                                                    ?>
+                                                        </div>
+                                                        <!-- Error state (shown if loading fails) -->
+                                                        <div class="resource-error-state" style="display: none; text-align: center; padding: 20px; color: #d63638;">
+                                                            <p style="margin: 0; font-weight: 600;">Failed to load resources. Please refresh the page and try again.</p>
+                                                        </div>
+                                                    </div>
                                                 </div>
 
                                                 <p>

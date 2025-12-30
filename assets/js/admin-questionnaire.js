@@ -848,18 +848,23 @@
         $(document).on('change', '.resource-filter-type-radio', function() {
             var type = $(this).val();
             var $container = $(this).closest('td');
-            var $serviceTypeDiv = $container.find('.service-type-selection');
+            var $categoryFiltersDiv = $container.find('.service-type-selection, .category-filters-selection');
             var $specificResourcesDiv = $container.find('.specific-resources-selection');
 
             // Hide all selection divs first
-            $serviceTypeDiv.hide();
+            $categoryFiltersDiv.hide();
             $specificResourcesDiv.hide();
 
             // Show the appropriate selection div
-            if (type === 'service_type') {
-                $serviceTypeDiv.show();
+            if (type === 'categories' || type === 'service_type') {
+                $categoryFiltersDiv.show();
             } else if (type === 'specific_resources') {
                 $specificResourcesDiv.show();
+                // Trigger lazy loading when specific resources section is shown
+                var $resourceContainer = $specificResourcesDiv.find('.resource-selection-container');
+                if ($resourceContainer.length && !$resourceContainer.data('loaded')) {
+                    loadResourcesForOutcome($specificResourcesDiv);
+                }
             }
             // 'none' type - both stay hidden
         });
@@ -879,7 +884,7 @@
 
             var filterData = {};
 
-            if (filterType === 'service_type') {
+            if (filterType === 'categories' || filterType === 'service_type') {
                 // Collect Resource Types
                 var resourceTypes = [];
                 $form.find('input[name="resource_types[]"]:checked').each(function() {
@@ -1042,13 +1047,224 @@
         });
 
         // ========================================
-        // SEARCHABLE RESOURCE SELECTION
+        // LAZY LOADING RESOURCES FOR OUTCOMES
         // ========================================
 
-        // Real-time search filtering for specific resources selection
-        $(document).on('input', '#resource-search-input', function() {
-            var searchTerm = $(this).val().toLowerCase().trim();
-            var $items = $('.resource-checkbox-item');
+        // Global cache for resources (loaded once, reused across all outcomes)
+        var resourcesCache = null;
+        var resourcesLoading = false;
+
+        /**
+         * Load resources for a specific outcome via AJAX
+         */
+        function loadResourcesForOutcome($specificResourcesDiv) {
+            var $container = $specificResourcesDiv.find('.resource-selection-container');
+            var outcomeId = $specificResourcesDiv.data('outcome-id');
+            var $loadingState = $container.find('.resource-loading-state');
+            var $listContainer = $container.find('.resource-list-container');
+            var $errorState = $container.find('.resource-error-state');
+            var selectedIds = [];
+
+            // Get selected IDs from data attribute
+            try {
+                var selectedIdsJson = $container.data('selected-ids');
+                if (selectedIdsJson) {
+                    selectedIds = typeof selectedIdsJson === 'string' ? JSON.parse(selectedIdsJson) : selectedIdsJson;
+                }
+            } catch (e) {
+                console.error('Error parsing selected IDs:', e);
+            }
+
+            // If resources are already cached, use them immediately
+            if (resourcesCache !== null) {
+                renderResourcesList($container, resourcesCache, selectedIds);
+                return;
+            }
+
+            // If already loading, wait for it to complete
+            if (resourcesLoading) {
+                // Poll until resources are loaded
+                var checkInterval = setInterval(function() {
+                    if (resourcesCache !== null) {
+                        clearInterval(checkInterval);
+                        renderResourcesList($container, resourcesCache, selectedIds);
+                    } else if (!resourcesLoading) {
+                        // Loading failed
+                        clearInterval(checkInterval);
+                        showResourceError($container);
+                    }
+                }, 100);
+                return;
+            }
+
+            // Show loading state
+            $loadingState.show();
+            $listContainer.hide();
+            $errorState.hide();
+            resourcesLoading = true;
+
+            // Fetch resources via AJAX
+            $.ajax({
+                url: questionnaireAdmin.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'get_resources_for_selection',
+                    nonce: questionnaireAdmin.nonce
+                },
+                success: function(response) {
+                    resourcesLoading = false;
+                    if (response.success && response.data && response.data.resources) {
+                        // Cache resources globally
+                        resourcesCache = response.data.resources;
+                        renderResourcesList($container, resourcesCache, selectedIds);
+                    } else {
+                        showResourceError($container);
+                    }
+                },
+                error: function() {
+                    resourcesLoading = false;
+                    showResourceError($container);
+                }
+            });
+        }
+
+        /**
+         * Render resources list in the container
+         */
+        function renderResourcesList($container, resources, selectedIds) {
+            var $loadingState = $container.find('.resource-loading-state');
+            var $listContainer = $container.find('.resource-list-container');
+            var $errorState = $container.find('.resource-error-state');
+            var $checkboxList = $container.find('.resource-checkbox-list');
+            var $searchInput = $container.find('.resource-search-input');
+            var $countSpan = $container.find('.resource-count');
+
+            // Hide loading/error, show list
+            $loadingState.hide();
+            $errorState.hide();
+            $listContainer.show();
+
+            // Use document fragment for efficient DOM updates
+            var fragment = document.createDocumentFragment();
+            var totalCount = resources.length;
+
+            // Build resource checkboxes
+            resources.forEach(function(resource) {
+                var isSelected = selectedIds.indexOf(resource.id) !== -1;
+                var label = document.createElement('label');
+                label.className = 'resource-checkbox-item';
+                label.style.cssText = 'display: block; margin: 8px 0; padding: 10px; border: 1px solid #e0e0e0; border-radius: 3px; cursor: pointer; background: #fff; transition: background-color 0.2s;';
+                label.setAttribute('data-searchable', resource.searchable);
+                label.setAttribute('data-resource-id', resource.id);
+
+                // Checkbox
+                var checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.name = 'specific_resource_ids[]';
+                checkbox.value = resource.id;
+                checkbox.checked = isSelected;
+                checkbox.style.cssText = 'margin-right: 8px; vertical-align: top; margin-top: 3px;';
+                label.appendChild(checkbox);
+
+                // Resource details container
+                var detailsDiv = document.createElement('div');
+                detailsDiv.style.cssText = 'display: inline-block; width: calc(100% - 30px);';
+
+                // Resource name
+                var nameDiv = document.createElement('div');
+                nameDiv.style.cssText = 'font-weight: 600; color: #0073aa; margin-bottom: 4px;';
+                nameDiv.textContent = resource.name;
+                detailsDiv.appendChild(nameDiv);
+
+                // Organization
+                if (resource.organization) {
+                    var orgDiv = document.createElement('div');
+                    orgDiv.style.cssText = 'font-size: 0.9em; color: #555; margin-bottom: 3px;';
+                    orgDiv.innerHTML = '<strong>Organization:</strong> ' + escapeHtml(resource.organization);
+                    detailsDiv.appendChild(orgDiv);
+                }
+
+                // Type and Needs Met
+                var typeDiv = document.createElement('div');
+                typeDiv.style.cssText = 'font-size: 0.9em; color: #666; margin-bottom: 3px;';
+                var typeParts = [];
+                if (resource.resource_type) {
+                    typeParts.push('<strong>Type:</strong> ' + escapeHtml(resource.resource_type));
+                }
+                if (resource.needs_met) {
+                    typeParts.push('<strong>Needs Met:</strong> ' + escapeHtml(resource.needs_met));
+                }
+                if (typeParts.length > 0) {
+                    typeDiv.innerHTML = typeParts.join(' | ');
+                    detailsDiv.appendChild(typeDiv);
+                }
+
+                // Target Population
+                if (resource.target_population) {
+                    var popDiv = document.createElement('div');
+                    popDiv.style.cssText = 'font-size: 0.85em; color: #777; margin-top: 3px;';
+                    popDiv.innerHTML = '<strong>Target Population:</strong> ' + escapeHtml(resource.target_population);
+                    detailsDiv.appendChild(popDiv);
+                }
+
+                label.appendChild(detailsDiv);
+                fragment.appendChild(label);
+            });
+
+            // Clear and append fragment
+            $checkboxList.empty();
+            $checkboxList[0].appendChild(fragment);
+
+            // Update count
+            $countSpan.text(totalCount);
+
+            // Mark as loaded
+            $container.data('loaded', true);
+
+            // Initialize search for this container (with debouncing)
+            initializeResourceSearch($searchInput, $checkboxList, $countSpan);
+        }
+
+        /**
+         * Show error state for resource loading
+         */
+        function showResourceError($container) {
+            var $loadingState = $container.find('.resource-loading-state');
+            var $listContainer = $container.find('.resource-list-container');
+            var $errorState = $container.find('.resource-error-state');
+
+            $loadingState.hide();
+            $listContainer.hide();
+            $errorState.show();
+        }
+
+        /**
+         * Initialize search with debouncing for a specific resource container
+         */
+        function initializeResourceSearch($searchInput, $checkboxList, $countSpan) {
+            var searchTimeout = null;
+
+            $searchInput.off('input.resource-search').on('input.resource-search', function() {
+                var $input = $(this);
+                var searchTerm = $input.val().toLowerCase().trim();
+
+                // Clear previous timeout
+                if (searchTimeout) {
+                    clearTimeout(searchTimeout);
+                }
+
+                // Debounce search (300ms delay)
+                searchTimeout = setTimeout(function() {
+                    filterResourceList($checkboxList, $countSpan, searchTerm);
+                }, 300);
+            });
+        }
+
+        /**
+         * Filter resource list based on search term (optimized with document fragment)
+         */
+        function filterResourceList($checkboxList, $countSpan, searchTerm) {
+            var $items = $checkboxList.find('.resource-checkbox-item');
             var visibleCount = 0;
 
             if (searchTerm === '') {
@@ -1060,6 +1276,10 @@
                 var searchWords = searchTerm.split(/\s+/).filter(function(word) {
                     return word.length > 0;
                 });
+
+                // Use document fragment for batch DOM updates
+                var fragment = document.createDocumentFragment();
+                var hiddenItems = [];
 
                 // Filter items - search across all resource fields
                 $items.each(function() {
@@ -1085,7 +1305,32 @@
             }
 
             // Update count
-            $('#resource-count').text(visibleCount);
+            $countSpan.text(visibleCount);
+        }
+
+        // Also load resources when outcome is expanded and has specific_resources selected
+        $(document).on('click', '.edit-outcome-btn', function() {
+            var $outcome = $(this).closest('.outcome-item');
+            var $specificResourcesDiv = $outcome.find('.specific-resources-selection');
+            
+            // Check if this outcome has specific_resources selected and is visible
+            if ($specificResourcesDiv.length && $specificResourcesDiv.is(':visible')) {
+                var $resourceContainer = $specificResourcesDiv.find('.resource-selection-container');
+                if ($resourceContainer.length && !$resourceContainer.data('loaded')) {
+                    loadResourcesForOutcome($specificResourcesDiv);
+                }
+            }
+        });
+
+        // ========================================
+        // SEARCHABLE RESOURCE SELECTION (Legacy - kept for compatibility)
+        // ========================================
+
+        // Real-time search filtering for specific resources selection (old implementation)
+        // This is now handled by initializeResourceSearch above, but keeping for backwards compatibility
+        $(document).on('input', '#resource-search-input', function() {
+            // This will be handled by the new debounced search system
+            // But we keep this handler for any edge cases
         });
     });
 

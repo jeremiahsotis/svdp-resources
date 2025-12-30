@@ -24,6 +24,9 @@ class Questionnaire_Ajax {
 
         add_action('wp_ajax_questionnaire_track_resource_view', array($this, 'ajax_track_resource_view'));
         add_action('wp_ajax_nopriv_questionnaire_track_resource_view', array($this, 'ajax_track_resource_view'));
+
+        // Admin-only AJAX handlers
+        add_action('wp_ajax_get_resources_for_selection', array($this, 'ajax_get_resources_for_selection'));
     }
 
     /**
@@ -216,6 +219,63 @@ class Questionnaire_Ajax {
         } else {
             wp_send_json_error(array('message' => 'Failed to track resource view.'));
         }
+    }
+
+    /**
+     * AJAX: Get resources for admin selection (lazy loading)
+     * Admin-only endpoint for questionnaire outcome resource selection
+     */
+    public function ajax_get_resources_for_selection() {
+        check_ajax_referer('questionnaire_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized.'));
+        }
+
+        // Get all active resources
+        if (!class_exists('Resources_Manager')) {
+            wp_send_json_error(array('message' => 'Resources Manager not available.'));
+        }
+
+        $resources = Resources_Manager::get_all_resources();
+
+        if ($resources === false) {
+            wp_send_json_error(array('message' => 'Failed to load resources.'));
+        }
+
+        // Format resources for frontend (include searchable fields)
+        $formatted_resources = array();
+        foreach ($resources as $resource) {
+            // Build searchable text from all resource fields
+            $searchable_fields = array(
+                $resource['resource_name'],
+                $resource['organization'],
+                $resource['primary_service_type'],
+                $resource['secondary_service_type'],
+                $resource['target_population'],
+                $resource['phone'],
+                $resource['email'],
+                $resource['what_they_provide'],
+                $resource['geography'],
+                $resource['counties_served']
+            );
+            $searchable_text = strtolower(implode(' ', array_filter($searchable_fields)));
+
+            $formatted_resources[] = array(
+                'id' => intval($resource['id']),
+                'name' => $resource['resource_name'],
+                'organization' => !empty($resource['organization']) ? $resource['organization'] : '',
+                'resource_type' => !empty($resource['primary_service_type']) ? $resource['primary_service_type'] : '',
+                'needs_met' => !empty($resource['secondary_service_type']) ? $resource['secondary_service_type'] : '',
+                'target_population' => !empty($resource['target_population']) ? $resource['target_population'] : '',
+                'searchable' => $searchable_text
+            );
+        }
+
+        wp_send_json_success(array(
+            'resources' => $formatted_resources,
+            'count' => count($formatted_resources)
+        ));
     }
 }
 
