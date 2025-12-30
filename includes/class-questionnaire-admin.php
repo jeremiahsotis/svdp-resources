@@ -160,6 +160,29 @@ class Questionnaire_Admin {
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('questionnaire_admin_nonce'),
             ));
+            
+            // #region agent log - Verify script localization
+            $log_dir = MONDAY_RESOURCES_PLUGIN_DIR . '.cursor';
+            $log_file = $log_dir . '/debug.log';
+            if (!file_exists($log_dir)) {
+                @wp_mkdir_p($log_dir);
+            }
+            $entry = json_encode(array(
+                'sessionId' => 'debug-session',
+                'runId' => 'localization',
+                'hypothesisId' => 'A',
+                'location' => 'class-questionnaire-admin.php:162',
+                'message' => 'Script localized',
+                'data' => array(
+                    'ajaxUrl' => admin_url('admin-ajax.php'),
+                    'hasNonce' => !empty(wp_create_nonce('questionnaire_admin_nonce')),
+                    'script_handle' => 'questionnaire-admin'
+                ),
+                'timestamp' => round(microtime(true) * 1000)
+            )) . "\n";
+            @file_put_contents($log_file, $entry, FILE_APPEND);
+            error_log('QUESTIONNAIRE_DEBUG_LOCAL: Script localized with ajaxUrl=' . admin_url('admin-ajax.php'));
+            // #endregion
         }
     }
 

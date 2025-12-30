@@ -1090,7 +1090,15 @@
             }
 
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1093',message:'AJAX request starting',data:{searchTerm:searchTerm,page:page,ajaxUrl:questionnaireAdmin.ajaxUrl,hasNonce:!!questionnaireAdmin.nonce},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(function(){});
+            var ajaxData = {
+                action: 'get_resources_for_selection',
+                nonce: questionnaireAdmin.nonce,
+                search: searchTerm,
+                page: page,
+                per_page: 100
+            };
+            console.log('QUESTIONNAIRE_DEBUG: Starting AJAX request', ajaxData);
+            fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1093',message:'AJAX request starting',data:{searchTerm:searchTerm,page:page,ajaxUrl:questionnaireAdmin.ajaxUrl,hasNonce:!!questionnaireAdmin.nonce,action:ajaxData.action,nonceLength:questionnaireAdmin.nonce?questionnaireAdmin.nonce.length:0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(function(){});
             // #endregion
 
             // Fetch resources via AJAX
@@ -1098,13 +1106,7 @@
             $.ajax({
                 url: questionnaireAdmin.ajaxUrl,
                 type: 'POST',
-                data: {
-                    action: 'get_resources_for_selection',
-                    nonce: questionnaireAdmin.nonce,
-                    search: searchTerm,
-                    page: page,
-                    per_page: 100
-                },
+                data: ajaxData,
                 timeout: 60000, // 60 second timeout
                 success: function(response) {
                     // #region agent log
@@ -1145,7 +1147,8 @@
                 error: function(xhr, status, error) {
                     // #region agent log
                     var ajaxTime = Date.now() - ajaxStartTime;
-                    fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1136',message:'AJAX error callback',data:{ajaxTimeMs:ajaxTime,status:status,error:error,xhrStatus:xhr.status,xhrStatusText:xhr.statusText,xhrResponseText:xhr.responseText?xhr.responseText.substring(0,200):'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(function(){});
+                    console.error('QUESTIONNAIRE_DEBUG: AJAX error', {status: status, error: error, xhrStatus: xhr.status, xhrStatusText: xhr.statusText, responseText: xhr.responseText ? xhr.responseText.substring(0, 500) : 'none', ajaxTime: ajaxTime});
+                    fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1136',message:'AJAX error callback',data:{ajaxTimeMs:ajaxTime,status:status,error:error,xhrStatus:xhr.status,xhrStatusText:xhr.statusText,xhrResponseText:xhr.responseText?xhr.responseText.substring(0,500):'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(function(){});
                     // #endregion
                     if (status === 'timeout') {
                         showResourceError($container, 'Request timed out. Please try a more specific search term.');
@@ -1153,6 +1156,11 @@
                         showResourceError($container);
                     }
                     $loadMoreBtn.prop('disabled', false).text('Load More Resources');
+                },
+                beforeSend: function(xhr, settings) {
+                    // #region agent log
+                    console.log('QUESTIONNAIRE_DEBUG: AJAX beforeSend', {url: settings.url, data: settings.data, type: settings.type});
+                    // #endregion
                 }
             });
         }

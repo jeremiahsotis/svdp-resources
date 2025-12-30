@@ -74,6 +74,36 @@ class Questionnaire_Ajax {
 
         // Admin-only AJAX handlers
         add_action('wp_ajax_get_resources_for_selection', array($this, 'ajax_get_resources_for_selection'));
+        
+        // #region agent log - Verify AJAX hook registration
+        $this->log_ajax_registration();
+        // #endregion
+    }
+    
+    /**
+     * Log AJAX hook registration for debugging
+     */
+    private function log_ajax_registration() {
+        $log_dir = MONDAY_RESOURCES_PLUGIN_DIR . '.cursor';
+        $log_file = $log_dir . '/debug.log';
+        if (!file_exists($log_dir)) {
+            @wp_mkdir_p($log_dir);
+        }
+        $entry = json_encode(array(
+            'sessionId' => 'debug-session',
+            'runId' => 'registration',
+            'hypothesisId' => 'A',
+            'location' => 'class-questionnaire-ajax.php:56',
+            'message' => 'AJAX hook registered',
+            'data' => array(
+                'action' => 'get_resources_for_selection',
+                'hook_exists' => has_action('wp_ajax_get_resources_for_selection'),
+                'plugin_dir' => MONDAY_RESOURCES_PLUGIN_DIR
+            ),
+            'timestamp' => round(microtime(true) * 1000)
+        )) . "\n";
+        @file_put_contents($log_file, $entry, FILE_APPEND);
+        error_log('QUESTIONNAIRE_DEBUG_REG: AJAX hook registered for get_resources_for_selection');
     }
 
     /**
