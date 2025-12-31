@@ -51,7 +51,7 @@ class Questionnaire_Ajax {
             );
             error_log('QUESTIONNAIRE_DEBUG_ERROR: ' . json_encode($error_details));
         }
-        
+    }
         return $log_file;
     }
 
