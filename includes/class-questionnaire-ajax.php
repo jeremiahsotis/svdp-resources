@@ -305,7 +305,7 @@ class Questionnaire_Ajax {
      public function ajax_get_resources_for_selection() {
          // 1. Security Check
          // This looks for 'nonce' in the $_POST request
-         check_ajax_referer('questionnaire_nonce', 'nonce');
+         check_ajax_referer('questionnaire_admin_nonce', 'nonce');
 
          if (!current_user_can('manage_options')) {
              wp_send_json_error(array('message' => 'Unauthorized access.'));
