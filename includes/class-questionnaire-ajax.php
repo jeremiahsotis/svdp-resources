@@ -361,6 +361,7 @@ class Questionnaire_Ajax {
              )
          ));
      }
+}
 
 // Initialize
 new Questionnaire_Ajax();
