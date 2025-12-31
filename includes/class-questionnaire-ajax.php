@@ -302,315 +302,65 @@ class Questionnaire_Ajax {
      * AJAX: Get resources for admin selection (lazy loading with search and pagination)
      * Admin-only endpoint for questionnaire outcome resource selection
      */
-    public function ajax_get_resources_for_selection() {
-        // #region agent log
-        $this->write_debug_log(array(
-            'sessionId' => 'debug-session',
-            'runId' => 'run1',
-            'hypothesisId' => 'A,B,C,D',
-            'location' => 'class-questionnaire-ajax.php:228',
-            'message' => 'AJAX function entry',
-            'data' => array(
-                'has_post' => isset($_POST),
-                'has_nonce' => isset($_POST['nonce']),
-                'has_action' => isset($_POST['action']),
-                'action_value' => isset($_POST['action']) ? $_POST['action'] : 'missing',
-                'search_term' => isset($_POST['search']) ? substr($_POST['search'], 0, 50) : 'none',
-                'page' => isset($_POST['page']) ? $_POST['page'] : 'missing',
-                'memory_before' => memory_get_usage(true),
-                'plugin_dir' => MONDAY_RESOURCES_PLUGIN_DIR
-            ),
-            'timestamp' => round(microtime(true) * 1000)
-        ));
-        // #endregion
+     public function ajax_get_resources_for_selection() {
+         // 1. Security Check
+         // This looks for 'nonce' in the $_POST request
+         check_ajax_referer('questionnaire_nonce', 'nonce');
 
-        // Increase timeout for large datasets
-        if (function_exists('wp_set_time_limit')) {
-            @wp_set_time_limit(60);
-        } elseif (function_exists('set_time_limit')) {
-            @set_time_limit(60);
-        }
+         if (!current_user_can('manage_options')) {
+             wp_send_json_error(array('message' => 'Unauthorized access.'));
+         }
 
-        // #region agent log
-        $this->write_debug_log(array(
-            'sessionId' => 'debug-session',
-            'runId' => 'run1',
-            'hypothesisId' => 'D',
-            'location' => 'class-questionnaire-ajax.php:304',
-            'message' => 'Before nonce check',
-            'data' => array('nonce_present' => isset($_POST['nonce'])),
-            'timestamp' => round(microtime(true) * 1000)
-        ));
-        // #endregion
+         global $wpdb;
+         $table_name = $wpdb->prefix . 'resources';
 
-        $nonce_result = check_ajax_referer('questionnaire_admin_nonce', 'nonce', false);
+         // 2. Get Parameters (Page & Search)
+         $search = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
+         $page = isset($_POST['page']) ? max(1, intval($_POST['page'])) : 1;
+         $per_page = 20; // Load 20 at a time to keep it fast
+         $offset = ($page - 1) * $per_page;
 
-        // #region agent log
-        $this->write_debug_log(array(
-            'sessionId' => 'debug-session',
-            'runId' => 'run1',
-            'hypothesisId' => 'D',
-            'location' => 'class-questionnaire-ajax.php:317',
-            'message' => 'After nonce check',
-            'data' => array('nonce_valid' => $nonce_result),
-            'timestamp' => round(microtime(true) * 1000)
-        ));
-        // #endregion
+         // 3. Build Query
+         $where_sql = "WHERE status = 'active'";
+         $args = array();
 
-        if (!$nonce_result) {
-            // #region agent log
-            $this->write_debug_log(array(
-                'sessionId' => 'debug-session',
-                'runId' => 'run1',
-                'hypothesisId' => 'D',
-                'location' => 'class-questionnaire-ajax.php:332',
-                'message' => 'Nonce check failed',
-                'data' => array(),
-                'timestamp' => round(microtime(true) * 1000)
-            ));
-            // #endregion
-            wp_send_json_error(array('message' => 'Invalid security token. Please refresh the page.'));
-        }
+         if (!empty($search)) {
+             $where_sql .= " AND (resource_name LIKE %s OR description LIKE %s)";
+             $wildcard = '%' . $wpdb->esc_like($search) . '%';
+             $args[] = $wildcard;
+             $args[] = $wildcard;
+         }
 
-        if (!current_user_can('manage_options')) {
-            // #region agent log
-            $this->write_debug_log(array(
-                'sessionId' => 'debug-session',
-                'runId' => 'run1',
-                'hypothesisId' => 'A',
-                'location' => 'class-questionnaire-ajax.php:348',
-                'message' => 'User unauthorized',
-                'data' => array('user_id' => get_current_user_id()),
-                'timestamp' => round(microtime(true) * 1000)
-            ));
-            // #endregion
-            wp_send_json_error(array('message' => 'Unauthorized.'));
-        }
+         // 4. Get Total Count (for "Load More" logic)
+         if (empty($args)) {
+             $total_items = $wpdb->get_var("SELECT COUNT(*) FROM $table_name $where_sql");
+         } else {
+             $total_items = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM $table_name $where_sql", $args));
+         }
 
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'resources';
+         // 5. Fetch Actual Resources
+         $sql = "SELECT id, resource_name, resource_type, geography 
+                 FROM $table_name 
+                 $where_sql 
+                 ORDER BY resource_name ASC 
+                 LIMIT %d OFFSET %d";
+            
+         $args[] = $per_page;
+         $args[] = $offset;
 
-        // Get parameters
-        $search_term = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
-        $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
-        $per_page = isset($_POST['per_page']) ? intval($_POST['per_page']) : 100;
-        
-        // Validate pagination
-        $page = max(1, $page);
-        $per_page = min(200, max(10, $per_page)); // Limit between 10 and 200
-        $offset = ($page - 1) * $per_page;
+         $resources = $wpdb->get_results($wpdb->prepare($sql, $args), ARRAY_A);
 
-        try {
-            // #region agent log
-            $this->write_debug_log(array(
-                'sessionId' => 'debug-session',
-                'runId' => 'run1',
-                'hypothesisId' => 'C',
-                'location' => 'class-questionnaire-ajax.php:377',
-                'message' => 'Before database query',
-                'data' => array(
-                    'table_name' => $table_name,
-                    'search_term' => $search_term,
-                    'page' => $page,
-                    'per_page' => $per_page,
-                    'offset' => $offset
-                ),
-                'timestamp' => round(microtime(true) * 1000)
-            ));
-            // #endregion
-
-            // Optimized query - only select needed fields and build searchable text in SQL
-            $query = "SELECT 
-                id, 
-                resource_name, 
-                organization, 
-                primary_service_type, 
-                secondary_service_type, 
-                target_population,
-                LOWER(CONCAT_WS(' ', 
-                    COALESCE(resource_name, ''),
-                    COALESCE(organization, ''),
-                    COALESCE(primary_service_type, ''),
-                    COALESCE(secondary_service_type, ''),
-                    COALESCE(target_population, '')
-                )) as searchable
-            FROM $table_name 
-            WHERE status = 'active'";
-
-            $where_values = array();
-
-            // Add search filter if provided
-            if (!empty($search_term)) {
-                $search_like = '%' . $wpdb->esc_like($search_term) . '%';
-                $query .= " AND (
-                    resource_name LIKE %s OR
-                    organization LIKE %s OR
-                    primary_service_type LIKE %s OR
-                    secondary_service_type LIKE %s OR
-                    target_population LIKE %s
-                )";
-                $where_values[] = $search_like;
-                $where_values[] = $search_like;
-                $where_values[] = $search_like;
-                $where_values[] = $search_like;
-                $where_values[] = $search_like;
-            }
-
-            // Add pagination
-            $query .= " ORDER BY resource_name ASC LIMIT %d OFFSET %d";
-            $where_values[] = $per_page;
-            $where_values[] = $offset;
-
-            // Execute query
-            $query_start = microtime(true);
-            if (!empty($where_values)) {
-                $prepared_query = $wpdb->prepare($query, $where_values);
-                // #region agent log
-                $this->write_debug_log(array(
-                    'sessionId' => 'debug-session',
-                    'runId' => 'run1',
-                    'hypothesisId' => 'C',
-                    'location' => 'class-questionnaire-ajax.php:442',
-                    'message' => 'Executing prepared query',
-                    'data' => array('query_length' => strlen($prepared_query)),
-                    'timestamp' => round(microtime(true) * 1000)
-                ));
-                // #endregion
-                $resources = $wpdb->get_results($prepared_query, ARRAY_A);
-            } else {
-                // #region agent log
-                $this->write_debug_log(array(
-                    'sessionId' => 'debug-session',
-                    'runId' => 'run1',
-                    'hypothesisId' => 'C',
-                    'location' => 'class-questionnaire-ajax.php:457',
-                    'message' => 'Executing simple query',
-                    'data' => array(),
-                    'timestamp' => round(microtime(true) * 1000)
-                ));
-                // #endregion
-                $resources = $wpdb->get_results($query, ARRAY_A);
-            }
-            $query_time = microtime(true) - $query_start;
-
-            // #region agent log
-            $this->write_debug_log(array(
-                'sessionId' => 'debug-session',
-                'runId' => 'run1',
-                'hypothesisId' => 'C',
-                'location' => 'class-questionnaire-ajax.php:471',
-                'message' => 'After database query',
-                'data' => array(
-                    'query_time_seconds' => round($query_time, 3),
-                    'resources_count' => is_array($resources) ? count($resources) : 'not_array',
-                    'is_false' => ($resources === false),
-                    'last_error' => $wpdb->last_error ? substr($wpdb->last_error, 0, 100) : 'none'
-                ),
-                'timestamp' => round(microtime(true) * 1000)
-            ));
-            // #endregion
-
-            if ($resources === false) {
-                // #region agent log
-                $this->write_debug_log(array(
-                    'sessionId' => 'debug-session',
-                    'runId' => 'run1',
-                    'hypothesisId' => 'C',
-                    'location' => 'class-questionnaire-ajax.php:491',
-                    'message' => 'Database query failed',
-                    'data' => array('last_error' => $wpdb->last_error ?: 'unknown'),
-                    'timestamp' => round(microtime(true) * 1000)
-                ));
-                // #endregion
-                wp_send_json_error(array('message' => 'Database query failed.'));
-            }
-
-            // Check if there are more results
-            $count_query = "SELECT COUNT(*) as total FROM $table_name WHERE status = 'active'";
-            if (!empty($search_term)) {
-                $search_like = '%' . $wpdb->esc_like($search_term) . '%';
-                $count_query .= $wpdb->prepare(" AND (
-                    resource_name LIKE %s OR
-                    organization LIKE %s OR
-                    primary_service_type LIKE %s OR
-                    secondary_service_type LIKE %s OR
-                    target_population LIKE %s
-                )", $search_like, $search_like, $search_like, $search_like, $search_like);
-            }
-            $total_count = $wpdb->get_var($count_query);
-            $has_more = ($offset + count($resources)) < $total_count;
-
-            // Format resources (minimal processing)
-            $formatted_resources = array();
-            foreach ($resources as $resource) {
-                $formatted_resources[] = array(
-                    'id' => intval($resource['id']),
-                    'name' => $resource['resource_name'],
-                    'organization' => !empty($resource['organization']) ? $resource['organization'] : '',
-                    'resource_type' => !empty($resource['primary_service_type']) ? $resource['primary_service_type'] : '',
-                    'needs_met' => !empty($resource['secondary_service_type']) ? $resource['secondary_service_type'] : '',
-                    'target_population' => !empty($resource['target_population']) ? $resource['target_population'] : '',
-                    'searchable' => !empty($resource['searchable']) ? $resource['searchable'] : ''
-                );
-            }
-
-            // #region agent log
-            $this->write_debug_log(array(
-                'sessionId' => 'debug-session',
-                'runId' => 'run1',
-                'hypothesisId' => 'A,B',
-                'location' => 'class-questionnaire-ajax.php:527',
-                'message' => 'Before sending success response',
-                'data' => array(
-                    'formatted_count' => count($formatted_resources),
-                    'total_count' => intval($total_count),
-                    'has_more' => $has_more,
-                    'memory_usage' => memory_get_usage(true)
-                ),
-                'timestamp' => round(microtime(true) * 1000)
-            ));
-            // #endregion
-
-            wp_send_json_success(array(
-                'resources' => $formatted_resources,
-                'page' => $page,
-                'per_page' => $per_page,
-                'total' => intval($total_count),
-                'has_more' => $has_more
-            ));
-
-            // #region agent log
-            $this->write_debug_log(array(
-                'sessionId' => 'debug-session',
-                'runId' => 'run1',
-                'hypothesisId' => 'A,B',
-                'location' => 'class-questionnaire-ajax.php:553',
-                'message' => 'After wp_send_json_success (should not reach here)',
-                'data' => array(),
-                'timestamp' => round(microtime(true) * 1000)
-            ));
-            // #endregion
-
-        } catch (Exception $e) {
-            // #region agent log
-            $this->write_debug_log(array(
-                'sessionId' => 'debug-session',
-                'runId' => 'run1',
-                'hypothesisId' => 'B',
-                'location' => 'class-questionnaire-ajax.php:563',
-                'message' => 'Exception caught',
-                'data' => array(
-                    'exception_message' => $e->getMessage(),
-                    'exception_file' => $e->getFile(),
-                    'exception_line' => $e->getLine()
-                ),
-                'timestamp' => round(microtime(true) * 1000)
-            ));
-            // #endregion
-            wp_send_json_error(array('message' => 'Error loading resources: ' . $e->getMessage()));
-        }
-    }
-}
+         // 6. Return JSON Success
+         wp_send_json_success(array(
+             'resources' => $resources,
+             'pagination' => array(
+                 'current_page' => $page,
+                 'total_pages' => ceil($total_items / $per_page),
+                 'total_items' => $total_items,
+                 'has_more' => ($page * $per_page) < $total_items
+             )
+         ));
+     }
 
 // Initialize
 new Questionnaire_Ajax();
