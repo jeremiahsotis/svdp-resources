@@ -1054,113 +1054,76 @@
         /**
          * Load resources for a specific outcome via AJAX (with search and pagination)
          */
-        function loadResourcesForOutcome($specificResourcesDiv, searchTerm, page, append) {
-            var $container = $specificResourcesDiv.find('.resource-selection-container');
-            var outcomeId = $specificResourcesDiv.data('outcome-id');
-            var $loadingState = $container.find('.resource-loading-state');
-            var $listContainer = $container.find('.resource-list-container');
-            var $errorState = $container.find('.resource-error-state');
-            var $checkboxList = $container.find('.resource-checkbox-list');
+        function loadResourcesForOutcome($container, search, page, append) {
+            var $list = $container.find('.resource-list');
+            var $loading = $container.find('.resource-loading'); // The spinner
             var $loadMoreBtn = $container.find('.load-more-resources-btn');
-            
-            // Default values
-            searchTerm = searchTerm || '';
-            page = page || 1;
-            append = append !== undefined ? append : false;
-
-            // Get selected IDs from data attribute
-            var selectedIds = [];
-            try {
-                var selectedIdsJson = $container.data('selected-ids');
-                if (selectedIdsJson) {
-                    selectedIds = typeof selectedIdsJson === 'string' ? JSON.parse(selectedIdsJson) : selectedIdsJson;
-                }
-            } catch (e) {
-                console.error('Error parsing selected IDs:', e);
-            }
-
-            // Show loading state (only on first load or new search)
+    
             if (!append) {
-                $loadingState.show();
-                $listContainer.hide();
-                $errorState.hide();
+                $list.html(''); // Clear list if it's a new search
                 $loadMoreBtn.hide();
-            } else {
-                $loadMoreBtn.prop('disabled', true).text('Loading...');
             }
+    
+            $loading.show();
 
-            // #region agent log
-            var ajaxData = {
-                action: 'get_resources_for_selection',
-                nonce: questionnaireAdmin.nonce,
-                search: searchTerm,
-                page: page,
-                per_page: 100
-            };
-            console.log('QUESTIONNAIRE_DEBUG: Starting AJAX request', ajaxData);
-            fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1093',message:'AJAX request starting',data:{searchTerm:searchTerm,page:page,ajaxUrl:questionnaireAdmin.ajaxUrl,hasNonce:!!questionnaireAdmin.nonce,action:ajaxData.action,nonceLength:questionnaireAdmin.nonce?questionnaireAdmin.nonce.length:0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(function(){});
-            // #endregion
-
-            // Fetch resources via AJAX
-            var ajaxStartTime = Date.now();
             $.ajax({
-                url: questionnaireAdmin.ajaxUrl,
+                url: questionnaireAdmin.ajaxUrl, // Ensure this global is defined in PHP
                 type: 'POST',
-                data: ajaxData,
-                timeout: 60000, // 60 second timeout
+                dataType: 'json',
+                data: {
+                    action: 'get_resources_for_selection', // MUST match the PHP action
+                    nonce: questionnaireAdmin.nonce,       // MUST match check_ajax_referer
+                    search: search,
+                    page: page
+                },
                 success: function(response) {
-                    // #region agent log
-                    var ajaxTime = Date.now() - ajaxStartTime;
-                    fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1105',message:'AJAX success callback',data:{ajaxTimeMs:ajaxTime,hasSuccess:response.success,hasData:!!response.data,hasResources:!!(response.data&&response.data.resources),resourceCount:response.data&&response.data.resources?response.data.resources.length:0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(function(){});
-                    // #endregion
-                    if (response.success && response.data && response.data.resources) {
-                        // Hide loading, show list
-                        $loadingState.hide();
-                        $listContainer.show();
-                        $errorState.hide();
+                    $loading.hide(); // STOP THE SPINNER
 
-                        // Render resources (append or replace)
-                        if (append) {
-                            appendResourcesToList($checkboxList, response.data.resources, selectedIds);
+                    if (response.success) {
+                        var resources = response.data.resources;
+                        var pagination = response.data.pagination;
+
+                        if (resources.length === 0) {
+                            if (!append) {
+                                $list.html('<p>No resources found.</p>');
+                            }
                         } else {
-                            renderResourcesList($container, response.data.resources, selectedIds, searchTerm);
+                            // Build HTML for each resource
+                            var html = '';
+                            $.each(resources, function(i, resource) {
+                                html += '<div class="resource-item" style="margin-bottom: 5px;">';
+                                html += '<label>';
+                                html += '<input type="checkbox" name="specific_resource_ids[]" value="' + resource.id + '"> ';
+                                html += '<strong>' + resource.resource_name + '</strong>';
+                                html += ' <span style="color:#666; font-size:0.9em;">(' + resource.resource_type + ')</span>';
+                                html += '</label>';
+                                html += '</div>';
+                            });
+                    
+                            $list.append(html);
                         }
 
-                        // Show/hide "Load more" button
-                        if (response.data.has_more) {
-                            $loadMoreBtn.show().prop('disabled', false).text('Load More Resources');
+                        // Handle "Load More" button visibility
+                        if (pagination.has_more) {
                             $loadMoreBtn.data('next-page', page + 1);
-                            $loadMoreBtn.data('search-term', searchTerm);
+                            $loadMoreBtn.data('search-term', search);
+                            $loadMoreBtn.show();
                         } else {
                             $loadMoreBtn.hide();
                         }
 
-                        // Update count
-                        var $countSpan = $container.find('.resource-count');
-                        if (response.data.total !== undefined) {
-                            $countSpan.text(response.data.total);
-                        }
+                        // Mark container as initialized so we don't reload unnecessarily
+                        $container.find('.resource-selection-container').data('initialized', true);
+
                     } else {
-                        showResourceError($container);
+                        alert('Error: ' + (response.data.message || 'Unknown error'));
                     }
                 },
                 error: function(xhr, status, error) {
-                    // #region agent log
-                    var ajaxTime = Date.now() - ajaxStartTime;
-                    console.error('QUESTIONNAIRE_DEBUG: AJAX error', {status: status, error: error, xhrStatus: xhr.status, xhrStatusText: xhr.statusText, responseText: xhr.responseText ? xhr.responseText.substring(0, 500) : 'none', ajaxTime: ajaxTime});
-                    fetch('http://127.0.0.1:7242/ingest/61f7c9cd-11e0-4365-9c79-c34916a8a396',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'admin-questionnaire.js:1136',message:'AJAX error callback',data:{ajaxTimeMs:ajaxTime,status:status,error:error,xhrStatus:xhr.status,xhrStatusText:xhr.statusText,xhrResponseText:xhr.responseText?xhr.responseText.substring(0,500):'none'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(function(){});
-                    // #endregion
-                    if (status === 'timeout') {
-                        showResourceError($container, 'Request timed out. Please try a more specific search term.');
-                    } else {
-                        showResourceError($container);
-                    }
-                    $loadMoreBtn.prop('disabled', false).text('Load More Resources');
-                },
-                beforeSend: function(xhr, settings) {
-                    // #region agent log
-                    console.log('QUESTIONNAIRE_DEBUG: AJAX beforeSend', {url: settings.url, data: settings.data, type: settings.type});
-                    // #endregion
+                    $loading.hide(); // STOP THE SPINNER on error
+                    console.error('AJAX Error:', error);
+                    console.log(xhr.responseText); // Check browser console for PHP error details
+                    $list.html('<p style="color:red;">Failed to load resources. See console for details.</p>');
                 }
             });
         }
