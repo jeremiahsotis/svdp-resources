@@ -955,6 +955,13 @@ class Monday_Resources_Shortcode {
                 const cards = document.querySelectorAll('.resource-card');
                 const visibleCount = document.getElementById('visible-count');
 
+                function normalizeAudienceValue(value) {
+                    return value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9]+/g, ' ')
+                        .trim();
+                }
+
                 // Combined filter function that handles search, resource type, need met, and target audience
                 function filterResources() {
                     const searchTerm = searchInput.value.toLowerCase().trim();
@@ -965,6 +972,9 @@ class Monday_Resources_Shortcode {
                     const selectedAudiences = Array.from(audienceCheckboxes)
                         .filter(cb => cb.checked)
                         .map(cb => cb.value.toLowerCase());
+                    const normalizedSelectedAudiences = selectedAudiences
+                        .map(normalizeAudienceValue)
+                        .filter(Boolean);
 
                     let visible = 0;
 
@@ -984,7 +994,11 @@ class Monday_Resources_Shortcode {
                         const searchableText = card.getAttribute('data-search');
                         const cardResourceType = card.getAttribute('data-resource-type');
                         const cardNeedMet = card.getAttribute('data-need-met');
-                        const cardAudience = card.getAttribute('data-audience');
+                        const cardAudience = card.getAttribute('data-audience') || '';
+                        const cardAudienceList = cardAudience
+                            .split(',')
+                            .map(item => normalizeAudienceValue(item))
+                            .filter(Boolean);
                         const isSvdp = card.getAttribute('data-is-svdp') === '1';
                         let showCard = true;
 
@@ -999,14 +1013,9 @@ class Monday_Resources_Shortcode {
                         }
 
                         // Check target audience filter (if any checkboxes are selected)
-                        if (showCard && selectedAudiences.length > 0) {
-                            // Card must match at least one selected audience
-                            // Use word boundary matching to avoid "men" matching "women"
-                            showCard = selectedAudiences.some(function(audience) {
-                                // Escape special regex characters and create word boundary pattern
-                                var escapedAudience = audience.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                var regex = new RegExp('\\b' + escapedAudience + '\\b', 'i');
-                                return regex.test(cardAudience);
+                        if (showCard && normalizedSelectedAudiences.length > 0) {
+                            showCard = normalizedSelectedAudiences.some(function(audience) {
+                                return cardAudienceList.indexOf(audience) !== -1;
                             });
                         }
 
