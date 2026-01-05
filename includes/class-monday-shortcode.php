@@ -996,9 +996,13 @@ class Monday_Resources_Shortcode {
                         const cardNeedMet = card.getAttribute('data-need-met');
                         const cardAudience = card.getAttribute('data-audience') || '';
                         const cardAudienceList = cardAudience
-                            .split(',')
+                            .split(/[,;\n]+/)
                             .map(item => normalizeAudienceValue(item))
                             .filter(Boolean);
+                        const normalizedCardAudience = normalizeAudienceValue(cardAudience);
+                        if (normalizedCardAudience && cardAudienceList.indexOf(normalizedCardAudience) === -1) {
+                            cardAudienceList.push(normalizedCardAudience);
+                        }
                         const isSvdp = card.getAttribute('data-is-svdp') === '1';
                         let showCard = true;
 
