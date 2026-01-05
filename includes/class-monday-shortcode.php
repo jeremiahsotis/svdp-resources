@@ -962,6 +962,14 @@ class Monday_Resources_Shortcode {
                         .trim();
                 }
 
+                function normalizeAudienceTokens(value) {
+                    var normalized = normalizeAudienceValue(value);
+                    if (!normalized) {
+                        return [];
+                    }
+                    return normalized.split(/\s+/).filter(Boolean);
+                }
+
                 // Combined filter function that handles search, resource type, need met, and target audience
                 function filterResources() {
                     const searchTerm = searchInput.value.toLowerCase().trim();
@@ -973,8 +981,8 @@ class Monday_Resources_Shortcode {
                         .filter(cb => cb.checked)
                         .map(cb => cb.value.toLowerCase());
                     const normalizedSelectedAudiences = selectedAudiences
-                        .map(normalizeAudienceValue)
-                        .filter(Boolean);
+                        .map(normalizeAudienceTokens)
+                        .filter(tokens => tokens.length > 0);
 
                     let visible = 0;
 
@@ -997,10 +1005,10 @@ class Monday_Resources_Shortcode {
                         const cardAudience = card.getAttribute('data-audience') || '';
                         const cardAudienceList = cardAudience
                             .split(/[,;\n]+/)
-                            .map(item => normalizeAudienceValue(item))
-                            .filter(Boolean);
-                        const normalizedCardAudience = normalizeAudienceValue(cardAudience);
-                        if (normalizedCardAudience && cardAudienceList.indexOf(normalizedCardAudience) === -1) {
+                            .map(item => normalizeAudienceTokens(item))
+                            .filter(tokens => tokens.length > 0);
+                        const normalizedCardAudience = normalizeAudienceTokens(cardAudience);
+                        if (normalizedCardAudience.length > 0) {
                             cardAudienceList.push(normalizedCardAudience);
                         }
                         const isSvdp = card.getAttribute('data-is-svdp') === '1';
@@ -1018,8 +1026,12 @@ class Monday_Resources_Shortcode {
 
                         // Check target audience filter (if any checkboxes are selected)
                         if (showCard && normalizedSelectedAudiences.length > 0) {
-                            showCard = normalizedSelectedAudiences.some(function(audience) {
-                                return cardAudienceList.indexOf(audience) !== -1;
+                            showCard = normalizedSelectedAudiences.some(function(audienceTokens) {
+                                return cardAudienceList.some(function(cardTokens) {
+                                    return audienceTokens.every(function(token) {
+                                        return cardTokens.indexOf(token) !== -1;
+                                    });
+                                });
                             });
                         }
 
