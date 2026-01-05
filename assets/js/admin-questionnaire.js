@@ -539,43 +539,6 @@
         // QUESTION MANAGEMENT
         // ========================================
 
-        // Toggle question details (expand/collapse)
-        $(document).on('click', '.question-header', function(e) {
-            // Don't toggle if clicking buttons
-            if ($(e.target).is('button') || $(e.target).closest('button').length) {
-                return;
-            }
-
-            var $details = $(this).next('.question-details');
-            var $icon = $(this).find('.toggle-question-details');
-
-            $details.slideToggle(200);
-
-            if ($icon.hasClass('dashicons-arrow-down')) {
-                $icon.removeClass('dashicons-arrow-down').addClass('dashicons-arrow-up');
-            } else {
-                $icon.removeClass('dashicons-arrow-up').addClass('dashicons-arrow-down');
-            }
-        });
-
-        // Edit question button
-        $(document).on('click', '.edit-question-btn', function(e) {
-            e.stopPropagation();
-            var $details = $(this).closest('.question-header').next('.question-details');
-            $details.slideDown(200);
-            $(this).closest('.question-header').find('.toggle-question-details')
-                .removeClass('dashicons-arrow-down').addClass('dashicons-arrow-up');
-        });
-
-        // Cancel edit button
-        $(document).on('click', '.cancel-edit-btn', function(e) {
-            e.preventDefault();
-            var $details = $(this).closest('.question-details');
-            $details.slideUp(200);
-            $details.prev('.question-header').find('.toggle-question-details')
-                .removeClass('dashicons-arrow-up').addClass('dashicons-arrow-down');
-        });
-
         // Delete question
         $(document).on('click', '.delete-question-btn', function(e) {
             e.stopPropagation();
@@ -816,43 +779,6 @@
         // OUTCOME MANAGEMENT
         // ========================================
 
-        // Toggle outcome details
-        $(document).on('click', '.outcome-header', function(e) {
-            // Don't toggle if clicking buttons
-            if ($(e.target).is('button') || $(e.target).closest('button').length) {
-                return;
-            }
-
-            var $details = $(this).next('.outcome-details');
-            var $icon = $(this).find('.toggle-outcome-details');
-
-            $details.slideToggle(200);
-
-            if ($icon.hasClass('dashicons-arrow-down')) {
-                $icon.removeClass('dashicons-arrow-down').addClass('dashicons-arrow-up');
-            } else {
-                $icon.removeClass('dashicons-arrow-up').addClass('dashicons-arrow-down');
-            }
-        });
-
-        // Edit outcome button
-        $(document).on('click', '.edit-outcome-btn', function(e) {
-            e.stopPropagation();
-            var $details = $(this).closest('.outcome-header').next('.outcome-details');
-            $details.slideDown(200);
-            $(this).closest('.outcome-header').find('.toggle-outcome-details')
-                .removeClass('dashicons-arrow-down').addClass('dashicons-arrow-up');
-        });
-
-        // Cancel edit outcome
-        $(document).on('click', '.cancel-edit-outcome-btn', function(e) {
-            e.preventDefault();
-            var $details = $(this).closest('.outcome-details');
-            $details.slideUp(200);
-            $details.prev('.outcome-header').find('.toggle-outcome-details')
-                .removeClass('dashicons-arrow-up').addClass('dashicons-arrow-down');
-        });
-
         // Delete outcome
         $(document).on('click', '.delete-outcome-btn', function(e) {
             e.stopPropagation();
@@ -1006,9 +932,9 @@
                     filterData.target_audiences = targetAudiences;
                 }
             } else if (filterType === 'specific_resources') {
-                // Collect selected resource IDs from checkboxes
+                // Collect selected resource IDs from hidden inputs
                 var resourceIds = [];
-                $form.find('input[name="specific_resource_ids[]"]:checked').each(function() {
+                $form.find('input[name="specific_resource_ids[]"]').each(function() {
                     resourceIds.push(parseInt($(this).val()));
                 });
                 if (resourceIds.length > 0) {
