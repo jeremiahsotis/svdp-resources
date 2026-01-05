@@ -231,6 +231,83 @@ class Monday_Resources_Shortcode {
                 color: white;
                 text-decoration: none;
             }
+            .print-controls {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: flex-end;
+            }
+            .print-button {
+                display: inline-block;
+                padding: 10px 18px;
+                background-color: #444;
+                color: #fff;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 15px;
+            }
+            .print-button:hover {
+                background-color: #222;
+            }
+            .print-options {
+                display: none;
+                background: #fff;
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                padding: 12px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            }
+            .print-options.active {
+                display: inline-flex;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+            .print-option-btn {
+                padding: 8px 14px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                background: #f5f5f5;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            .print-option-btn:hover {
+                background: #e7e7e7;
+            }
+            .print-header {
+                display: none;
+                margin: 0 0 18px 0;
+                padding-bottom: 12px;
+                border-bottom: 2px solid #000;
+            }
+            .print-header-content {
+                display: flex;
+                align-items: center;
+                gap: 14px;
+            }
+            .print-logo {
+                max-height: 48px;
+                width: auto;
+            }
+            .print-header-text {
+                flex: 1;
+            }
+            .print-site-name {
+                font-size: 18px;
+                font-weight: 700;
+            }
+            .print-title {
+                font-size: 20px;
+                font-weight: 700;
+                margin-top: 4px;
+            }
+            .print-date {
+                font-size: 14px;
+                color: #333;
+                margin-top: 2px;
+            }
             .resources-filters {
                 background-color: #fff;
                 padding: 20px;
@@ -280,11 +357,15 @@ class Monday_Resources_Shortcode {
                 min-width: 250px;
             }
             .target-audience-filter {
-                max-width: 600px;
+                width: 100%;
+                margin: 16px 0;
+                padding: 12px 0;
+                border-top: 1px solid #eee;
+                border-bottom: 1px solid #eee;
             }
             .target-audience-checkboxes {
                 display: grid;
-                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
                 gap: 8px;
                 margin-top: 8px;
             }
@@ -540,6 +621,14 @@ class Monday_Resources_Shortcode {
                 color: #666;
                 font-size: 0.95em;
             }
+            .resources-meta {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                flex-wrap: wrap;
+                margin: 10px 0;
+            }
             @media (max-width: 768px) {
                 .resources-container {
                     padding: 0 15px;
@@ -603,9 +692,130 @@ class Monday_Resources_Shortcode {
                     padding: 10px 5px;
                 }
             }
+            @media print {
+                header,
+                footer,
+                .site-header,
+                .site-footer,
+                #masthead,
+                #colophon,
+                #site-header,
+                #site-footer {
+                    display: none !important;
+                }
+                .resources-help-section,
+                .resources-filters,
+                .resources-search,
+                .submit-resource-btn,
+                .print-controls,
+                .resource-toggle,
+                .resource-report-btn,
+                .resource-verification-status,
+                .svdp-badge,
+                .partner-divider,
+                .results-count,
+                .no-results {
+                    display: none !important;
+                }
+                .print-header {
+                    display: block !important;
+                }
+                .resources-grid {
+                    display: block;
+                }
+                .resource-card {
+                    box-shadow: none;
+                    border: 1px solid #444;
+                    margin: 0 0 16px 0;
+                    padding: 16px;
+                    page-break-inside: avoid;
+                }
+                .resource-card h3 {
+                    border-bottom: 1px solid #444;
+                    padding-bottom: 6px;
+                    margin-bottom: 6px;
+                }
+                .resource-organization {
+                    border-bottom: none;
+                    margin-bottom: 10px;
+                    padding-bottom: 0;
+                    font-style: normal;
+                }
+                .resource-details-hidden {
+                    display: block !important;
+                }
+                .resource-section {
+                    border: none;
+                    margin: 0 0 10px 0;
+                    padding: 0;
+                }
+                .resource-section-heading {
+                    display: none;
+                }
+                .resource-field {
+                    display: none !important;
+                    margin-bottom: 10px;
+                }
+                .resource-field--primary_service_type,
+                .resource-field--phone,
+                .resource-field--email,
+                .resource-field--website,
+                .resource-field--physical_address,
+                .resource-field--hours_of_operation {
+                    display: block !important;
+                }
+                .resource-field-label {
+                    color: #000;
+                }
+                .resource-field-value,
+                .resource-field-value a {
+                    color: #000;
+                }
+            }
+            @media print {
+                body[data-print-layout="compact"] .resource-card {
+                    border: none;
+                    margin: 0 0 10px 0;
+                    padding: 0 0 10px 0;
+                    border-bottom: 1px solid #888;
+                }
+                body[data-print-layout="compact"] .resource-card h3 {
+                    border-bottom: none;
+                    margin-bottom: 4px;
+                    padding-bottom: 0;
+                    font-size: 16px;
+                }
+                body[data-print-layout="compact"] .resource-organization {
+                    margin-bottom: 6px;
+                    font-size: 13px;
+                }
+                body[data-print-layout="compact"] .resource-field {
+                    margin-bottom: 4px;
+                    font-size: 12px;
+                }
+            }
         </style>
 
         <div class="resources-container">
+            <?php
+            $custom_logo_id = get_theme_mod('custom_logo');
+            $custom_logo_url = $custom_logo_id ? wp_get_attachment_image_url($custom_logo_id, 'full') : '';
+            $site_name = get_bloginfo('name');
+            $print_date = current_time('F j, Y');
+            ?>
+            <div class="print-header">
+                <div class="print-header-content">
+                    <?php if (!empty($custom_logo_url)): ?>
+                        <img class="print-logo" src="<?php echo esc_url($custom_logo_url); ?>" alt="<?php echo esc_attr($site_name); ?>">
+                    <?php endif; ?>
+                    <div class="print-header-text">
+                        <div class="print-site-name"><?php echo esc_html($site_name); ?></div>
+                        <div class="print-title">Help That Meets You Where You Are</div>
+                        <div class="print-date"><?php echo esc_html($print_date); ?></div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Helpful Instructions Section -->
             <div class="resources-help-section">
                 <h2>How to Find Resources</h2>
@@ -641,23 +851,22 @@ class Monday_Resources_Shortcode {
                         </div>
                     </div>
 
-                    <div class="filter-column target-audience-filter">
-                        <div class="filter-group">
-                            <label>Filter by Population Served (Optional)</label>
-                            <div class="target-audience-checkboxes">
-                                <?php foreach ($target_audiences as $index => $audience): ?>
-                                    <div class="target-audience-checkbox">
-                                        <input
-                                            type="checkbox"
-                                            id="audience-<?php echo $index; ?>"
-                                            class="audience-checkbox"
-                                            value="<?php echo esc_attr($audience); ?>"
-                                        />
-                                        <label for="audience-<?php echo $index; ?>"><?php echo esc_html($audience); ?></label>
-                                    </div>
-                                <?php endforeach; ?>
+                </div>
+
+                <div class="filter-group target-audience-filter">
+                    <label>Filter by Population Served (Optional)</label>
+                    <div class="target-audience-checkboxes">
+                        <?php foreach ($target_audiences as $index => $audience): ?>
+                            <div class="target-audience-checkbox">
+                                <input
+                                    type="checkbox"
+                                    id="audience-<?php echo $index; ?>"
+                                    class="audience-checkbox"
+                                    value="<?php echo esc_attr($audience); ?>"
+                                />
+                                <label for="audience-<?php echo $index; ?>"><?php echo esc_html($audience); ?></label>
                             </div>
-                        </div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
 
@@ -667,8 +876,18 @@ class Monday_Resources_Shortcode {
                 </div>
             </div>
 
-            <div class="results-count">
-                Showing <span id="visible-count"><?php echo count($items); ?></span> of <?php echo count($items); ?> resources
+            <div class="resources-meta">
+                <div class="results-count">
+                    Showing <span id="visible-count"><?php echo count($items); ?></span> of <?php echo count($items); ?> resources
+                </div>
+                <div class="print-controls">
+                    <button class="print-button" type="button" onclick="openPrintOptions()">Print this List</button>
+                    <div class="print-options" id="print-options">
+                        <button class="print-option-btn" type="button" onclick="printResources('detailed')">Print Detailed</button>
+                        <button class="print-option-btn" type="button" onclick="printResources('compact')">Print Compact</button>
+                        <button class="print-option-btn" type="button" onclick="closePrintOptions()">Cancel</button>
+                    </div>
+                </div>
             </div>
             <div class="resources-grid" id="resources-grid">
                 <?php
@@ -737,7 +956,7 @@ class Monday_Resources_Shortcode {
                             if (!empty($item[$field_name])) {
                                 $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
                             ?>
-                                <div class="resource-field">
+                                <div class="resource-field resource-field--<?php echo esc_attr($field_name); ?>">
                                     <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                     <span class="resource-field-value">
                                         <?php echo $formatted_value; ?>
@@ -786,7 +1005,7 @@ class Monday_Resources_Shortcode {
 
                                             if ($hours_data) {
                                                 ?>
-                                                <div class="resource-field resource-hours">
+                                                <div class="resource-field resource-field--hours_of_operation resource-hours">
                                                     <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                                     <div class="resource-field-value">
                                                         <?php if ($hours_data['flags']['is_24_7']): ?>
@@ -836,7 +1055,7 @@ class Monday_Resources_Shortcode {
                                             } elseif (!empty($item[$field_name])) {
                                                 // Fallback to legacy text format if no structured hours
                                                 ?>
-                                                <div class="resource-field">
+                                                <div class="resource-field resource-field--hours_of_operation">
                                                     <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                                     <span class="resource-field-value"><?php echo esc_html($item[$field_name]); ?></span>
                                                 </div>
@@ -850,7 +1069,7 @@ class Monday_Resources_Shortcode {
                                                 $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
                                             }
                                             ?>
-                                            <div class="resource-field">
+                                            <div class="resource-field resource-field--<?php echo esc_attr($field_name); ?>">
                                                 <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                                 <div class="resource-field-value"><?php echo $formatted_value; ?></div>
                                             </div>
@@ -948,6 +1167,30 @@ class Monday_Resources_Shortcode {
             }
 
             (function() {
+                function openPrintOptions() {
+                    const options = document.getElementById('print-options');
+                    if (options) {
+                        options.classList.add('active');
+                    }
+                }
+
+                function closePrintOptions() {
+                    const options = document.getElementById('print-options');
+                    if (options) {
+                        options.classList.remove('active');
+                    }
+                }
+
+                function printResources(layout) {
+                    document.body.setAttribute('data-print-layout', layout);
+                    closePrintOptions();
+                    window.print();
+                }
+
+                window.openPrintOptions = openPrintOptions;
+                window.closePrintOptions = closePrintOptions;
+                window.printResources = printResources;
+
                 const searchInput = document.getElementById('resource-search');
                 const resourceTypeFilter = document.getElementById('resource-type-filter');
                 const needMetFilter = document.getElementById('need-met-filter');
