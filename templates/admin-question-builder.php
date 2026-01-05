@@ -96,7 +96,8 @@ if (!defined('ABSPATH')) {
                 <div id="questions-list">
                     <?php foreach ($questions as $index => $question): ?>
                         <?php
-                        $answer_options = Question_Manager::get_answer_options($question['id']);
+                        // Use pre-loaded answer options (already fetched in batch query)
+                        $answer_options = isset($question['answer_options']) ? $question['answer_options'] : array();
                         $is_start_question = ($questionnaire['start_question_id'] == $question['id']);
                         ?>
                         <div class="question-item" data-question-id="<?php echo esc_attr($question['id']); ?>">
@@ -112,13 +113,13 @@ if (!defined('ABSPATH')) {
                                     </span>
                                 </div>
                                 <div>
-                                    <button type="button" class="button button-small edit-question-btn">Edit</button>
+                                    <button type="button" class="button button-small edit-question-btn" data-expanded="false">Edit</button>
                                     <button type="button" class="button button-small delete-question-btn" data-question-id="<?php echo esc_attr($question['id']); ?>">Delete</button>
                                     <span class="dashicons dashicons-arrow-down toggle-question-details" style="cursor: pointer;"></span>
                                 </div>
                             </div>
 
-                            <div class="question-details" style="display: none; border: 1px solid #dcdcde; border-top: none; padding: 20px; background: #fff;">
+                            <div class="question-details collapsed" style="display: none; border: 1px solid #dcdcde; border-top: none; padding: 20px; background: #fff;">
 
                                 <!-- Edit Question Form -->
                                 <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" class="question-edit-form">
@@ -322,13 +323,13 @@ if (!defined('ABSPATH')) {
                                     </span>
                                 </div>
                                 <div>
-                                    <button type="button" class="button button-small edit-outcome-btn">Edit</button>
+                                    <button type="button" class="button button-small edit-outcome-btn" data-expanded="false">Edit</button>
                                     <button type="button" class="button button-small delete-outcome-btn" data-outcome-id="<?php echo esc_attr($outcome['id']); ?>">Delete</button>
                                     <span class="dashicons dashicons-arrow-down toggle-outcome-details" style="cursor: pointer;"></span>
                                 </div>
                             </div>
 
-                            <div class="outcome-details" style="display: none; border: 1px solid #dcdcde; border-top: none; padding: 20px; background: #fff;">
+                            <div class="outcome-details collapsed" style="display: none; border: 1px solid #dcdcde; border-top: none; padding: 20px; background: #fff;">
                                 <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" class="outcome-edit-form">
                                     <input type="hidden" name="action" value="save_outcome">
                                     <input type="hidden" name="questionnaire_id" value="<?php echo esc_attr($questionnaire['id']); ?>">
@@ -451,67 +452,99 @@ if (!defined('ABSPATH')) {
                                                     </label>
                                                 </p>
 
-                                                <!-- Specific Resources Selection -->
+                                                <!-- AJAX Resource Search Section -->
                                                 <div class="specific-resources-selection" style="margin-left: 25px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; <?php echo $outcome['resource_filter_type'] === 'specific_resources' ? '' : 'display:none;'; ?>">
                                                     <?php
-                                                    // Get all active resources
-                                                    if (class_exists('Resources_Manager')) {
-                                                        $all_resources = Resources_Manager::get_all_resources();
-                                                        $selected_resource_ids = isset($filter_data['specific_ids']) ? $filter_data['specific_ids'] : array();
+                                                    $selected_resource_ids = isset($filter_data['specific_ids']) ? $filter_data['specific_ids'] : array();
 
-                                                        if (!empty($all_resources)):
-                                                        ?>
-                                                            <p style="margin: 0 0 10px 0; font-weight: 600;">Select Specific Resources:</p>
-                                                            <div style="margin-bottom: 10px;">
-                                                                <input type="text" id="resource-search-input" placeholder="Search resources by name or resource type..." style="width: 100%; max-width: 500px; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 3px;">
-                                                                <p class="description" style="margin: 5px 0 0 0; font-size: 12px;">Type to filter the list below. Showing <span id="resource-count"><?php echo count($all_resources); ?></span> of <?php echo count($all_resources); ?> resources</p>
-                                                            </div>
-                                                            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; background: #fff; padding: 10px; border-radius: 3px;">
-                                                                <?php foreach ($all_resources as $resource): 
-                                                                    // Build searchable text from all resource fields
-                                                                    $searchable_fields = array(
-                                                                        $resource['resource_name'],
-                                                                        $resource['organization'],
-                                                                        $resource['primary_service_type'],
-                                                                        $resource['secondary_service_type'],
-                                                                        $resource['target_population'],
-                                                                        $resource['phone'],
-                                                                        $resource['email'],
-                                                                        $resource['what_they_provide'],
-                                                                        $resource['geography'],
-                                                                        $resource['counties_served']
-                                                                    );
-                                                                    $searchable_text = strtolower(implode(' ', array_filter($searchable_fields)));
-                                                                ?>
-                                                                    <label class="resource-checkbox-item" style="display: block; margin: 8px 0; padding: 10px; border: 1px solid #e0e0e0; border-radius: 3px; cursor: pointer; background: #fff; transition: background-color 0.2s;" data-searchable="<?php echo esc_attr($searchable_text); ?>" onmouseover="this.style.backgroundColor='#f5f5f5'" onmouseout="this.style.backgroundColor='#fff'">
-                                                                        <input type="checkbox" name="specific_resource_ids[]" value="<?php echo esc_attr($resource['id']); ?>" <?php checked(in_array($resource['id'], $selected_resource_ids)); ?> style="margin-right: 8px; vertical-align: top; margin-top: 3px;">
-                                                                        <div style="display: inline-block; width: calc(100% - 30px);">
-                                                                            <div style="font-weight: 600; color: #0073aa; margin-bottom: 4px;"><?php echo esc_html($resource['resource_name']); ?></div>
-                                                                            <?php if (!empty($resource['organization'])): ?>
-                                                                                <div style="font-size: 0.9em; color: #555; margin-bottom: 3px;"><strong>Organization:</strong> <?php echo esc_html($resource['organization']); ?></div>
-                                                                            <?php endif; ?>
-                                                                            <div style="font-size: 0.9em; color: #666; margin-bottom: 3px;">
-                                                                                <?php if (!empty($resource['primary_service_type'])): ?>
-                                                                                    <strong>Type:</strong> <?php echo esc_html($resource['primary_service_type']); ?>
-                                                                                <?php endif; ?>
-                                                                                <?php if (!empty($resource['secondary_service_type'])): ?>
-                                                                                    <?php if (!empty($resource['primary_service_type'])): ?> | <?php endif; ?>
-                                                                                    <strong>Needs Met:</strong> <?php echo esc_html($resource['secondary_service_type']); ?>
-                                                                                <?php endif; ?>
-                                                                            </div>
-                                                                            <?php if (!empty($resource['target_population'])): ?>
-                                                                                <div style="font-size: 0.85em; color: #777; margin-top: 3px;"><strong>Target Population:</strong> <?php echo esc_html($resource['target_population']); ?></div>
-                                                                            <?php endif; ?>
-                                                                        </div>
-                                                                    </label>
-                                                                <?php endforeach; ?>
-                                                            </div>
-                                                            <p class="description" style="margin-top: 10px;">Check the boxes to select resources. Use the search box above to quickly find resources.</p>
-                                                        <?php else: ?>
-                                                            <p style="margin: 0; color: #666;">No active resources found.</p>
-                                                        <?php endif;
+                                                    // Load selected resources for display
+                                                    $selected_resources = array();
+                                                    if (!empty($selected_resource_ids) && class_exists('Resources_Manager')) {
+                                                        foreach ($selected_resource_ids as $rid) {
+                                                            $resource = Resources_Manager::get_resource($rid);
+                                                            if ($resource) {
+                                                                $selected_resources[] = $resource;
+                                                            }
+                                                        }
                                                     }
                                                     ?>
+
+                                                    <!-- Search Input -->
+                                                    <div style="margin-bottom: 15px;">
+                                                        <label style="font-weight: 600; display: block; margin-bottom: 8px;">
+                                                            Search and Select Resources:
+                                                        </label>
+                                                        <input type="text"
+                                                               class="resource-ajax-search-input"
+                                                               placeholder="Type to search resources..."
+                                                               style="width: 100%; padding: 10px; font-size: 14px; border: 1px solid #8c8f94; border-radius: 4px;"
+                                                               data-outcome-id="<?php echo esc_attr($outcome['id']); ?>">
+                                                        <p class="description" style="margin: 5px 0 0 0;">
+                                                            Search by resource name, organization, or service type. Click results to add them.
+                                                        </p>
+                                                    </div>
+
+                                                    <!-- Search Results Container -->
+                                                    <div class="resource-search-results"
+                                                         style="display: none; margin-bottom: 15px; max-height: 300px; overflow-y: auto; border: 1px solid #8c8f94; background: #fff; border-radius: 4px;">
+                                                        <!-- Populated by JavaScript -->
+                                                        <div class="resource-search-loading" style="padding: 20px; text-align: center; display: none;">
+                                                            <span class="spinner is-active" style="float: none;"></span>
+                                                            <p style="margin-top: 10px; color: #666;">Searching...</p>
+                                                        </div>
+                                                        <div class="resource-search-list">
+                                                            <!-- Results appear here -->
+                                                        </div>
+                                                        <div class="resource-search-empty" style="padding: 20px; text-align: center; color: #666; display: none;">
+                                                            No resources found. Try a different search term.
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Selected Resources List -->
+                                                    <div style="margin-bottom: 15px;">
+                                                        <label style="font-weight: 600; display: block; margin-bottom: 8px;">
+                                                            Selected Resources (<span class="selected-count"><?php echo count($selected_resources); ?></span>):
+                                                        </label>
+                                                        <div class="selected-resources-list" style="border: 1px solid #ddd; background: #fff; min-height: 100px; max-height: 300px; overflow-y: auto; border-radius: 4px; padding: 10px;">
+                                                            <?php if (empty($selected_resources)): ?>
+                                                                <p style="color: #666; margin: 40px 0; text-align: center;">
+                                                                    No resources selected. Use the search above to add resources.
+                                                                </p>
+                                                            <?php else: ?>
+                                                                <?php foreach ($selected_resources as $resource): ?>
+                                                                    <div class="selected-resource-item"
+                                                                         data-resource-id="<?php echo esc_attr($resource['id']); ?>"
+                                                                         style="padding: 10px; margin-bottom: 8px; border: 1px solid #e0e0e0; border-radius: 3px; background: #f9f9f9; display: flex; justify-content: space-between; align-items: center;">
+                                                                        <div style="flex: 1;">
+                                                                            <div style="font-weight: 600; color: #0073aa;">
+                                                                                <?php echo esc_html($resource['resource_name']); ?>
+                                                                            </div>
+                                                                            <?php if (!empty($resource['organization'])): ?>
+                                                                                <div style="font-size: 0.9em; color: #555;">
+                                                                                    <?php echo esc_html($resource['organization']); ?>
+                                                                                </div>
+                                                                            <?php endif; ?>
+                                                                            <div style="font-size: 0.85em; color: #666;">
+                                                                                <?php echo esc_html($resource['primary_service_type']); ?>
+                                                                            </div>
+                                                                        </div>
+                                                                        <button type="button"
+                                                                                class="button button-small remove-resource-btn"
+                                                                                data-resource-id="<?php echo esc_attr($resource['id']); ?>"
+                                                                                style="color: #b32d2e;">
+                                                                            Remove
+                                                                        </button>
+                                                                        <!-- Hidden input for form submission -->
+                                                                        <input type="hidden" name="specific_resource_ids[]" value="<?php echo esc_attr($resource['id']); ?>">
+                                                                    </div>
+                                                                <?php endforeach; ?>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </div>
+
+                                                    <p class="description">
+                                                        <strong>Tip:</strong> Most outcomes link to 1-10 resources. Search and select only the most relevant resources.
+                                                    </p>
                                                 </div>
 
                                                 <p>

@@ -482,3 +482,81 @@
         width: 100% !important;
     }
 }
+
+/* ========================================
+   PERFORMANCE ENHANCEMENTS (2025)
+   ======================================== */
+
+/* Accordion States for Questions and Outcomes */
+.question-header,
+.outcome-header {
+    transition: background-color 0.2s;
+}
+
+.question-header:hover,
+.outcome-header:hover {
+    background-color: #f0f0f1 !important;
+}
+
+.question-details,
+.outcome-details {
+    overflow: hidden;
+}
+
+/* AJAX Resource Search Interface */
+.resource-ajax-search-input:focus {
+    border-color: #0073aa;
+    box-shadow: 0 0 0 1px #0073aa;
+    outline: none;
+}
+
+.resource-search-result-item:hover {
+    background-color: #f5f5f5 !important;
+}
+
+.selected-resource-item {
+    animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Loading Spinner for Resource Search */
+.resource-search-loading .spinner {
+    visibility: visible;
+}
+
+/* Scrollbar Styling for Selected Resources */
+.selected-resources-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.selected-resources-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.selected-resources-list::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.selected-resources-list::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Enhanced Sortable Placeholder */
+.sortable-placeholder {
+    height: 80px;
+    background: #f0f6fc;
+    border: 2px dashed #0073aa;
+    visibility: visible !important;
+    margin-bottom: 10px;
+}

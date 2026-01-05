@@ -34,6 +34,7 @@ class Questionnaire_Admin {
         add_action('wp_ajax_delete_outcome', array($this, 'ajax_delete_outcome'));
         add_action('wp_ajax_reorder_questions', array($this, 'ajax_reorder_questions'));
         add_action('wp_ajax_reorder_answer_options', array($this, 'ajax_reorder_answer_options'));
+        add_action('wp_ajax_search_resources_for_outcome', array($this, 'ajax_search_resources'));
     }
 
     /**
@@ -287,8 +288,8 @@ class Questionnaire_Admin {
             wp_die(__('Questionnaire not found.'));
         }
 
-        // Get all questions for this questionnaire
-        $questions = Question_Manager::get_questions_for_questionnaire($questionnaire_id);
+        // Get all questions for this questionnaire with answer options (batch query - eliminates N+1 problem)
+        $questions = Question_Manager::get_questions_with_options($questionnaire_id);
 
         // Get all outcomes for this questionnaire
         $outcomes = Outcome_Manager::get_outcomes_for_questionnaire($questionnaire_id);
@@ -1088,6 +1089,32 @@ class Questionnaire_Admin {
         }
 
         wp_send_json_success();
+    }
+
+    /**
+     * AJAX: Search resources for outcome linking
+     * Returns matching resources based on search term
+     */
+    public function ajax_search_resources() {
+        check_ajax_referer('questionnaire_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Unauthorized');
+        }
+
+        $search_term = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
+        $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 20;
+        $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
+
+        // Use Resources_Manager with search capability
+        $resources = Resources_Manager::search_resources($search_term, $limit, $offset);
+        $total = Resources_Manager::count_search_results($search_term);
+
+        wp_send_json_success(array(
+            'resources' => $resources,
+            'total' => $total,
+            'has_more' => ($offset + $limit) < $total
+        ));
     }
 }
 

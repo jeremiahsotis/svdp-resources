@@ -94,6 +94,64 @@ class Question_Manager {
     }
 
     /**
+     * Get questions with answer options in a single batch query
+     * Eliminates N+1 problem by using batched queries instead of individual option queries
+     */
+    public static function get_questions_with_options($questionnaire_id) {
+        global $wpdb;
+        $questions_table = $wpdb->prefix . 'questionnaire_questions';
+        $options_table = $wpdb->prefix . 'questionnaire_answer_options';
+
+        // Query 1: Get all questions
+        $questions = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM $questions_table
+                 WHERE questionnaire_id = %d
+                 ORDER BY sort_order ASC",
+                $questionnaire_id
+            ),
+            ARRAY_A
+        );
+
+        if (empty($questions)) {
+            return array();
+        }
+
+        // Query 2: Get ALL answer options in one batch
+        $question_ids = array_column($questions, 'id');
+        $placeholders = implode(',', array_fill(0, count($question_ids), '%d'));
+
+        $all_options = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT * FROM $options_table
+                 WHERE question_id IN ($placeholders)
+                 ORDER BY question_id ASC, sort_order ASC",
+                $question_ids
+            ),
+            ARRAY_A
+        );
+
+        // Group options by question_id
+        $options_by_question = array();
+        foreach ($all_options as $option) {
+            $qid = $option['question_id'];
+            if (!isset($options_by_question[$qid])) {
+                $options_by_question[$qid] = array();
+            }
+            $options_by_question[$qid][] = $option;
+        }
+
+        // Attach options to questions
+        foreach ($questions as &$question) {
+            $question['answer_options'] = isset($options_by_question[$question['id']])
+                ? $options_by_question[$question['id']]
+                : array();
+        }
+
+        return $questions;
+    }
+
+    /**
      * Get answer options for a question
      */
     public static function get_answer_options($question_id) {

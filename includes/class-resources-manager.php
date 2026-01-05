@@ -150,6 +150,97 @@ class Resources_Manager {
     }
 
     /**
+     * Search resources by name, organization, or service type
+     * Optimized for AJAX autocomplete - returns only needed columns
+     *
+     * @param string $search_term Search query
+     * @param int $limit Maximum results to return
+     * @param int $offset Offset for pagination
+     * @return array Array of matching resources
+     */
+    public static function search_resources($search_term = '', $limit = 20, $offset = 0) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'resources';
+
+        $where = array("status = 'active'");
+        $where_values = array();
+
+        if (!empty($search_term)) {
+            // Search across multiple fields
+            $search_like = '%' . $wpdb->esc_like($search_term) . '%';
+            $where[] = "(
+                resource_name LIKE %s OR
+                organization LIKE %s OR
+                primary_service_type LIKE %s OR
+                secondary_service_type LIKE %s OR
+                target_population LIKE %s
+            )";
+            $where_values[] = $search_like;
+            $where_values[] = $search_like;
+            $where_values[] = $search_like;
+            $where_values[] = $search_like;
+            $where_values[] = $search_like;
+        }
+
+        $where_clause = implode(' AND ', $where);
+
+        // Return only columns needed for search results display
+        $query = "SELECT id, resource_name, organization, primary_service_type,
+                  secondary_service_type, target_population
+                  FROM $table_name
+                  WHERE $where_clause
+                  ORDER BY is_svdp DESC, resource_name ASC
+                  LIMIT %d OFFSET %d";
+
+        $where_values[] = $limit;
+        $where_values[] = $offset;
+
+        $query = $wpdb->prepare($query, $where_values);
+        $resources = $wpdb->get_results($query, ARRAY_A);
+
+        return $resources ? $resources : array();
+    }
+
+    /**
+     * Count total search results (for pagination)
+     *
+     * @param string $search_term Search query
+     * @return int Total matching resources
+     */
+    public static function count_search_results($search_term = '') {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'resources';
+
+        $where = array("status = 'active'");
+        $where_values = array();
+
+        if (!empty($search_term)) {
+            $search_like = '%' . $wpdb->esc_like($search_term) . '%';
+            $where[] = "(
+                resource_name LIKE %s OR
+                organization LIKE %s OR
+                primary_service_type LIKE %s OR
+                secondary_service_type LIKE %s OR
+                target_population LIKE %s
+            )";
+            $where_values[] = $search_like;
+            $where_values[] = $search_like;
+            $where_values[] = $search_like;
+            $where_values[] = $search_like;
+            $where_values[] = $search_like;
+        }
+
+        $where_clause = implode(' AND ', $where);
+        $query = "SELECT COUNT(*) FROM $table_name WHERE $where_clause";
+
+        if (!empty($where_values)) {
+            $query = $wpdb->prepare($query, $where_values);
+        }
+
+        return (int) $wpdb->get_var($query);
+    }
+
+    /**
      * Create a new resource
      */
     public static function create_resource($data) {

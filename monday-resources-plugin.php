@@ -383,6 +383,14 @@ function monday_resources_activate() {
     dbDelta($sql_responses);
     dbDelta($sql_resource_views);
 
+    // Add indexes for resource search performance
+    // These improve query speed for AJAX search functionality
+    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_resource_name ON {$resources_table}(resource_name)");
+    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_organization ON {$resources_table}(organization)");
+    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_primary_service ON {$resources_table}(primary_service_type)");
+    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_secondary_service ON {$resources_table}(secondary_service_type)");
+    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_status ON {$resources_table}(status)");
+
     // Add hours-related columns to resources table if they don't exist
     // Check and add each column individually for MySQL compatibility
     $columns_to_add = array(
