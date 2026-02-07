@@ -3,17 +3,24 @@
  * Shortcode Display Class
  */
 
-class Monday_Resources_Shortcode {
+class Monday_Resources_Shortcode
+{
 
-    public function __construct() {
+    public function __construct()
+    {
         add_shortcode('monday_resources', array($this, 'display_resources'));
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
+
+        // Register Email AJAX Actions
+        add_action('wp_ajax_monday_resources_email_list', array($this, 'email_resource_list'));
+        add_action('wp_ajax_nopriv_monday_resources_email_list', array($this, 'email_resource_list'));
     }
 
     /**
      * Enqueue frontend scripts and styles
      */
-    public function enqueue_scripts() {
+    public function enqueue_scripts()
+    {
         if (has_shortcode(get_post()->post_content ?? '', 'monday_resources')) {
             wp_enqueue_style(
                 'monday-resources-modal',
@@ -32,41 +39,270 @@ class Monday_Resources_Shortcode {
 
             wp_localize_script('monday-resources-frontend', 'mondayResources', array(
                 'ajaxurl' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('monday_resources_nonce')
+                'nonce' => wp_create_nonce('monday_resources_nonce'),
+                'email_nonce' => wp_create_nonce('monday_resources_email_nonce')
             ));
         }
     }
 
     /**
-     * Display resources shortcode
+     * Handle Email List AJAX Request
      */
-    public function display_resources($atts) {
+    public function email_resource_list()
+    {
+        check_ajax_referer('monday_resources_email_nonce', 'nonce');
+
+        $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
+        $format = isset($_POST['format']) ? sanitize_text_field($_POST['format']) : 'detailed';
+        $resource_ids = isset($_POST['resource_ids']) ? array_map('intval', $_POST['resource_ids']) : array();
+
+        if (empty($email) || !is_email($email)) {
+            wp_send_json_error(array('message' => 'Invalid email address.'));
+        }
+
+        if (empty($resource_ids)) {
+            wp_send_json_error(array('message' => 'No resources selected.'));
+        }
+
+        // Fetch resource details
+        global $wpdb;
+        $resources_table = $wpdb->prefix . 'resources';
+        $ids_placeholder = implode(',', array_fill(0, count($resource_ids), '%d'));
+
+        $query = "SELECT * FROM $resources_table WHERE id IN ($ids_placeholder) ORDER BY resource_name ASC";
+        $resources = $wpdb->get_results($wpdb->prepare($query, $resource_ids), ARRAY_A);
+
+        if (empty($resources)) {
+            wp_send_json_error(array('message' => 'Could not find the selected resources.'));
+        }
+
+        // Build Email Content
+        $site_name = get_bloginfo('name');
+        $subject = 'Your Community Resources List from ' . $site_name;
+
+        $headers = array('Content-Type: text/html; charset=UTF-8');
+        $headers[] = 'From: ' . $site_name . ' <' . get_option('admin_email') . '>';
+
+        ob_start();
+        ?>
+        <!DOCTYPE html>
+        <html>
+
+        <head>
+            <style>
+                body {
+                    font-family: Helvetica, Arial, sans-serif;
+                    line-height: 1.5;
+                    color: #333;
+                }
+
+                .container {
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }
+
+                .header {
+                    border-bottom: 2px solid #0073aa;
+                    padding-bottom: 10px;
+                    margin-bottom: 20px;
+                }
+
+                .header h1 {
+                    margin: 0;
+                    color: #0073aa;
+                    font-size: 24px;
+                }
+
+                .footer {
+                    margin-top: 30px;
+                    font-size: 12px;
+                    color: #666;
+                    border-top: 1px solid #eee;
+                    padding-top: 10px;
+                }
+
+                .resource-item {
+                    margin-bottom: 20px;
+                    border-bottom: 1px solid #eee;
+                    padding-bottom: 15px;
+                }
+
+                .resource-item:last-child {
+                    border-bottom: none;
+                }
+
+                .resource-name {
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #000;
+                    margin-bottom: 5px;
+                }
+
+                .organization {
+                    font-style: italic;
+                    color: #555;
+                    margin-bottom: 8px;
+                    font-size: 14px;
+                }
+
+                .compact-line {
+                    font-size: 14px;
+                }
+
+                .detail-row {
+                    margin-bottom: 5px;
+                    font-size: 14px;
+                }
+
+                .label {
+                    font-weight: bold;
+                    color: #555;
+                }
+
+                a {
+                    color: #0073aa;
+                    text-decoration: none;
+                }
+            </style>
+        </head>
+
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Community Resources</h1>
+                    <p>Here is the list of resources you requested from <?php echo esc_html($site_name); ?>.</p>
+                </div>
+
+                <div class="resource-list">
+                    <?php foreach ($resources as $item): ?>
+                        <div class="resource-item">
+                            <div class="resource-name"><?php echo esc_html($item['resource_name']); ?></div>
+
+                            <?php if (!empty($item['organization'])): ?>
+                                <div class="organization"><?php echo esc_html($item['organization']); ?></div>
+                            <?php endif; ?>
+
+                            <?php if ($format === 'compact'): ?>
+                                <!-- Compact Format: 2-3 lines max -->
+                                <div class="compact-line">
+                                    <?php
+                                    $parts = array();
+                                    if (!empty($item['phone'])) {
+                                        $parts[] = '<a href="tel:' . esc_attr(preg_replace('/[^0-9]/', '', $item['phone'])) . '">' . esc_html($item['phone']) . '</a>';
+                                    }
+                                    if (!empty($item['website'])) {
+                                        $parts[] = '<a href="' . esc_url($item['website']) . '">Website</a>';
+                                    }
+                                    echo implode(' | ', $parts);
+                                    ?>
+                                </div>
+                                <?php if (!empty($item['physical_address'])): ?>
+                                    <div class="compact-line" style="font-size: 12px; color: #666; margin-top: 4px;">
+                                        <?php echo esc_html($item['physical_address']); ?>
+                                    </div>
+                                <?php endif; ?>
+
+                            <?php else: // Detailed Format ?>
+
+                                <?php if (!empty($item['primary_service_type'])): ?>
+                                    <div class="detail-row"><span class="label">Type:</span>
+                                        <?php echo esc_html($item['primary_service_type']); ?></div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($item['phone'])): ?>
+                                    <div class="detail-row"><span class="label">Phone:</span> <a
+                                            href="tel:<?php echo esc_attr(preg_replace('/[^0-9]/', '', $item['phone'])); ?>"><?php echo esc_html($item['phone']); ?></a>
+                                    </div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($item['website'])): ?>
+                                    <div class="detail-row"><span class="label">Website:</span> <a
+                                            href="<?php echo esc_url($item['website']); ?>"><?php echo esc_html($item['website']); ?></a>
+                                    </div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($item['physical_address'])): ?>
+                                    <div class="detail-row"><span class="label">Address:</span>
+                                        <?php echo esc_html($item['physical_address']); ?></div>
+                                <?php endif; ?>
+
+                                <?php
+                                // Hours (simplified for email)
+                                if (class_exists('Resource_Hours_Manager')) {
+                                    $hours_data = Resource_Hours_Manager::get_hours($item['id']);
+                                    if ($hours_data && !empty($hours_data['office_hours'])) {
+                                        $hours_text = Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact');
+                                        echo '<div class="detail-row"><span class="label">Hours:</span> ' . wp_kses_post($hours_text) . '</div>';
+                                    } elseif (!empty($item['hours_of_operation'])) {
+                                        echo '<div class="detail-row"><span class="label">Hours:</span> ' . esc_html($item['hours_of_operation']) . '</div>';
+                                    }
+                                }
+                                ?>
+
+                                <?php if (!empty($item['description'])): ?>
+                                    <div class="detail-row" style="margin-top: 8px;">
+                                        <?php echo wp_kses_post(wpautop($item['description'])); ?>
+                                    </div>
+                                <?php endif; ?>
+
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="footer">
+                    <p>Sent from <?php echo esc_html($site_name); ?> on <?php echo date('F j, Y'); ?>.</p>
+                </div>
+            </div>
+        </body>
+
+        </html>
+        <?php
+        $message = ob_get_clean();
+
+        // Send Email
+        $sent = wp_mail($email, $subject, $message, $headers);
+
+        if ($sent) {
+            wp_send_json_success(array('message' => 'Email sent successfully to ' . $email));
+        } else {
+            wp_send_json_error(array('message' => 'Failed to send email. Please check your server settings.'));
+        }
+    }
+
+    /**
+     * Display resources shortcode
+
+     */
+    public function display_resources($atts)
+    {
         // Extract shortcode attributes
         $atts = shortcode_atts(array(
             'geography' => '',
             'service_type' => ''
         ), $atts);
-    
+
         // Get resources from database with optional filters
         $filters = array();
-    
+
         // Handle geography filter - split comma-separated values into array
         if (!empty($atts['geography'])) {
             // Split by comma and trim whitespace from each value
             $geographies = array_map('trim', explode(',', $atts['geography']));
             // Remove any empty values
             $geographies = array_filter($geographies);
-            
+
             if (!empty($geographies)) {
                 $filters['geography'] = $geographies; // Pass as array
             }
         }
-    
+
         // Handle service_type filter - also support multiple values
         if (!empty($atts['service_type'])) {
             $service_types = array_map('trim', explode(',', $atts['service_type']));
             $service_types = array_filter($service_types);
-        
+
             if (!empty($service_types)) {
                 $filters['service_type'] = $service_types; // Pass as array
             }
@@ -168,6 +404,7 @@ class Monday_Resources_Shortcode {
             body {
                 overflow-x: hidden;
             }
+
             .resources-container {
                 max-width: 1200px;
                 width: 100%;
@@ -177,10 +414,12 @@ class Monday_Resources_Shortcode {
                 overflow-x: hidden;
                 position: relative;
             }
+
             .resources-container * {
                 box-sizing: border-box;
                 max-width: 100%;
             }
+
             .resources-help-section {
                 background-color: #f8f9fa;
                 border: 2px solid #0073aa;
@@ -188,30 +427,36 @@ class Monday_Resources_Shortcode {
                 padding: 20px;
                 margin-bottom: 25px;
             }
+
             .resources-help-section h2 {
                 margin-top: 0;
                 color: #0073aa;
                 font-size: 1.4em;
                 margin-bottom: 15px;
             }
+
             .resources-help-section p {
                 font-size: 1.1em;
                 line-height: 1.6;
                 margin-bottom: 12px;
                 color: #333;
             }
+
             .resources-help-section ul {
                 font-size: 1.05em;
                 line-height: 1.7;
                 margin-left: 20px;
                 color: #333;
             }
+
             .resources-help-section li {
                 margin-bottom: 8px;
             }
+
             .resources-help-section strong {
                 color: #0073aa;
             }
+
             .submit-resource-btn {
                 display: inline-block;
                 padding: 12px 24px;
@@ -226,11 +471,13 @@ class Monday_Resources_Shortcode {
                 transition: background-color 0.3s ease;
                 font-size: 16px;
             }
+
             .submit-resource-btn:hover {
                 background-color: #005177;
                 color: white;
                 text-decoration: none;
             }
+
             .print-controls {
                 display: flex;
                 gap: 10px;
@@ -238,6 +485,7 @@ class Monday_Resources_Shortcode {
                 align-items: center;
                 justify-content: flex-end;
             }
+
             .print-button {
                 display: inline-block;
                 padding: 10px 18px;
@@ -249,22 +497,26 @@ class Monday_Resources_Shortcode {
                 font-weight: 600;
                 font-size: 15px;
             }
+
             .print-button:hover {
                 background-color: #222;
             }
+
             .print-options {
                 display: none;
                 background: #fff;
                 border: 1px solid #ddd;
                 border-radius: 6px;
                 padding: 12px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
             }
+
             .print-options.active {
                 display: inline-flex;
                 gap: 10px;
                 flex-wrap: wrap;
             }
+
             .print-option-btn {
                 padding: 8px 14px;
                 border: 1px solid #ccc;
@@ -273,41 +525,50 @@ class Monday_Resources_Shortcode {
                 cursor: pointer;
                 font-size: 14px;
             }
+
             .print-option-btn:hover {
                 background: #e7e7e7;
             }
+
             .print-header {
                 display: none;
                 margin: 0 0 18px 0;
                 padding-bottom: 12px;
                 border-bottom: 2px solid #000;
             }
+
             .print-header-content {
                 display: flex;
                 align-items: center;
                 gap: 14px;
             }
+
             .print-logo {
                 max-height: 48px;
                 width: auto;
             }
+
             .print-header-text {
                 flex: 1;
             }
+
             .print-site-name {
                 font-size: 18px;
                 font-weight: 700;
             }
+
             .print-title {
                 font-size: 20px;
                 font-weight: 700;
                 margin-top: 4px;
             }
+
             .print-date {
                 font-size: 14px;
                 color: #333;
                 margin-top: 2px;
             }
+
             .resources-filters {
                 background-color: #fff;
                 padding: 20px;
@@ -315,12 +576,15 @@ class Monday_Resources_Shortcode {
                 border-radius: 8px;
                 margin-bottom: 20px;
             }
+
             .filter-group {
                 margin-bottom: 15px;
             }
+
             .filter-group:last-child {
                 margin-bottom: 0;
             }
+
             .filter-group label {
                 display: block;
                 font-weight: 600;
@@ -328,6 +592,7 @@ class Monday_Resources_Shortcode {
                 margin-bottom: 8px;
                 color: #333;
             }
+
             .resources-search input,
             .category-filter select {
                 width: 100%;
@@ -337,25 +602,30 @@ class Monday_Resources_Shortcode {
                 border: 2px solid #ddd;
                 border-radius: 4px;
             }
+
             .resources-search input:focus,
             .category-filter select:focus {
                 outline: none;
                 border-color: #0073aa;
                 box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.1);
             }
+
             .category-filter select {
                 cursor: pointer;
             }
+
             .filter-row {
                 display: flex;
                 gap: 20px;
                 flex-wrap: wrap;
                 align-items: flex-start;
             }
+
             .filter-column {
                 flex: 1;
                 min-width: 250px;
             }
+
             .target-audience-filter {
                 width: 100%;
                 margin: 16px 0;
@@ -363,22 +633,26 @@ class Monday_Resources_Shortcode {
                 border-top: 1px solid #eee;
                 border-bottom: 1px solid #eee;
             }
+
             .target-audience-checkboxes {
                 display: grid;
                 grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
                 gap: 8px;
                 margin-top: 8px;
             }
+
             .target-audience-checkbox {
                 display: flex;
                 align-items: center;
                 gap: 6px;
             }
+
             .target-audience-checkbox input[type="checkbox"] {
                 width: 18px;
                 height: 18px;
                 cursor: pointer;
             }
+
             .target-audience-checkbox label {
                 font-weight: normal !important;
                 font-size: 0.95em;
@@ -386,6 +660,7 @@ class Monday_Resources_Shortcode {
                 cursor: pointer;
                 color: #333;
             }
+
             .svdp-badge {
                 display: inline-block;
                 background-color: #0073aa;
@@ -398,6 +673,7 @@ class Monday_Resources_Shortcode {
                 letter-spacing: 0.5px;
                 margin-bottom: 10px;
             }
+
             .partner-divider {
                 grid-column: 1 / -1;
                 margin: 30px 0;
@@ -415,6 +691,7 @@ class Monday_Resources_Shortcode {
                 overflow-wrap: break-word;
                 word-wrap: break-word;
             }
+
             .resources-grid {
                 display: grid;
                 grid-template-columns: 1fr;
@@ -422,26 +699,30 @@ class Monday_Resources_Shortcode {
                 margin-top: 20px;
                 justify-content: center;
             }
+
             @media (min-width: 900px) {
                 .resources-grid {
                     grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
                 }
             }
+
             .resource-card {
                 border: 1px solid #ddd;
                 border-radius: 8px;
                 padding: 28px;
                 background: #fff;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
                 transition: box-shadow 0.3s ease;
                 width: 100%;
                 max-width: 100%;
                 overflow-wrap: break-word;
                 word-wrap: break-word;
             }
+
             .resource-card:hover {
-                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
             }
+
             .resource-card h3 {
                 margin: 0 0 5px 0;
                 font-size: 1.3em;
@@ -449,6 +730,7 @@ class Monday_Resources_Shortcode {
                 border-bottom: 2px solid #0073aa;
                 padding-bottom: 10px;
             }
+
             .resource-organization {
                 margin: 0 0 15px 0;
                 padding-bottom: 10px;
@@ -457,9 +739,11 @@ class Monday_Resources_Shortcode {
                 font-style: italic;
                 border-bottom: 1px solid #eee;
             }
+
             .resource-field {
                 margin-bottom: 20px;
             }
+
             .resource-field-label {
                 font-weight: bold;
                 color: #666;
@@ -468,6 +752,7 @@ class Monday_Resources_Shortcode {
                 margin-bottom: 6px;
                 line-height: 1.5;
             }
+
             .resource-field-value {
                 color: #333;
                 font-size: 1em;
@@ -476,26 +761,31 @@ class Monday_Resources_Shortcode {
                 overflow-wrap: break-word;
                 word-break: break-word;
             }
+
             .resource-field-value a {
                 color: #0073aa;
                 text-decoration: none;
                 word-break: break-all;
                 overflow-wrap: break-word;
             }
+
             .resource-field-value a:hover {
                 text-decoration: underline;
             }
+
             /* Section Styles for Organized Expandable Area */
             .resource-section {
                 margin-bottom: 25px;
                 padding-bottom: 20px;
                 border-bottom: 1px solid #eee;
             }
+
             .resource-section:last-child {
                 border-bottom: none;
                 margin-bottom: 0;
                 padding-bottom: 0;
             }
+
             .resource-section-heading {
                 font-weight: 700;
                 font-size: 1.05em;
@@ -506,10 +796,12 @@ class Monday_Resources_Shortcode {
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
             }
+
             /* Hours of Operation Styles */
             .resource-hours {
                 margin: 15px 0;
             }
+
             .hours-special-flag {
                 display: inline-block;
                 padding: 8px 12px;
@@ -519,25 +811,31 @@ class Monday_Resources_Shortcode {
                 margin: 5px 0;
                 font-size: 0.95em;
             }
+
             .hours-24-7 {
                 background-color: #d4edda;
                 color: #155724;
             }
+
             .hours-closed {
                 background-color: #f8d7da;
                 color: #721c24;
             }
+
             .hours-breakdown {
                 line-height: 1.8;
             }
+
             .hours-section {
                 margin: 10px 0;
             }
+
             .hours-section strong {
                 display: block;
                 margin-bottom: 4px;
                 color: #444;
             }
+
             .hours-notes {
                 margin-top: 10px;
                 padding-top: 8px;
@@ -545,14 +843,17 @@ class Monday_Resources_Shortcode {
                 font-size: 0.9em;
                 color: #666;
             }
+
             .resource-details-hidden {
                 display: none;
             }
+
             .resource-toggle {
                 margin-top: 15px;
                 padding-top: 15px;
                 border-top: 1px solid #eee;
             }
+
             .resource-toggle-button {
                 background: none;
                 border: none;
@@ -562,9 +863,11 @@ class Monday_Resources_Shortcode {
                 padding: 0;
                 text-decoration: underline;
             }
+
             .resource-toggle-button:hover {
                 color: #005177;
             }
+
             .resource-report-btn {
                 background-color: #dc3232;
                 color: white;
@@ -576,12 +879,15 @@ class Monday_Resources_Shortcode {
                 font-size: 0.9em;
                 transition: background-color 0.3s ease;
             }
+
             .resource-report-btn:hover {
                 background-color: #a02222;
             }
+
             .resource-verification-status {
                 margin: 10px 0;
             }
+
             .verification-badge {
                 display: inline-block;
                 padding: 4px 8px;
@@ -589,26 +895,31 @@ class Monday_Resources_Shortcode {
                 font-size: 0.85em;
                 font-weight: 500;
             }
+
             .verification-badge.fresh {
                 background-color: #d4edda;
                 color: #155724;
                 border: 1px solid #c3e6cb;
             }
+
             .verification-badge.aging {
                 background-color: #fff3cd;
                 color: #856404;
                 border: 1px solid #ffeaa7;
             }
+
             .verification-badge.stale {
                 background-color: #f8d7da;
                 color: #721c24;
                 border: 1px solid #f5c6cb;
             }
+
             .verification-badge.unverified {
                 background-color: #e2e3e5;
                 color: #383d41;
                 border: 1px solid #d6d8db;
             }
+
             .no-results {
                 grid-column: 1 / -1;
                 text-align: center;
@@ -616,11 +927,13 @@ class Monday_Resources_Shortcode {
                 color: #666;
                 font-size: 1.1em;
             }
+
             .results-count {
                 margin: 10px 0;
                 color: #666;
                 font-size: 0.95em;
             }
+
             .resources-meta {
                 display: flex;
                 align-items: center;
@@ -629,70 +942,89 @@ class Monday_Resources_Shortcode {
                 flex-wrap: wrap;
                 margin: 10px 0;
             }
+
             @media (max-width: 768px) {
                 .resources-container {
                     padding: 0 15px;
                 }
+
                 .resources-grid {
                     grid-template-columns: 1fr;
                     gap: 10px;
                 }
+
                 .resource-card {
                     padding: 20px;
                 }
+
                 .resources-help-section {
                     padding: 15px;
                 }
+
                 .resources-help-section h2 {
                     font-size: 1.2em;
                 }
+
                 .resources-help-section p,
                 .resources-help-section ul {
                     font-size: 1em;
                 }
+
                 .resources-filters {
                     padding: 15px;
                 }
+
                 .submit-resource-btn {
                     width: 100%;
                     text-align: center;
                 }
+
                 .partner-divider {
                     font-size: 1.1em;
                     margin: 20px 0;
                     padding: 12px 8px;
                 }
             }
+
             @media (max-width: 480px) {
                 .resources-container {
                     padding: 0 10px;
                 }
+
                 .resources-grid {
                     gap: 8px;
                 }
+
                 .resource-card {
                     padding: 16px;
                 }
+
                 .resources-help-section {
                     padding: 12px;
                 }
+
                 .resources-help-section h2 {
                     font-size: 1.1em;
                 }
+
                 .resources-help-section p,
                 .resources-help-section ul {
                     font-size: 0.95em;
                 }
+
                 .resources-filters {
                     padding: 12px;
                 }
+
                 .partner-divider {
                     font-size: 1em;
                     margin: 15px 0;
                     padding: 10px 5px;
                 }
             }
+
             @media print {
+
                 header,
                 footer,
                 .site-header,
@@ -703,6 +1035,7 @@ class Monday_Resources_Shortcode {
                 #site-footer {
                     display: none !important;
                 }
+
                 .resources-help-section,
                 .resources-filters,
                 .resources-search,
@@ -717,12 +1050,15 @@ class Monday_Resources_Shortcode {
                 .no-results {
                     display: none !important;
                 }
+
                 .print-header {
                     display: block !important;
                 }
+
                 .resources-grid {
                     display: block;
                 }
+
                 .resource-card {
                     box-shadow: none;
                     border: 1px solid #444;
@@ -730,32 +1066,39 @@ class Monday_Resources_Shortcode {
                     padding: 16px;
                     page-break-inside: avoid;
                 }
+
                 .resource-card h3 {
                     border-bottom: 1px solid #444;
                     padding-bottom: 6px;
                     margin-bottom: 6px;
                 }
+
                 .resource-organization {
                     border-bottom: none;
                     margin-bottom: 10px;
                     padding-bottom: 0;
                     font-style: normal;
                 }
+
                 .resource-details-hidden {
                     display: block !important;
                 }
+
                 .resource-section {
                     border: none;
                     margin: 0 0 10px 0;
                     padding: 0;
                 }
+
                 .resource-section-heading {
                     display: none;
                 }
+
                 .resource-field {
                     display: none !important;
                     margin-bottom: 10px;
                 }
+
                 .resource-field--primary_service_type,
                 .resource-field--phone,
                 .resource-field--email,
@@ -764,14 +1107,17 @@ class Monday_Resources_Shortcode {
                 .resource-field--hours_of_operation {
                     display: block !important;
                 }
+
                 .resource-field-label {
                     color: #000;
                 }
+
                 .resource-field-value,
                 .resource-field-value a {
                     color: #000;
                 }
             }
+
             @media print {
                 body[data-print-layout="compact"] .resource-card {
                     border: none;
@@ -779,16 +1125,19 @@ class Monday_Resources_Shortcode {
                     padding: 0 0 10px 0;
                     border-bottom: 1px solid #888;
                 }
+
                 body[data-print-layout="compact"] .resource-card h3 {
                     border-bottom: none;
                     margin-bottom: 4px;
                     padding-bottom: 0;
                     font-size: 16px;
                 }
+
                 body[data-print-layout="compact"] .resource-organization {
                     margin-bottom: 6px;
                     font-size: 13px;
                 }
+
                 body[data-print-layout="compact"] .resource-field {
                     margin-bottom: 4px;
                     font-size: 12px;
@@ -806,7 +1155,8 @@ class Monday_Resources_Shortcode {
             <div class="print-header">
                 <div class="print-header-content">
                     <?php if (!empty($custom_logo_url)): ?>
-                        <img class="print-logo" src="<?php echo esc_url($custom_logo_url); ?>" alt="<?php echo esc_attr($site_name); ?>">
+                        <img class="print-logo" src="<?php echo esc_url($custom_logo_url); ?>"
+                            alt="<?php echo esc_attr($site_name); ?>">
                     <?php endif; ?>
                     <div class="print-header-text">
                         <div class="print-site-name"><?php echo esc_html($site_name); ?></div>
@@ -819,7 +1169,11 @@ class Monday_Resources_Shortcode {
             <!-- Helpful Instructions Section -->
             <div class="resources-help-section">
                 <h2>How to Find Resources</h2>
-                <p>Browse by category or search by keyword to find what you need. You can also check boxes to filter by who the resource serves (like seniors, families, or veterans). All filters are optional – use what helps you most. Click "Click for more info..." on any resource for complete details. Use the "Report an Issue" button if you find incorrect information, or the "Submit a New Resource" button below to share resources we're missing.</p>
+                <p>Browse by category or search by keyword to find what you need. You can also check boxes to filter by who the
+                    resource serves (like seniors, families, or veterans). All filters are optional – use what helps you most.
+                    Click "Click for more info..." on any resource for complete details. Use the "Report an Issue" button if you
+                    find incorrect information, or the "Submit a New Resource" button below to share resources we're missing.
+                </p>
             </div>
 
             <button class="submit-resource-btn" onclick="openSubmitResourceModal()">Submit a New Resource</button>
@@ -858,12 +1212,8 @@ class Monday_Resources_Shortcode {
                     <div class="target-audience-checkboxes">
                         <?php foreach ($target_audiences as $index => $audience): ?>
                             <div class="target-audience-checkbox">
-                                <input
-                                    type="checkbox"
-                                    id="audience-<?php echo $index; ?>"
-                                    class="audience-checkbox"
-                                    value="<?php echo esc_attr($audience); ?>"
-                                />
+                                <input type="checkbox" id="audience-<?php echo $index; ?>" class="audience-checkbox"
+                                    value="<?php echo esc_attr($audience); ?>" />
                                 <label for="audience-<?php echo $index; ?>"><?php echo esc_html($audience); ?></label>
                             </div>
                         <?php endforeach; ?>
@@ -872,232 +1222,276 @@ class Monday_Resources_Shortcode {
 
                 <div class="filter-group resources-search">
                     <label for="resource-search">Search by Keyword (Optional)</label>
-                    <input type="text" id="resource-search" placeholder="Type what you're looking for (e.g., food, rent help, medical care)..." />
+                    <input type="text" id="resource-search"
+                        placeholder="Type what you're looking for (e.g., food, rent help, medical care)..." />
                 </div>
             </div>
 
             <div class="resources-meta">
                 <div class="results-count">
-                    Showing <span id="visible-count"><?php echo count($items); ?></span> of <?php echo count($items); ?> resources
+                    Showing <span id="visible-count"><?php echo count($items); ?></span> of <?php echo count($items); ?>
+                    resources
                 </div>
                 <div class="print-controls">
                     <button class="print-button" type="button" onclick="openPrintOptions()">Print this List</button>
                     <div class="print-options" id="print-options">
-                        <button class="print-option-btn" type="button" onclick="printResources('detailed')">Print Detailed</button>
-                        <button class="print-option-btn" type="button" onclick="printResources('compact')">Print Compact</button>
+                        <button class="print-option-btn" type="button" onclick="printResources('detailed')">Print
+                            Detailed</button>
+                        <button class="print-option-btn" type="button" onclick="printResources('compact')">Print
+                            Compact</button>
                         <button class="print-option-btn" type="button" onclick="closePrintOptions()">Cancel</button>
                     </div>
+                    <button class="print-button" type="button" onclick="openEmailModal()">Email this List</button>
                 </div>
             </div>
-            <div class="resources-grid" id="resources-grid">
-                <?php
-                $previous_was_svdp = true; // Assume first items are SVdP
-                foreach ($items as $index => $item):
-                    // Check if this is an SVdP resource
-                    $is_svdp = !empty($item['is_svdp']) && $item['is_svdp'] == 1;
 
-                    // Insert divider when transitioning from SVdP to partner resources
-                    if ($previous_was_svdp && !$is_svdp): ?>
-                        <div class="partner-divider">Partner Resources</div>
+            <!-- Email Modal -->
+            <div id="emailListModal" class="modal">
+                <div class="modal-content">
+                    <span class="close" onclick="closeEmailModal()">&times;</span>
+                    <h2>Email Resource List</h2>
+                    <p>Enter your email address to receive a copy of the current list.</p>
+
+                    <div id="emailFormMessage"></div>
+
+                    <form id="emailListForm">
+                        <div class="form-group">
+                            <label for="recipient_email">Email Address <span class="required">*</span></label>
+                            <input type="email" id="recipient_email" name="recipient_email" required
+                                placeholder="you@example.com">
+                        </div>
+
+                        <div class="form-actions"
+                            style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                            <button type="button" class="submit-resource-btn" style="background-color: #6c757d;"
+                                onclick="closeEmailModal()">Cancel</button>
+                            <button type="button" class="submit-resource-btn" onclick="sendEmailList('compact')">Send Compact
+                                List</button>
+                            <button type="button" class="submit-resource-btn" onclick="sendEmailList('detailed')">Send Detailed
+                                List</button>
+                        </div>
+                        <p style="font-size: 0.85em; color: #666; margin-top: 10px;">
+                            <strong>Note:</strong> "Detailed" includes descriptions, hours, and notes. "Compact" is just names
+                            and contact info (2-3 lines per item).
+                        </p>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="resources-grid" id="resources-grid">
+            <?php
+            $previous_was_svdp = true; // Assume first items are SVdP
+            foreach ($items as $index => $item):
+                // Check if this is an SVdP resource
+                $is_svdp = !empty($item['is_svdp']) && $item['is_svdp'] == 1;
+
+                // Insert divider when transitioning from SVdP to partner resources
+                if ($previous_was_svdp && !$is_svdp): ?>
+                    <div class="partner-divider">Partner Resources</div>
                     <?php
-                    endif;
-                    $previous_was_svdp = $is_svdp;
+                endif;
+                $previous_was_svdp = $is_svdp;
 
-                    // Build searchable text from all fields
-                    $searchable_text = strtolower($item['resource_name']);
-                    foreach ($item as $key => $value) {
-                        if (!is_numeric($key) && !in_array($key, array('id', 'created_at', 'updated_at', 'status'))) {
-                            $searchable_text .= ' ' . strtolower($value);
-                        }
+                // Build searchable text from all fields
+                $searchable_text = strtolower($item['resource_name']);
+                foreach ($item as $key => $value) {
+                    if (!is_numeric($key) && !in_array($key, array('id', 'created_at', 'updated_at', 'status'))) {
+                        $searchable_text .= ' ' . strtolower($value);
                     }
+                }
 
-                    // Get Resource Type and Need Met for filtering (separated)
-                    $resource_type = !empty($item['primary_service_type']) ? strtolower($item['primary_service_type']) : '';
-                    $needs_met = !empty($item['secondary_service_type']) ? strtolower($item['secondary_service_type']) : '';
+                // Get Resource Type and Need Met for filtering (separated)
+                $resource_type = !empty($item['primary_service_type']) ? strtolower($item['primary_service_type']) : '';
+                $needs_met = !empty($item['secondary_service_type']) ? strtolower($item['secondary_service_type']) : '';
 
-                    // Get target audience for population filtering
-                    $target_population = !empty($item['target_population']) ? strtolower($item['target_population']) : '';
+                // Get target audience for population filtering
+                $target_population = !empty($item['target_population']) ? strtolower($item['target_population']) : '';
+                ?>
+                $target_population = !empty($item['target_population']) ? strtolower($item['target_population']) : '';
+                ?>
+                <div class="resource-card" data-resource-id="<?php echo esc_attr($item['id']); ?>"
+                    data-search="<?php echo esc_attr($searchable_text); ?>"
+                    data-resource-type="<?php echo esc_attr($resource_type); ?>" data-need-met="<?php echo esc_attr($needs_met); ?>"
+                    data-audience="<?php echo esc_attr($target_population); ?>" data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
+                    <?php if ($is_svdp): ?>
+                        <span class="svdp-badge">SVdP Resource</span>
+                    <?php endif; ?>
+                    <h3><?php echo esc_html($item['resource_name']); ?></h3>
+
+                    <!-- Organization name right below resource name -->
+                    <?php if (!empty($item['organization'])): ?>
+                        <?php $org_value = Resources_Manager::format_column_value($item['organization']); ?>
+                        <div class="resource-organization"><?php echo $org_value; ?></div>
+                    <?php endif; ?>
+
+                    <!-- Verification status badge -->
+                    <?php
+                    $status = !empty($item['verification_status']) ? $item['verification_status'] : 'unverified';
+                    $verified_date = $item['last_verified_date'];
+                    if ($verified_date) {
+                        $relative_time = human_time_diff(strtotime($verified_date), current_time('timestamp'));
+                    }
                     ?>
-                    <div class="resource-card" data-search="<?php echo esc_attr($searchable_text); ?>" data-resource-type="<?php echo esc_attr($resource_type); ?>" data-need-met="<?php echo esc_attr($needs_met); ?>" data-audience="<?php echo esc_attr($target_population); ?>" data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
-                        <?php if ($is_svdp): ?>
-                            <span class="svdp-badge">SVdP Resource</span>
+                    <div class="resource-verification-status">
+                        <?php if ($status === 'fresh' && $verified_date): ?>
+                            <span class="verification-badge fresh">✓ Verified <?php echo esc_html($relative_time); ?> ago</span>
+                        <?php elseif ($status === 'aging' && $verified_date): ?>
+                            <span class="verification-badge aging">⚠ Last verified <?php echo esc_html($relative_time); ?> ago</span>
+                        <?php elseif ($status === 'stale' && $verified_date): ?>
+                            <span class="verification-badge stale">⚠ Information may be outdated (verified
+                                <?php echo esc_html($relative_time); ?> ago)</span>
+                        <?php else: ?>
+                            <span class="verification-badge unverified">Not yet verified</span>
                         <?php endif; ?>
-                        <h3><?php echo esc_html($item['resource_name']); ?></h3>
+                    </div>
 
-                        <!-- Organization name right below resource name -->
-                        <?php if (!empty($item['organization'])): ?>
-                            <?php $org_value = Resources_Manager::format_column_value($item['organization']); ?>
-                            <div class="resource-organization"><?php echo $org_value; ?></div>
-                        <?php endif; ?>
-
-                        <!-- Verification status badge -->
+                    <!-- Always visible fields -->
+                    <?php foreach ($always_visible as $field_name => $label): ?>
                         <?php
-                        $status = !empty($item['verification_status']) ? $item['verification_status'] : 'unverified';
-                        $verified_date = $item['last_verified_date'];
-                        if ($verified_date) {
-                            $relative_time = human_time_diff(strtotime($verified_date), current_time('timestamp'));
+                        if (!empty($item[$field_name])) {
+                            $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
+                            ?>
+                            <div class="resource-field resource-field--<?php echo esc_attr($field_name); ?>">
+                                <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
+                                <span class="resource-field-value">
+                                    <?php echo $formatted_value; ?>
+                                    <?php
+                                    // Add extension inline with phone number
+                                    if ($field_name === 'phone' && !empty($item['phone_extension'])) {
+                                        echo ' <span style="font-style: italic; font-size: 0.8em; white-space: nowrap;">ext ' . esc_html($item['phone_extension']) . '</span>';
+                                    }
+                                    ?>
+                                </span>
+                            </div>
+                            <?php
                         }
                         ?>
-                        <div class="resource-verification-status">
-                            <?php if ($status === 'fresh' && $verified_date): ?>
-                                <span class="verification-badge fresh">✓ Verified <?php echo esc_html($relative_time); ?> ago</span>
-                            <?php elseif ($status === 'aging' && $verified_date): ?>
-                                <span class="verification-badge aging">⚠ Last verified <?php echo esc_html($relative_time); ?> ago</span>
-                            <?php elseif ($status === 'stale' && $verified_date): ?>
-                                <span class="verification-badge stale">⚠ Information may be outdated (verified <?php echo esc_html($relative_time); ?> ago)</span>
-                            <?php else: ?>
-                                <span class="verification-badge unverified">Not yet verified</span>
-                            <?php endif; ?>
-                        </div>
+                    <?php endforeach; ?>
 
-                        <!-- Always visible fields -->
-                        <?php foreach ($always_visible as $field_name => $label): ?>
+                    <!-- Hidden details -->
+                    <div class="resource-details-hidden" id="details-<?php echo $index; ?>" aria-hidden="true">
+                        <?php foreach ($hidden_details as $section_key => $section): ?>
                             <?php
-                            if (!empty($item[$field_name])) {
-                                $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
-                            ?>
-                                <div class="resource-field resource-field--<?php echo esc_attr($field_name); ?>">
-                                    <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
-                                    <span class="resource-field-value">
-                                        <?php echo $formatted_value; ?>
-                                        <?php
-                                        // Add extension inline with phone number
-                                        if ($field_name === 'phone' && !empty($item['phone_extension'])) {
-                                            echo ' <span style="font-style: italic; font-size: 0.8em; white-space: nowrap;">ext ' . esc_html($item['phone_extension']) . '</span>';
-                                        }
-                                        ?>
-                                    </span>
-                                </div>
-                            <?php
-                            }
-                            ?>
-                        <?php endforeach; ?>
-
-                        <!-- Hidden details -->
-                        <div class="resource-details-hidden" id="details-<?php echo $index; ?>" aria-hidden="true">
-                            <?php foreach ($hidden_details as $section_key => $section): ?>
-                                <?php
-                                // Check if section has any non-empty fields before rendering
-                                $has_content = false;
-                                foreach ($section['fields'] as $field_name => $label) {
-                                    if (!empty($item[$field_name])) {
-                                        $has_content = true;
-                                        break;
-                                    }
+                            // Check if section has any non-empty fields before rendering
+                            $has_content = false;
+                            foreach ($section['fields'] as $field_name => $label) {
+                                if (!empty($item[$field_name])) {
+                                    $has_content = true;
+                                    break;
                                 }
+                            }
 
-                                if (!$has_content) continue;
-                                ?>
+                            if (!$has_content)
+                                continue;
+                            ?>
 
-                                <div class="resource-section">
-                                    <h4 class="resource-section-heading"><?php echo esc_html($section['label']); ?></h4>
+                            <div class="resource-section">
+                                <h4 class="resource-section-heading"><?php echo esc_html($section['label']); ?></h4>
 
-                                    <?php foreach ($section['fields'] as $field_name => $label): ?>
-                                        <?php
-                                        // Skip organization (already shown above resource name)
-                                        if ($field_name === 'organization') {
-                                            continue;
-                                        }
-                                    
-                                        // Special handling for hours_of_operation - show structured hours
-                                        if ($field_name === 'hours_of_operation') {
-                                            $hours_data = Resource_Hours_Manager::get_hours($item['id']);
+                                <?php foreach ($section['fields'] as $field_name => $label): ?>
+                                    <?php
+                                    // Skip organization (already shown above resource name)
+                                    if ($field_name === 'organization') {
+                                        continue;
+                                    }
 
-                                            if ($hours_data) {
-                                                ?>
-                                                <div class="resource-field resource-field--hours_of_operation resource-hours">
-                                                    <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
-                                                    <div class="resource-field-value">
-                                                        <?php if ($hours_data['flags']['is_24_7']): ?>
-                                                            <div class="hours-special-flag hours-24-7">⏰ Open 24/7</div>
-                                                        <?php elseif ($hours_data['flags']['is_by_appointment']): ?>
-                                                            <div class="hours-special-flag">📅 By Appointment Only</div>
-                                                        <?php elseif ($hours_data['flags']['is_call_for_availability']): ?>
-                                                            <div class="hours-special-flag">📞 Call for Availability</div>
-                                                        <?php elseif ($hours_data['flags']['is_currently_closed']): ?>
-                                                            <div class="hours-special-flag hours-closed">🚫 Currently Closed</div>
-                                                        <?php else: ?>
-                                                            <div class="hours-breakdown">
-                                                                <?php if (!empty($hours_data['office_hours'])): ?>
-                                                                    <div class="hours-section">
-                                                                        <strong>Office Hours:</strong><br>
-                                                                        <?php echo Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact'); ?>
-                                                                    </div>
-                                                                <?php endif; ?>
-                                    
-                                                                <?php
-                                                                // Only show service hours if they're different from office hours
-                                                                $show_service_hours = false;
-                                                                if (!empty($hours_data['service_hours'])) {
-                                                                    $office_formatted = Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact');
-                                                                    $service_formatted = Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact');
-                                                                    $show_service_hours = ($office_formatted !== $service_formatted);
-                                                                }
+                                    // Special handling for hours_of_operation - show structured hours
+                                    if ($field_name === 'hours_of_operation') {
+                                        $hours_data = Resource_Hours_Manager::get_hours($item['id']);
 
-                                                                if ($show_service_hours):
-                                                                ?>
-                                                                    <div class="hours-section">
-                                                                        <strong>Service Hours:</strong><br>
-                                                                        <?php echo Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact'); ?>
-                                                                    </div>
-                                                                <?php endif; ?>
-                                                            </div>
-                                                        <?php endif; ?>
-
-                                                        <?php if (!empty($hours_data['special_notes'])): ?>
-                                                            <div class="hours-notes">
-                                                                <em><?php echo esc_html($hours_data['special_notes']); ?></em>
-                                                            </div>
-                                                        <?php endif; ?>
-                                                    </div>
-                                                </div>
-                                                <?php
-                                            } elseif (!empty($item[$field_name])) {
-                                                // Fallback to legacy text format if no structured hours
-                                                ?>
-                                                <div class="resource-field resource-field--hours_of_operation">
-                                                    <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
-                                                    <span class="resource-field-value"><?php echo esc_html($item[$field_name]); ?></span>
-                                                </div>
-                                                <?php
-                                            }
-                                        } elseif (!empty($item[$field_name])) {
-                                            // Special formatting for list-style fields (Documents Required, Other Eligibility, How to Apply)
-                                            if (in_array($field_name, array('documents_required', 'other_eligibility', 'how_to_apply'))) {
-                                                $formatted_value = Resources_Manager::format_as_list($item[$field_name]);
-                                            } else {
-                                                $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
-                                            }
+                                        if ($hours_data) {
                                             ?>
-                                            <div class="resource-field resource-field--<?php echo esc_attr($field_name); ?>">
+                                            <div class="resource-field resource-field--hours_of_operation resource-hours">
                                                 <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
-                                                <div class="resource-field-value"><?php echo $formatted_value; ?></div>
+                                                <div class="resource-field-value">
+                                                    <?php if ($hours_data['flags']['is_24_7']): ?>
+                                                        <div class="hours-special-flag hours-24-7">⏰ Open 24/7</div>
+                                                    <?php elseif ($hours_data['flags']['is_by_appointment']): ?>
+                                                        <div class="hours-special-flag">📅 By Appointment Only</div>
+                                                    <?php elseif ($hours_data['flags']['is_call_for_availability']): ?>
+                                                        <div class="hours-special-flag">📞 Call for Availability</div>
+                                                    <?php elseif ($hours_data['flags']['is_currently_closed']): ?>
+                                                        <div class="hours-special-flag hours-closed">🚫 Currently Closed</div>
+                                                    <?php else: ?>
+                                                        <div class="hours-breakdown">
+                                                            <?php if (!empty($hours_data['office_hours'])): ?>
+                                                                <div class="hours-section">
+                                                                    <strong>Office Hours:</strong><br>
+                                                                    <?php echo Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact'); ?>
+                                                                </div>
+                                                            <?php endif; ?>
+
+                                                            <?php
+                                                            // Only show service hours if they're different from office hours
+                                                            $show_service_hours = false;
+                                                            if (!empty($hours_data['service_hours'])) {
+                                                                $office_formatted = Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact');
+                                                                $service_formatted = Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact');
+                                                                $show_service_hours = ($office_formatted !== $service_formatted);
+                                                            }
+
+                                                            if ($show_service_hours):
+                                                                ?>
+                                                                <div class="hours-section">
+                                                                    <strong>Service Hours:</strong><br>
+                                                                    <?php echo Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact'); ?>
+                                                                </div>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    <?php endif; ?>
+
+                                                    <?php if (!empty($hours_data['special_notes'])): ?>
+                                                        <div class="hours-notes">
+                                                            <em><?php echo esc_html($hours_data['special_notes']); ?></em>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </div>
                                             </div>
-                                        <?php
+                                            <?php
+                                        } elseif (!empty($item[$field_name])) {
+                                            // Fallback to legacy text format if no structured hours
+                                            ?>
+                                            <div class="resource-field resource-field--hours_of_operation">
+                                                <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
+                                                <span class="resource-field-value"><?php echo esc_html($item[$field_name]); ?></span>
+                                            </div>
+                                            <?php
+                                        }
+                                    } elseif (!empty($item[$field_name])) {
+                                        // Special formatting for list-style fields (Documents Required, Other Eligibility, How to Apply)
+                                        if (in_array($field_name, array('documents_required', 'other_eligibility', 'how_to_apply'))) {
+                                            $formatted_value = Resources_Manager::format_as_list($item[$field_name]);
+                                        } else {
+                                            $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
                                         }
                                         ?>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-
-                        <!-- Toggle button -->
-                        <div class="resource-toggle">
-                            <button class="resource-toggle-button"
-                                    onclick="toggleDetails(<?php echo $index; ?>)"
-                                    id="toggle-<?php echo $index; ?>"
-                                    aria-expanded="false"
-                                    aria-controls="details-<?php echo $index; ?>">
-                                Show Full Details
-                            </button>
-                            <br>
-                            <button class="resource-report-btn" onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo $index; ?>)">
-                                Report an Issue
-                            </button>
-                        </div>
+                                        <div class="resource-field resource-field--<?php echo esc_attr($field_name); ?>">
+                                            <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
+                                            <div class="resource-field-value"><?php echo $formatted_value; ?></div>
+                                        </div>
+                                        <?php
+                                    }
+                                    ?>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
-                <?php endforeach; ?>
-            </div>
+
+                    <!-- Toggle button -->
+                    <div class="resource-toggle">
+                        <button class="resource-toggle-button" onclick="toggleDetails(<?php echo $index; ?>)"
+                            id="toggle-<?php echo $index; ?>" aria-expanded="false" aria-controls="details-<?php echo $index; ?>">
+                            Show Full Details
+                        </button>
+                        <br>
+                        <button class="resource-report-btn"
+                            onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo $index; ?>)">
+                            Report an Issue
+                        </button>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
         </div>
 
         <?php
@@ -1141,7 +1535,7 @@ class Monday_Resources_Shortcode {
 
                 // Check if this word has synonyms
                 if (synonymMap[word]) {
-                    synonymMap[word].forEach(function(synonym) {
+                    synonymMap[word].forEach(function (synonym) {
                         expandedWords.add(synonym);
                     });
                 }
@@ -1166,7 +1560,7 @@ class Monday_Resources_Shortcode {
                 }
             }
 
-            (function() {
+            (function () {
                 function openPrintOptions() {
                     const options = document.getElementById('print-options');
                     if (options) {
@@ -1241,7 +1635,7 @@ class Monday_Resources_Shortcode {
                     let hasSvdpResults = false;
                     let hasPartnerResults = false;
 
-                    cards.forEach(function(card) {
+                    cards.forEach(function (card) {
                         const searchableText = card.getAttribute('data-search');
                         const cardResourceType = card.getAttribute('data-resource-type');
                         const cardNeedMet = card.getAttribute('data-need-met');
@@ -1269,9 +1663,9 @@ class Monday_Resources_Shortcode {
 
                         // Check target audience filter (if any checkboxes are selected)
                         if (showCard && normalizedSelectedAudiences.length > 0) {
-                            showCard = normalizedSelectedAudiences.some(function(audienceTokens) {
-                                return cardAudienceList.some(function(cardTokens) {
-                                    return audienceTokens.every(function(token) {
+                            showCard = normalizedSelectedAudiences.some(function (audienceTokens) {
+                                return cardAudienceList.some(function (cardTokens) {
+                                    return audienceTokens.every(function (token) {
                                         return cardTokens.indexOf(token) !== -1;
                                     });
                                 });
@@ -1283,12 +1677,12 @@ class Monday_Resources_Shortcode {
                             const originalWords = searchTerm.split(/\s+/);
 
                             // ALL original search words must match (via themselves or their synonyms)
-                            showCard = originalWords.every(function(originalWord) {
+                            showCard = originalWords.every(function (originalWord) {
                                 // Get this word plus its synonyms
                                 const expandedTerms = getExpandedSearchTerms(originalWord);
 
                                 // Check if ANY of the expanded terms match
-                                return expandedTerms.some(function(term) {
+                                return expandedTerms.some(function (term) {
                                     const regex = new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
                                     return regex.test(searchableText);
                                 });
@@ -1309,15 +1703,15 @@ class Monday_Resources_Shortcode {
                     });
 
                     // Hide all cards first
-                    cards.forEach(function(card) {
+                    cards.forEach(function (card) {
                         card.style.display = 'none';
                     });
 
                     // Show SVdP cards first, then partner cards (maintains sort order)
-                    svdpCards.forEach(function(card) {
+                    svdpCards.forEach(function (card) {
                         card.style.display = 'block';
                     });
-                    partnerCards.forEach(function(card) {
+                    partnerCards.forEach(function (card) {
                         card.style.display = 'block';
                     });
 
@@ -1363,7 +1757,7 @@ class Monday_Resources_Shortcode {
                 searchInput.addEventListener('input', filterResources);
                 resourceTypeFilter.addEventListener('change', filterResources);
                 needMetFilter.addEventListener('change', filterResources);
-                audienceCheckboxes.forEach(function(checkbox) {
+                audienceCheckboxes.forEach(function (checkbox) {
                     checkbox.addEventListener('change', filterResources);
                 });
             })();
