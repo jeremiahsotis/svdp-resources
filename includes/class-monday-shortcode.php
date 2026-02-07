@@ -94,192 +94,76 @@ class Monday_Resources_Shortcode
         // Build Email Content
         $site_name = wp_strip_all_tags(get_bloginfo('name'));
         $site_name = str_replace(array('"', "'", "\n", "\r", ","), '', $site_name); // Sanitize name
-        $admin_email = get_option('admin_email');
-
-        $subject = 'Your Community Resources List from ' . $site_name;
+        $subject = 'Resource List - ' . $site_name;
 
         $headers = array('Content-Type: text/html; charset=UTF-8');
-
-        // Allow WP Mail SMTP to handle From and Reply-To headers for better deliverability
         error_log('Monday Resources Email: Starting message build...');
 
-        ob_start();
-        ?>
-        <!DOCTYPE html>
-        <html>
+        $message = "<html><body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>";
+        $message .= "<div style='max-width: 600px; margin: 0 auto; padding: 20px;'>";
+        $message .= "<div style='border-bottom: 2px solid #0073aa; padding-bottom: 10px; margin-bottom: 20px;'>";
+        $message .= "<h1 style='margin: 0; color: #0073aa; font-size: 24px;'>Community Resources</h1>";
+        $message .= "<p>Here is the list of resources you requested from " . esc_html($site_name) . ".</p>";
+        $message .= "</div>";
 
-        <head>
-            <style>
-                body {
-                    font-family: Helvetica, Arial, sans-serif;
-                    line-height: 1.5;
-                    color: #333;
+        $message .= "<div class='resource-list'>";
+        foreach ($resources as $item) {
+            $message .= "<div style='margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 15px;'>";
+            $message .= "<div style='font-size: 18px; font-weight: bold; color: #000; margin-bottom: 5px;'>" . esc_html($item['resource_name']) . "</div>";
+
+            if (!empty($item['organization'])) {
+                $message .= "<div style='font-style: italic; color: #555; margin-bottom: 8px; font-size: 14px;'>" . esc_html($item['organization']) . "</div>";
+            }
+
+            if ($format === 'compact') {
+                $parts = array();
+                if (!empty($item['phone'])) {
+                    $parts[] = '<a href="tel:' . esc_attr(preg_replace('/[^0-9]/', '', $item['phone'])) . '" style="color: #0073aa; text-decoration: none;">' . esc_html($item['phone']) . '</a>';
+                }
+                if (!empty($item['website'])) {
+                    $parts[] = '<a href="' . esc_url($item['website']) . '" style="color: #0073aa; text-decoration: none;">Website</a>';
+                }
+                $message .= "<div style='font-size: 14px;'>" . implode(' | ', $parts) . "</div>";
+
+                if (!empty($item['physical_address'])) {
+                    $message .= "<div style='font-size: 12px; color: #666; margin-top: 4px;'>" . esc_html($item['physical_address']) . "</div>";
+                }
+            } else {
+                if (!empty($item['primary_service_type'])) {
+                    $message .= "<div style='margin-bottom: 5px; font-size: 14px;'><span style='font-weight: bold; color: #555;'>Type:</span> " . esc_html($item['primary_service_type']) . "</div>";
+                }
+                if (!empty($item['phone'])) {
+                    $message .= "<div style='margin-bottom: 5px; font-size: 14px;'><span style='font-weight: bold; color: #555;'>Phone:</span> <a href='tel:" . esc_attr(preg_replace('/[^0-9]/', '', $item['phone'])) . "' style='color: #0073aa; text-decoration: none;'>" . esc_html($item['phone']) . "</a></div>";
+                }
+                if (!empty($item['website'])) {
+                    $message .= "<div style='margin-bottom: 5px; font-size: 14px;'><span style='font-weight: bold; color: #555;'>Website:</span> <a href='" . esc_url($item['website']) . "' style='color: #0073aa; text-decoration: none;'>" . esc_html($item['website']) . "</a></div>";
+                }
+                if (!empty($item['physical_address'])) {
+                    $message .= "<div style='margin-bottom: 5px; font-size: 14px;'><span style='font-weight: bold; color: #555;'>Address:</span> " . esc_html($item['physical_address']) . "</div>";
                 }
 
-                .container {
-                    max-width: 600px;
-                    margin: 0 auto;
-                    padding: 20px;
+                if (class_exists('Resource_Hours_Manager')) {
+                    $hours_data = Resource_Hours_Manager::get_hours($item['id']);
+                    if ($hours_data && !empty($hours_data['office_hours'])) {
+                        $hours_text = Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact');
+                        $message .= "<div style='margin-bottom: 5px; font-size: 14px;'><span style='font-weight: bold; color: #555;'>Hours:</span> " . wp_kses_post($hours_text) . "</div>";
+                    } elseif (!empty($item['hours_of_operation'])) {
+                        $message .= "<div style='margin-bottom: 5px; font-size: 14px;'><span style='font-weight: bold; color: #555;'>Hours:</span> " . esc_html($item['hours_of_operation']) . "</div>";
+                    }
                 }
 
-                .header {
-                    border-bottom: 2px solid #0073aa;
-                    padding-bottom: 10px;
-                    margin-bottom: 20px;
+                if (!empty($item['description'])) {
+                    $message .= "<div style='margin-top: 8px; font-size: 14px;'>" . wp_kses_post(wpautop($item['description'])) . "</div>";
                 }
+            }
+            $message .= "</div>";
+        }
+        $message .= "</div>";
 
-                .header h1 {
-                    margin: 0;
-                    color: #0073aa;
-                    font-size: 24px;
-                }
-
-                .footer {
-                    margin-top: 30px;
-                    font-size: 12px;
-                    color: #666;
-                    border-top: 1px solid #eee;
-                    padding-top: 10px;
-                }
-
-                .resource-item {
-                    margin-bottom: 20px;
-                    border-bottom: 1px solid #eee;
-                    padding-bottom: 15px;
-                }
-
-                .resource-item:last-child {
-                    border-bottom: none;
-                }
-
-                .resource-name {
-                    font-size: 18px;
-                    font-weight: bold;
-                    color: #000;
-                    margin-bottom: 5px;
-                }
-
-                .organization {
-                    font-style: italic;
-                    color: #555;
-                    margin-bottom: 8px;
-                    font-size: 14px;
-                }
-
-                .compact-line {
-                    font-size: 14px;
-                }
-
-                .detail-row {
-                    margin-bottom: 5px;
-                    font-size: 14px;
-                }
-
-                .label {
-                    font-weight: bold;
-                    color: #555;
-                }
-
-                a {
-                    color: #0073aa;
-                    text-decoration: none;
-                }
-            </style>
-        </head>
-
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>Community Resources</h1>
-                    <p>Here is the list of resources you requested from <?php echo esc_html($site_name); ?>.</p>
-                </div>
-
-                <div class="resource-list">
-                    <?php foreach ($resources as $item): ?>
-                        <div class="resource-item">
-                            <div class="resource-name"><?php echo esc_html($item['resource_name']); ?></div>
-
-                            <?php if (!empty($item['organization'])): ?>
-                                <div class="organization"><?php echo esc_html($item['organization']); ?></div>
-                            <?php endif; ?>
-
-                            <?php if ($format === 'compact'): ?>
-                                <!-- Compact Format: 2-3 lines max -->
-                                <div class="compact-line">
-                                    <?php
-                                    $parts = array();
-                                    if (!empty($item['phone'])) {
-                                        $parts[] = '<a href="tel:' . esc_attr(preg_replace('/[^0-9]/', '', $item['phone'])) . '">' . esc_html($item['phone']) . '</a>';
-                                    }
-                                    if (!empty($item['website'])) {
-                                        $parts[] = '<a href="' . esc_url($item['website']) . '">Website</a>';
-                                    }
-                                    echo implode(' | ', $parts);
-                                    ?>
-                                </div>
-                                <?php if (!empty($item['physical_address'])): ?>
-                                    <div class="compact-line" style="font-size: 12px; color: #666; margin-top: 4px;">
-                                        <?php echo esc_html($item['physical_address']); ?>
-                                    </div>
-                                <?php endif; ?>
-
-                            <?php else: // Detailed Format ?>
-
-                                <?php if (!empty($item['primary_service_type'])): ?>
-                                    <div class="detail-row"><span class="label">Type:</span>
-                                        <?php echo esc_html($item['primary_service_type']); ?></div>
-                                <?php endif; ?>
-
-                                <?php if (!empty($item['phone'])): ?>
-                                    <div class="detail-row"><span class="label">Phone:</span> <a
-                                            href="tel:<?php echo esc_attr(preg_replace('/[^0-9]/', '', $item['phone'])); ?>"><?php echo esc_html($item['phone']); ?></a>
-                                    </div>
-                                <?php endif; ?>
-
-                                <?php if (!empty($item['website'])): ?>
-                                    <div class="detail-row"><span class="label">Website:</span> <a
-                                            href="<?php echo esc_url($item['website']); ?>"><?php echo esc_html($item['website']); ?></a>
-                                    </div>
-                                <?php endif; ?>
-
-                                <?php if (!empty($item['physical_address'])): ?>
-                                    <div class="detail-row"><span class="label">Address:</span>
-                                        <?php echo esc_html($item['physical_address']); ?></div>
-                                <?php endif; ?>
-
-                                <?php
-                                // Hours (simplified for email)
-                                if (class_exists('Resource_Hours_Manager')) {
-                                    $hours_data = Resource_Hours_Manager::get_hours($item['id']);
-                                    if ($hours_data && !empty($hours_data['office_hours'])) {
-                                        $hours_text = Resource_Hours_Manager::format_hours_display($hours_data['office_hours'], 'compact');
-                                        echo '<div class="detail-row"><span class="label">Hours:</span> ' . wp_kses_post($hours_text) . '</div>';
-                                    } elseif (!empty($item['hours_of_operation'])) {
-                                        echo '<div class="detail-row"><span class="label">Hours:</span> ' . esc_html($item['hours_of_operation']) . '</div>';
-                                    }
-                                }
-                                ?>
-
-                                <?php if (!empty($item['description'])): ?>
-                                    <div class="detail-row" style="margin-top: 8px;">
-                                        <?php echo wp_kses_post(wpautop($item['description'])); ?>
-                                    </div>
-                                <?php endif; ?>
-
-                            <?php endif; ?>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-
-                <div class="footer">
-                    <p>Sent from <?php echo esc_html($site_name); ?> on <?php echo date('F j, Y'); ?>.</p>
-                </div>
-            </div>
-        </body>
-
-        </html>
-        <?php
-        $message = ob_get_clean();
+        $message .= "<div style='margin-top: 30px; font-size: 12px; color: #666; border-top: 1px solid #eee; padding-top: 10px;'>";
+        $message .= "<p>Sent from " . esc_html($site_name) . " on " . date('F j, Y') . ".</p>";
+        $message .= "</div>";
+        $message .= "</div></body></html>";
         error_log('Monday Resources Email: Message built. Size: ' . strlen($message) . ' bytes. Resources count: ' . count($resources));
 
         // Send Email
@@ -1313,315 +1197,315 @@ class Monday_Resources_Shortcode
         ?>
 
         <script>
-            // Email and Print               Functions
-            function openEmailModal() {
-                document.getElementById('emailListModal').style.display = 'block';
-            }
-
-            function closeEmailModal() {
-                document.getElementById('emailListModal').style.display = 'none';
-                document.getElementById('emailFormMessage').innerHTML = '';
-            }
-
-            function sendEmailList(format) {
-                var email = document.getElementById('recipient_email').value;
-                if (!email) {
-                    alert('Please enter an email address.');
-                    return;
-                }
-
-                var messageDiv = document.getElementById('emailFormMessage');
-                messageDiv.innerHTML = 'Sending...';
-                messageDiv.className = 'form-message';
-
-                // Get visible resource IDs
-                var visibleIds = [];
-                var cards = document.querySelectorAll('.resource-card');
-                cards.forEach(function (card) {
-                    var style = window.getComputedStyle(card);
-                    if (style.display !== 'none' && style.visibility !== 'hidden') {
-                        visibleIds.push(card.getAttribute('data-resource-id'));
+                    // Email and Print               Functions
+                    function openEmailModal() {
+                    document.getElementById('emailListModal').style.display = 'block';
                     }
-                });
-                if (visibleIds.length === 0) {
-                    messageDiv.innerHTML = 'No resources to send.';
-                    messageDiv.className = 'form-message error';
-                    return;
-                }
 
-                jQuery.ajax({
-                    url: mondayResources.ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'monday_resources_email_list',
-                        nonce: mondayResources.email_nonce,
-                        email: email,
-                        format: format,
-                        resource_ids: visibleIds
-                    },
-                    success: function (response) {
-                        if (response.success) {
-                            messageDiv.innerHTML = response.data.message;
-                            messageDiv.className = 'form-message success';
-                            setTimeout(closeEmailModal, 2000);
-                        } else {
-                            messageDiv.innerHTML = response.data.message;
-                            messageDiv.className = 'form-message error';
+                    function closeEmailModal() {
+                        document.getElementById('emailListModal').style.display = 'none';
+                        document.getElementById('emailFormMessage').innerHTML = '';
+                    }
+
+                    function sendEmailList(format) {
+                        var email = document.getElementById('recipient_email').value;
+                        if (!email) {
+                            alert('Please enter an email address.');
+                            return;
                         }
-                    },
-                    error: function (xhr, status, error) {
-                        console.error('Monday Resources Email Error:', error);
-                        console.error('Status:', status);
-                        console.error('Response:', xhr.responseText);
-                        messageDiv.innerHTML = 'An error occurred (Permission or Network). Please try again.';
-                        messageDiv.className = 'form-message error';
+
+                        var messageDiv = document.getElementById('emailFormMessage');
+                        messageDiv.innerHTML = 'Sending...';
+                        messageDiv.className = 'form-message';
+
+                        // Get visible resource IDs
+                        var visibleIds = [];
+                        var cards = document.querySelectorAll('.resource-card');
+                        cards.forEach(function (card) {
+                            var style = window.getComputedStyle(card);
+                            if (style.display !== 'none' && style.visibility !== 'hidden') {
+                                visibleIds.push(card.getAttribute('data-resource-id'));
+                            }
+                        });
+                        if (visibleIds.length === 0) {
+                            messageDiv.innerHTML = 'No resources to send.';
+                            messageDiv.className = 'form-message error';
+                            return;
+                        }
+
+                        jQuery.ajax({
+                            url: mondayResources.ajaxurl,
+                            type: 'POST',
+                            data: {
+                                action: 'monday_resources_email_list',
+                                nonce: mondayResources.email_nonce,
+                                email: email,
+                                format: format,
+                                resource_ids: visibleIds
+                            },
+                            success: function (response) {
+                                if (response.success) {
+                                    messageDiv.innerHTML = response.data.message;
+                                    messageDiv.className = 'form-message success';
+                                    setTimeout(closeEmailModal, 2000);
+                                } else {
+                                    messageDiv.innerHTML = response.data.message;
+                                    messageDiv.className = 'form-message error';
+                                }
+                            },
+                            error: function (xhr, status, error) {
+                                console.error('Monday Resources Email Error:', error);
+                                console.error('Status:', status);
+                                console.error('Response:', xhr.responseText);
+                                messageDiv.innerHTML = 'An error occurred (Permission or Network). Please try again.';
+                                messageDiv.className = 'form-message error';
+                            }
+                        });
                     }
-                });
-            }
 
-            function showPrintOptions() {
-                var options = document.getElementById('print-options');
-                if (options.style.display === 'none') {
-                    options.style.display = 'block';
-                } else {
-                    options.style.display = 'none';
-                }
-            }
+                    function showPrintOptions() {
+                        var options = document.getElementById('print-options');
+                        if (options.style.display === 'none') {
+                            options.style.display = 'block';
+                        } else {
+                            options.style.display = 'none';
+                        }
+                    }
 
-            function closePrintOptions() {
-                document.getElementById('print-options').style.display = 'none';
-            }
+                    function closePrintOptions() {
+                        document.getElementById('print-options').style.display = 'none';
+                    }
 
-            function printResources(format) {
-                closePrintOptions();
+                    function printResources(format) {
+                        closePrintOptions();
 
-                // Expand details if detailed format
-                if (format === 'detailed') {
-                    var details = document.querySelectorAll('.resource-details-hidden');
-                    details.forEach(function (detail) {
-                        detail.style.display = 'block';
-                        detail.style.visibility = 'visible';
-                    });
-                    var toggles = document.querySelectorAll('.resource-toggle');
-                    toggles.forEach(function (toggle) {
-                        toggle.style.display = 'none';
-                    });
-                }
+                        // Expand details if detailed format
+                        if (format === 'detailed') {
+                            var details = document.querySelectorAll('.resource-details-hidden');
+                            details.forEach(function (detail) {
+                                detail.style.display = 'block';
+                                detail.style.visibility = 'visible';
+                            });
+                            var toggles = document.querySelectorAll('.resource-toggle');
+                            toggles.forEach(function (toggle) {
+                                toggle.style.display = 'none';
+                            });
+                        }
 
-                // Short delay for DOM to catch up
-                setTimeout(function () {
-                    window.print();
+                        // Short delay for DOM to catch up
+                        setTimeout(function () {
+                            window.print();
 
-                    // Reload to reset state after print dialog is closed
-                    // Some browsers need this event, others block JS until dialog closes
-                    window.onafterprint = function () {
-                        location.reload();
+                            // Reload to reset state after print dialog is closed
+                            // Some browsers need this event, others block JS until dialog closes
+                            window.onafterprint = function () {
+                                location.reload();
+                            };
+
+                            // Fallback for browsers without onafterprint
+                            setTimeout(function () {
+                                if (confirm('Print finished? Click OK to reset the page.')) {
+                                    location.reload();
+                                }
+                            }, 500);
+                        }, 250);
+                    }
+                    // Tighter synonym mapping - only closely related terms
+                    const synonymMap = {
+                        'rent': ['rent', 'eviction', 'housing assistance', 'lease'],
+                        'eviction': ['eviction', 'rent', 'housing assistance', 'lease'],
+                        'housing': ['housing', 'shelter', 'apartment'],
+                        'shelter': ['shelter', 'housing', 'homeless', 'emergency housing'],
+                        'food': ['food', 'pantry', 'meals', 'hunger', 'groceries'],
+                        'pantry': ['pantry', 'food bank', 'meals'],
+                        'utility': ['utility', 'utilities', 'electric bill', 'gas bill', 'water bill', 'energy assistance'],
+                        'electric': ['electric', 'electricity', 'utility', 'energy assistance'],
+                        'gas': ['gas', 'utility', 'heating', 'energy assistance'],
+                        'water': ['water', 'utility', 'sewer'],
+                        'medical': ['medical', 'health care', 'healthcare', 'doctor', 'clinic'],
+                        'health': ['health', 'medical', 'healthcare', 'doctor', 'clinic'],
+                        'mental': ['mental health', 'counseling', 'therapy', 'behavioral health'],
+                        'addiction': ['addiction', 'substance abuse', 'recovery', 'rehabilitation'],
+                        'job': ['job', 'employment', 'work', 'career'],
+                        'employment': ['employment', 'job', 'work', 'career'],
+                        'legal': ['legal', 'lawyer', 'attorney', 'court'],
+                        'transportation': ['transportation', 'bus', 'transit', 'rides'],
+                        'clothes': ['clothes', 'clothing', 'apparel'],
+                        'furniture': ['furniture', 'household items', 'furnishings'],
+                        'childcare': ['childcare', 'daycare', 'child care'],
+                        'senior': ['senior', 'elderly', 'older adult'],
+                        'veteran': ['veteran', 'veterans', 'military'],
+                        'disability': ['disability', 'disabled', 'accessible']
                     };
 
-                    // Fallback for browsers without onafterprint
-                    setTimeout(function () {
-                        if (confirm('Print finished? Click OK to reset the page.')) {
-                            location.reload();
+                    function getExpandedSearchTerms(word) {
+                        const expandedWords = new Set();
+                        expandedWords.add(word);
+
+                        // Check if this word has synonyms
+                        if (synonymMap[word]) {
+                            synonymMap[word].forEach(function (synonym) {
+                                expandedWords.add(synonym);
+                            });
                         }
-                    }, 500);
-                }, 250);
-            }
-            // Tighter synonym mapping - only closely related terms
-            const synonymMap = {
-                'rent': ['rent', 'eviction', 'housing assistance', 'lease'],
-                'eviction': ['eviction', 'rent', 'housing assistance', 'lease'],
-                'housing': ['housing', 'shelter', 'apartment'],
-                'shelter': ['shelter', 'housing', 'homeless', 'emergency housing'],
-                'food': ['food', 'pantry', 'meals', 'hunger', 'groceries'],
-                'pantry': ['pantry', 'food bank', 'meals'],
-                'utility': ['utility', 'utilities', 'electric bill', 'gas bill', 'water bill', 'energy assistance'],
-                'electric': ['electric', 'electricity', 'utility', 'energy assistance'],
-                'gas': ['gas', 'utility', 'heating', 'energy assistance'],
-                'water': ['water', 'utility', 'sewer'],
-                'medical': ['medical', 'health care', 'healthcare', 'doctor', 'clinic'],
-                'health': ['health', 'medical', 'healthcare', 'doctor', 'clinic'],
-                'mental': ['mental health', 'counseling', 'therapy', 'behavioral health'],
-                'addiction': ['addiction', 'substance abuse', 'recovery', 'rehabilitation'],
-                'job': ['job', 'employment', 'work', 'career'],
-                'employment': ['employment', 'job', 'work', 'career'],
-                'legal': ['legal', 'lawyer', 'attorney', 'court'],
-                'transportation': ['transportation', 'bus', 'transit', 'rides'],
-                'clothes': ['clothes', 'clothing', 'apparel'],
-                'furniture': ['furniture', 'household items', 'furnishings'],
-                'childcare': ['childcare', 'daycare', 'child care'],
-                'senior': ['senior', 'elderly', 'older adult'],
-                'veteran': ['veteran', 'veterans', 'military'],
-                'disability': ['disability', 'disabled', 'accessible']
-            };
 
-            function getExpandedSearchTerms(word) {
-                const expandedWords = new Set();
-                expandedWords.add(word);
-
-                // Check if this word has synonyms
-                if (synonymMap[word]) {
-                    synonymMap[word].forEach(function (synonym) {
-                        expandedWords.add(synonym);
-                    });
-                }
-
-                return Array.from(expandedWords);
-            }
-
-            function toggleDetails(index) {
-                const details = document.getElementById('details-' + index);
-                const button = document.getElementById('toggle-' + index);
-
-                if (details.style.display === 'none' || details.style.display === '') {
-                    details.style.display = 'block';
-                    button.textContent = 'Show less';
-                } else {
-                    details.style.display = 'none';
-                    button.textContent = 'Click for more info...';
-                }
-            }
-
-            (function () {
-                const searchInput = document.getElementById('resource-search');
-                const categoryFilter = document.getElementById('category-filter');
-                const audienceCheckboxes = document.querySelectorAll('.audience-checkbox');
-                const cards = document.querySelectorAll('.resource-card');
-                const visibleCount = document.getElementById('visible-count');
-
-                // Combined filter function that handles search, category, and target audience
-                function filterResources() {
-                    const searchTerm = searchInput.value.toLowerCase().trim();
-                    const selectedCategory = categoryFilter.value.toLowerCase().trim();
-
-                    // Get all selected audiences
-                    const selectedAudiences = Array.from(audienceCheckboxes)
-                        .filter(cb => cb.checked)
-                        .map(cb => cb.value.toLowerCase());
-
-                    let visible = 0;
-
-                    // Remove any existing "no results" message
-                    const existingNoResults = document.querySelector('.no-results');
-                    if (existingNoResults) {
-                        existingNoResults.remove();
+                        return Array.from(expandedWords);
                     }
 
-                    // Create arrays to hold SVdP and partner cards that match filters
-                    const svdpCards = [];
-                    const partnerCards = [];
-                    let hasSvdpResults = false;
-                    let hasPartnerResults = false;
+                    function toggleDetails(index) {
+                        const details = document.getElementById('details-' + index);
+                        const button = document.getElementById('toggle-' + index);
 
-                    cards.forEach(function (card) {
-                        const searchableText = card.getAttribute('data-search');
-                        const cardCategory = card.getAttribute('data-category');
-                        const cardAudience = card.getAttribute('data-audience');
-                        const isSvdp = card.getAttribute('data-is-svdp') === '1';
-                        let showCard = true;
-
-                        // Check category filter first
-                        if (selectedCategory !== '') {
-                            // Check if card's category contains the selected category
-                            showCard = cardCategory.indexOf(selectedCategory) !== -1;
+                        if (details.style.display === 'none' || details.style.display === '') {
+                            details.style.display = 'block';
+                            button.textContent = 'Show less';
+                        } else {
+                            details.style.display = 'none';
+                            button.textContent = 'Click for more info...';
                         }
+                    }
 
-                        // Check target audience filter (if any checkboxes are selected)
-                        if (showCard && selectedAudiences.length > 0) {
-                            // Card must match at least one selected audience
-                            // Use word boundary matching to avoid "men" matching "women"
-                            showCard = selectedAudiences.some(function (audience) {
-                                // Escape special regex characters and create word boundary pattern
-                                var escapedAudience = audience.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                var regex = new RegExp('\\b' + escapedAudience + '\\b', 'i');
-                                return regex.test(cardAudience);
-                            });
-                        }
+                    (function () {
+                        const searchInput = document.getElementById('resource-search');
+                        const categoryFilter = document.getElementById('category-filter');
+                        const audienceCheckboxes = document.querySelectorAll('.audience-checkbox');
+                        const cards = document.querySelectorAll('.resource-card');
+                        const visibleCount = document.getElementById('visible-count');
 
-                        // If card passes category and audience filters, check search term
-                        if (showCard && searchTerm !== '') {
-                            const originalWords = searchTerm.split(/\s+/);
+                        // Combined filter function that handles search, category, and target audience
+                        function filterResources() {
+                            const searchTerm = searchInput.value.toLowerCase().trim();
+                            const selectedCategory = categoryFilter.value.toLowerCase().trim();
 
-                            // ALL original search words must match (via themselves or their synonyms)
-                            showCard = originalWords.every(function (originalWord) {
-                                // Get this word plus its synonyms
-                                const expandedTerms = getExpandedSearchTerms(originalWord);
+                            // Get all selected audiences
+                            const selectedAudiences = Array.from(audienceCheckboxes)
+                                .filter(cb => cb.checked)
+                                .map(cb => cb.value.toLowerCase());
 
-                                // Check if ANY of the expanded terms match
-                                return expandedTerms.some(function (term) {
-                                    const regex = new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-                                    return regex.test(searchableText);
-                                });
-                            });
-                        }
+                            let visible = 0;
 
-                        // Categorize visible cards by SVdP status
-                        if (showCard) {
-                            if (isSvdp) {
-                                svdpCards.push(card);
-                                hasSvdpResults = true;
-                            } else {
-                                partnerCards.push(card);
-                                hasPartnerResults = true;
+                            // Remove any existing "no results" message
+                            const existingNoResults = document.querySelector('.no-results');
+                            if (existingNoResults) {
+                                existingNoResults.remove();
                             }
-                            visible++;
+
+                            // Create arrays to hold SVdP and partner cards that match filters
+                            const svdpCards = [];
+                            const partnerCards = [];
+                            let hasSvdpResults = false;
+                            let hasPartnerResults = false;
+
+                            cards.forEach(function (card) {
+                                const searchableText = card.getAttribute('data-search');
+                                const cardCategory = card.getAttribute('data-category');
+                                const cardAudience = card.getAttribute('data-audience');
+                                const isSvdp = card.getAttribute('data-is-svdp') === '1';
+                                let showCard = true;
+
+                                // Check category filter first
+                                if (selectedCategory !== '') {
+                                    // Check if card's category contains the selected category
+                                    showCard = cardCategory.indexOf(selectedCategory) !== -1;
+                                }
+
+                                // Check target audience filter (if any checkboxes are selected)
+                                if (showCard && selectedAudiences.length > 0) {
+                                    // Card must match at least one selected audience
+                                    // Use word boundary matching to avoid "men" matching "women"
+                                    showCard = selectedAudiences.some(function (audience) {
+                                        // Escape special regex characters and create word boundary pattern
+                                        var escapedAudience = audience.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                        var regex = new RegExp('\\b' + escapedAudience + '\\b', 'i');
+                                        return regex.test(cardAudience);
+                                    });
+                                }
+
+                                // If card passes category and audience filters, check search term
+                                if (showCard && searchTerm !== '') {
+                                    const originalWords = searchTerm.split(/\s+/);
+
+                                    // ALL original search words must match (via themselves or their synonyms)
+                                    showCard = originalWords.every(function (originalWord) {
+                                        // Get this word plus its synonyms
+                                        const expandedTerms = getExpandedSearchTerms(originalWord);
+
+                                        // Check if ANY of the expanded terms match
+                                        return expandedTerms.some(function (term) {
+                                            const regex = new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                                            return regex.test(searchableText);
+                                        });
+                                    });
+                                }
+
+                                // Categorize visible cards by SVdP status
+                                if (showCard) {
+                                    if (isSvdp) {
+                                        svdpCards.push(card);
+                                        hasSvdpResults = true;
+                                    } else {
+                                        partnerCards.push(card);
+                                        hasPartnerResults = true;
+                                    }
+                                    visible++;
+                                }
+                            });
+
+                            // Hide all cards first
+                            cards.forEach(function (card) {
+                                card.style.display = 'none';
+                            });
+
+                            // Show SVdP cards first, then partner cards (maintains sort order)
+                            svdpCards.forEach(function (card) {
+                                card.style.display = 'block';
+                            });
+                            partnerCards.forEach(function (card) {
+                                card.style.display = 'block';
+                            });
+
+                            // Show/hide the divider based on whether we have both types
+                            const divider = document.querySelector('.partner-divider');
+                            if (divider) {
+                                divider.style.display = (hasSvdpResults && hasPartnerResults) ? 'block' : 'none';
+                            }
+
+                            // Update visible count
+                            visibleCount.textContent = visible;
+
+                            // Show "no results" message if needed
+                            if (visible === 0) {
+                                const grid = document.getElementById('resources-grid');
+                                const noResults = document.createElement('div');
+                                noResults.className = 'no-results';
+
+                                let message = 'No resources found';
+                                if (selectedCategory !== '' && searchTerm !== '') {
+                                    message += ' matching category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '" and search "' + searchTerm + '"';
+                                } else if (selectedCategory !== '') {
+                                    message += ' in category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '"';
+                                } else if (searchTerm !== '') {
+                                    message += ' matching "' + searchTerm + '"';
+                                }
+
+                                if (selectedAudiences.length > 0) {
+                                    message += ' for selected population(s)';
+                                }
+
+                                noResults.textContent = message;
+                                grid.appendChild(noResults);
+                            }
                         }
-                    });
 
-                    // Hide all cards first
-                    cards.forEach(function (card) {
-                        card.style.display = 'none';
-                    });
-
-                    // Show SVdP cards first, then partner cards (maintains sort order)
-                    svdpCards.forEach(function (card) {
-                        card.style.display = 'block';
-                    });
-                    partnerCards.forEach(function (card) {
-                        card.style.display = 'block';
-                    });
-
-                    // Show/hide the divider based on whether we have both types
-                    const divider = document.querySelector('.partner-divider');
-                    if (divider) {
-                        divider.style.display = (hasSvdpResults && hasPartnerResults) ? 'block' : 'none';
-                    }
-
-                    // Update visible count
-                    visibleCount.textContent = visible;
-
-                    // Show "no results" message if needed
-                    if (visible === 0) {
-                        const grid = document.getElementById('resources-grid');
-                        const noResults = document.createElement('div');
-                        noResults.className = 'no-results';
-
-                        let message = 'No resources found';
-                        if (selectedCategory !== '' && searchTerm !== '') {
-                            message += ' matching category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '" and search "' + searchTerm + '"';
-                        } else if (selectedCategory !== '') {
-                            message += ' in category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '"';
-                        } else if (searchTerm !== '') {
-                            message += ' matching "' + searchTerm + '"';
-                        }
-
-                        if (selectedAudiences.length > 0) {
-                            message += ' for selected population(s)';
-                        }
-
-                        noResults.textContent = message;
-                        grid.appendChild(noResults);
-                    }
-                }
-
-                // Add event listeners for all filters
-                searchInput.addEventListener('input', filterResources);
-                categoryFilter.addEventListener('change', filterResources);
-                audienceCheckboxes.forEach(function (checkbox) {
-                    checkbox.addEventListener('change', filterResources);
-                });
-            })();
-        </script>
-        <?php
-        return ob_get_clean();
+                        // Add event listeners for all filters
+                        searchInput.addEventListener('input', filterResources);
+                        categoryFilter.addEventListener('change', filterResources);
+                        audienceCheckboxes.forEach(function (checkbox) {
+                            checkbox.addEventListener('change', filterResources);
+                        });
+                    })();
+                </script>
+                <?php
+                return ob_get_clean();
     }
 }
