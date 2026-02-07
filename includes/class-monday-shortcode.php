@@ -1307,8 +1307,7 @@ class Monday_Resources_Shortcode
                 // Get target audience for population filtering
                 $target_population = !empty($item['target_population']) ? strtolower($item['target_population']) : '';
                 ?>
-                $target_population = !empty($item['target_population']) ? strtolower($item['target_population']) : '';
-                ?>
+
                 <div class="resource-card" data-resource-id="<?php echo esc_attr($item['id']); ?>"
                     data-search="<?php echo esc_attr($searchable_text); ?>"
                     data-resource-type="<?php echo esc_attr($resource_type); ?>" data-need-met="<?php echo esc_attr($needs_met); ?>"
