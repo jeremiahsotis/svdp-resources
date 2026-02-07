@@ -14,6 +14,19 @@ class Monday_Resources_Shortcode
         // Register Email AJAX Actions
         add_action('wp_ajax_monday_resources_email_list', array($this, 'email_resource_list'));
         add_action('wp_ajax_nopriv_monday_resources_email_list', array($this, 'email_resource_list'));
+
+        // Register Mail Failure Logger
+        add_action('wp_mail_failed', array($this, 'log_mail_failure'));
+    }
+
+    /**
+     * Log wp_mail failures for debugging
+     */
+    public function log_mail_failure($error)
+    {
+        error_log('!!! Monday Resources wp_mail FAILED !!!');
+        error_log('Error Message: ' . $error->get_error_message());
+        error_log('Error Data: ' . print_r($error->get_error_data(), true));
     }
 
     /**
@@ -87,11 +100,10 @@ class Monday_Resources_Shortcode
 
         $headers = array('Content-Type: text/html; charset=UTF-8');
 
-        // Use standard From header format: Name <email>
-        if (is_email($admin_email)) {
-            $headers[] = 'From: "' . $site_name . '" <' . $admin_email . '>';
-            $headers[] = 'Reply-To: ' . $admin_email;
-        }
+        // TEMPORARILY SIMPLIFIED HEADERS: Using standard WP From to test SMTP compatibility
+        error_log('Monday Resources Email: Starting message build...');
+        $headers[] = 'From: ' . $site_name . ' <' . $admin_email . '>';
+        $headers[] = 'Reply-To: ' . $admin_email;
 
         ob_start();
         ?>
@@ -270,13 +282,19 @@ class Monday_Resources_Shortcode
         </html>
         <?php
         $message = ob_get_clean();
+        error_log('Monday Resources Email: Message built. Size: ' . strlen($message) . ' bytes. Resources count: ' . count($resources));
 
         // Send Email
+        error_log('Monday Resources Email: Calling wp_mail...');
         $sent = wp_mail($email, $subject, $message, $headers);
+        error_log('Monday Resources Email: wp_mail result: ' . ($sent ? 'SUCCESS' : 'FAILURE'));
 
         if ($sent) {
             wp_send_json_success(array('message' => 'Email sent successfully to ' . $email));
         } else {
+            // Ensure no output buffer is active before sending JSON
+            while (ob_get_level())
+                ob_end_clean();
             wp_send_json_error(array('message' => 'Failed to send email. Please check your server settings.'));
         }
     }
@@ -1297,7 +1315,7 @@ class Monday_Resources_Shortcode
         ?>
 
         <script>
-            // Email and Print Functions
+            // Email and Print               Functions
             function openEmailModal() {
                 document.getElementById('emailListModal').style.display = 'block';
             }
@@ -1353,259 +1371,259 @@ class Monday_Resources_Shortcode
                             messageDiv.className = 'form-message error';
                         }
                     },
-                    error: function (xhr,                                  status, error) {
-                                console.error('Monday Resources Email Error:', error);
-                                console.error('Status:', status);
-                                console.error('Response:', xhr.responseText);
-                                messageDiv.innerHTML = 'An error occurred (Permission or Network). Please try again.';
-                                messageDiv.className = 'form-message error';
-                            }
-                        });
+                    error: function (xhr, status, error) {
+                        console.error('Monday Resources Email Error:', error);
+                        console.error('Status:', status);
+                        console.error('Response:', xhr.responseText);
+                        messageDiv.innerHTML = 'An error occurred (Permission or Network). Please try again.';
+                        messageDiv.className = 'form-message error';
                     }
+                });
+            }
 
-                    function showPrintOptions() {
-                        var options = document.getElementById('print-options');
-                        if (options.style.display === 'none') {
-                            options.style.display = 'block';
-                        } else {
-                            options.style.display = 'none';
-                        }
-                    }
+            function showPrintOptions() {
+                var options = document.getElementById('print-options');
+                if (options.style.display === 'none') {
+                    options.style.display = 'block';
+                } else {
+                    options.style.display = 'none';
+                }
+            }
 
-                    function closePrintOptions() {
-                        document.getElementById('print-options').style.display = 'none';
-                    }
+            function closePrintOptions() {
+                document.getElementById('print-options').style.display = 'none';
+            }
 
-                    function printResources(format) {
-                        closePrintOptions();
+            function printResources(format) {
+                closePrintOptions();
 
-                        // Expand details if detailed format
-                        if (format === 'detailed') {
-                            var details = document.querySelectorAll('.resource-details-hidden');
-                            details.forEach(function (detail) {
-                                detail.style.display = 'block';
-                                detail.style.visibility = 'visible';
-                            });
-                            var toggles = document.querySelectorAll('.resource-toggle');
-                            toggles.forEach(function (toggle) {
-                                toggle.style.display = 'none';
-                            });
-                        }
+                // Expand details if detailed format
+                if (format === 'detailed') {
+                    var details = document.querySelectorAll('.resource-details-hidden');
+                    details.forEach(function (detail) {
+                        detail.style.display = 'block';
+                        detail.style.visibility = 'visible';
+                    });
+                    var toggles = document.querySelectorAll('.resource-toggle');
+                    toggles.forEach(function (toggle) {
+                        toggle.style.display = 'none';
+                    });
+                }
 
-                        // Short delay for DOM to catch up
-                        setTimeout(function () {
-                            window.print();
+                // Short delay for DOM to catch up
+                setTimeout(function () {
+                    window.print();
 
-                            // Reload to reset state after print dialog is closed
-                            // Some browsers need this event, others block JS until dialog closes
-                            window.onafterprint = function () {
-                                location.reload();
-                            };
-
-                            // Fallback for browsers without onafterprint
-                            setTimeout(function () {
-                                if (confirm('Print finished? Click OK to reset the page.')) {
-                                    location.reload();
-                                }
-                            }, 500);
-                        }, 250);
-                    }
-                    // Tighter synonym mapping - only closely related terms
-                    const synonymMap = {
-                        'rent': ['rent', 'eviction', 'housing assistance', 'lease'],
-                        'eviction': ['eviction', 'rent', 'housing assistance', 'lease'],
-                        'housing': ['housing', 'shelter', 'apartment'],
-                        'shelter': ['shelter', 'housing', 'homeless', 'emergency housing'],
-                        'food': ['food', 'pantry', 'meals', 'hunger', 'groceries'],
-                        'pantry': ['pantry', 'food bank', 'meals'],
-                        'utility': ['utility', 'utilities', 'electric bill', 'gas bill', 'water bill', 'energy assistance'],
-                        'electric': ['electric', 'electricity', 'utility', 'energy assistance'],
-                        'gas': ['gas', 'utility', 'heating', 'energy assistance'],
-                        'water': ['water', 'utility', 'sewer'],
-                        'medical': ['medical', 'health care', 'healthcare', 'doctor', 'clinic'],
-                        'health': ['health', 'medical', 'healthcare', 'doctor', 'clinic'],
-                        'mental': ['mental health', 'counseling', 'therapy', 'behavioral health'],
-                        'addiction': ['addiction', 'substance abuse', 'recovery', 'rehabilitation'],
-                        'job': ['job', 'employment', 'work', 'career'],
-                        'employment': ['employment', 'job', 'work', 'career'],
-                        'legal': ['legal', 'lawyer', 'attorney', 'court'],
-                        'transportation': ['transportation', 'bus', 'transit', 'rides'],
-                        'clothes': ['clothes', 'clothing', 'apparel'],
-                        'furniture': ['furniture', 'household items', 'furnishings'],
-                        'childcare': ['childcare', 'daycare', 'child care'],
-                        'senior': ['senior', 'elderly', 'older adult'],
-                        'veteran': ['veteran', 'veterans', 'military'],
-                        'disability': ['disability', 'disabled', 'accessible']
+                    // Reload to reset state after print dialog is closed
+                    // Some browsers need this event, others block JS until dialog closes
+                    window.onafterprint = function () {
+                        location.reload();
                     };
 
-                    function getExpandedSearchTerms(word) {
-                        const expandedWords = new Set();
-                        expandedWords.add(word);
-
-                        // Check if this word has synonyms
-                        if (synonymMap[word]) {
-                            synonymMap[word].forEach(function (synonym) {
-                                expandedWords.add(synonym);
-                            });
+                    // Fallback for browsers without onafterprint
+                    setTimeout(function () {
+                        if (confirm('Print finished? Click OK to reset the page.')) {
+                            location.reload();
                         }
+                    }, 500);
+                }, 250);
+            }
+            // Tighter synonym mapping - only closely related terms
+            const synonymMap = {
+                'rent': ['rent', 'eviction', 'housing assistance', 'lease'],
+                'eviction': ['eviction', 'rent', 'housing assistance', 'lease'],
+                'housing': ['housing', 'shelter', 'apartment'],
+                'shelter': ['shelter', 'housing', 'homeless', 'emergency housing'],
+                'food': ['food', 'pantry', 'meals', 'hunger', 'groceries'],
+                'pantry': ['pantry', 'food bank', 'meals'],
+                'utility': ['utility', 'utilities', 'electric bill', 'gas bill', 'water bill', 'energy assistance'],
+                'electric': ['electric', 'electricity', 'utility', 'energy assistance'],
+                'gas': ['gas', 'utility', 'heating', 'energy assistance'],
+                'water': ['water', 'utility', 'sewer'],
+                'medical': ['medical', 'health care', 'healthcare', 'doctor', 'clinic'],
+                'health': ['health', 'medical', 'healthcare', 'doctor', 'clinic'],
+                'mental': ['mental health', 'counseling', 'therapy', 'behavioral health'],
+                'addiction': ['addiction', 'substance abuse', 'recovery', 'rehabilitation'],
+                'job': ['job', 'employment', 'work', 'career'],
+                'employment': ['employment', 'job', 'work', 'career'],
+                'legal': ['legal', 'lawyer', 'attorney', 'court'],
+                'transportation': ['transportation', 'bus', 'transit', 'rides'],
+                'clothes': ['clothes', 'clothing', 'apparel'],
+                'furniture': ['furniture', 'household items', 'furnishings'],
+                'childcare': ['childcare', 'daycare', 'child care'],
+                'senior': ['senior', 'elderly', 'older adult'],
+                'veteran': ['veteran', 'veterans', 'military'],
+                'disability': ['disability', 'disabled', 'accessible']
+            };
 
-                        return Array.from(expandedWords);
+            function getExpandedSearchTerms(word) {
+                const expandedWords = new Set();
+                expandedWords.add(word);
+
+                // Check if this word has synonyms
+                if (synonymMap[word]) {
+                    synonymMap[word].forEach(function (synonym) {
+                        expandedWords.add(synonym);
+                    });
+                }
+
+                return Array.from(expandedWords);
+            }
+
+            function toggleDetails(index) {
+                const details = document.getElementById('details-' + index);
+                const button = document.getElementById('toggle-' + index);
+
+                if (details.style.display === 'none' || details.style.display === '') {
+                    details.style.display = 'block';
+                    button.textContent = 'Show less';
+                } else {
+                    details.style.display = 'none';
+                    button.textContent = 'Click for more info...';
+                }
+            }
+
+            (function () {
+                const searchInput = document.getElementById('resource-search');
+                const categoryFilter = document.getElementById('category-filter');
+                const audienceCheckboxes = document.querySelectorAll('.audience-checkbox');
+                const cards = document.querySelectorAll('.resource-card');
+                const visibleCount = document.getElementById('visible-count');
+
+                // Combined filter function that handles search, category, and target audience
+                function filterResources() {
+                    const searchTerm = searchInput.value.toLowerCase().trim();
+                    const selectedCategory = categoryFilter.value.toLowerCase().trim();
+
+                    // Get all selected audiences
+                    const selectedAudiences = Array.from(audienceCheckboxes)
+                        .filter(cb => cb.checked)
+                        .map(cb => cb.value.toLowerCase());
+
+                    let visible = 0;
+
+                    // Remove any existing "no results" message
+                    const existingNoResults = document.querySelector('.no-results');
+                    if (existingNoResults) {
+                        existingNoResults.remove();
                     }
 
-                    function toggleDetails(index) {
-                        const details = document.getElementById('details-' + index);
-                        const button = document.getElementById('toggle-' + index);
+                    // Create arrays to hold SVdP and partner cards that match filters
+                    const svdpCards = [];
+                    const partnerCards = [];
+                    let hasSvdpResults = false;
+                    let hasPartnerResults = false;
 
-                        if (details.style.display === 'none' || details.style.display === '') {
-                            details.style.display = 'block';
-                            button.textContent = 'Show less';
-                        } else {
-                            details.style.display = 'none';
-                            button.textContent = 'Click for more info...';
+                    cards.forEach(function (card) {
+                        const searchableText = card.getAttribute('data-search');
+                        const cardCategory = card.getAttribute('data-category');
+                        const cardAudience = card.getAttribute('data-audience');
+                        const isSvdp = card.getAttribute('data-is-svdp') === '1';
+                        let showCard = true;
+
+                        // Check category filter first
+                        if (selectedCategory !== '') {
+                            // Check if card's category contains the selected category
+                            showCard = cardCategory.indexOf(selectedCategory) !== -1;
                         }
+
+                        // Check target audience filter (if any checkboxes are selected)
+                        if (showCard && selectedAudiences.length > 0) {
+                            // Card must match at least one selected audience
+                            // Use word boundary matching to avoid "men" matching "women"
+                            showCard = selectedAudiences.some(function (audience) {
+                                // Escape special regex characters and create word boundary pattern
+                                var escapedAudience = audience.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                var regex = new RegExp('\\b' + escapedAudience + '\\b', 'i');
+                                return regex.test(cardAudience);
+                            });
+                        }
+
+                        // If card passes category and audience filters, check search term
+                        if (showCard && searchTerm !== '') {
+                            const originalWords = searchTerm.split(/\s+/);
+
+                            // ALL original search words must match (via themselves or their synonyms)
+                            showCard = originalWords.every(function (originalWord) {
+                                // Get this word plus its synonyms
+                                const expandedTerms = getExpandedSearchTerms(originalWord);
+
+                                // Check if ANY of the expanded terms match
+                                return expandedTerms.some(function (term) {
+                                    const regex = new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+                                    return regex.test(searchableText);
+                                });
+                            });
+                        }
+
+                        // Categorize visible cards by SVdP status
+                        if (showCard) {
+                            if (isSvdp) {
+                                svdpCards.push(card);
+                                hasSvdpResults = true;
+                            } else {
+                                partnerCards.push(card);
+                                hasPartnerResults = true;
+                            }
+                            visible++;
+                        }
+                    });
+
+                    // Hide all cards first
+                    cards.forEach(function (card) {
+                        card.style.display = 'none';
+                    });
+
+                    // Show SVdP cards first, then partner cards (maintains sort order)
+                    svdpCards.forEach(function (card) {
+                        card.style.display = 'block';
+                    });
+                    partnerCards.forEach(function (card) {
+                        card.style.display = 'block';
+                    });
+
+                    // Show/hide the divider based on whether we have both types
+                    const divider = document.querySelector('.partner-divider');
+                    if (divider) {
+                        divider.style.display = (hasSvdpResults && hasPartnerResults) ? 'block' : 'none';
                     }
 
-                    (function () {
-                        const searchInput = document.getElementById('resource-search');
-                        const categoryFilter = document.getElementById('category-filter');
-                        const audienceCheckboxes = document.querySelectorAll('.audience-checkbox');
-                        const cards = document.querySelectorAll('.resource-card');
-                        const visibleCount = document.getElementById('visible-count');
+                    // Update visible count
+                    visibleCount.textContent = visible;
 
-                        // Combined filter function that handles search, category, and target audience
-                        function filterResources() {
-                            const searchTerm = searchInput.value.toLowerCase().trim();
-                            const selectedCategory = categoryFilter.value.toLowerCase().trim();
+                    // Show "no results" message if needed
+                    if (visible === 0) {
+                        const grid = document.getElementById('resources-grid');
+                        const noResults = document.createElement('div');
+                        noResults.className = 'no-results';
 
-                            // Get all selected audiences
-                            const selectedAudiences = Array.from(audienceCheckboxes)
-                                .filter(cb => cb.checked)
-                                .map(cb => cb.value.toLowerCase());
-
-                            let visible = 0;
-
-                            // Remove any existing "no results" message
-                            const existingNoResults = document.querySelector('.no-results');
-                            if (existingNoResults) {
-                                existingNoResults.remove();
-                            }
-
-                            // Create arrays to hold SVdP and partner cards that match filters
-                            const svdpCards = [];
-                            const partnerCards = [];
-                            let hasSvdpResults = false;
-                            let hasPartnerResults = false;
-
-                            cards.forEach(function (card) {
-                                const searchableText = card.getAttribute('data-search');
-                                const cardCategory = card.getAttribute('data-category');
-                                const cardAudience = card.getAttribute('data-audience');
-                                const isSvdp = card.getAttribute('data-is-svdp') === '1';
-                                let showCard = true;
-
-                                // Check category filter first
-                                if (selectedCategory !== '') {
-                                    // Check if card's category contains the selected category
-                                    showCard = cardCategory.indexOf(selectedCategory) !== -1;
-                                }
-
-                                // Check target audience filter (if any checkboxes are selected)
-                                if (showCard && selectedAudiences.length > 0) {
-                                    // Card must match at least one selected audience
-                                    // Use word boundary matching to avoid "men" matching "women"
-                                    showCard = selectedAudiences.some(function (audience) {
-                                        // Escape special regex characters and create word boundary pattern
-                                        var escapedAudience = audience.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                                        var regex = new RegExp('\\b' + escapedAudience + '\\b', 'i');
-                                        return regex.test(cardAudience);
-                                    });
-                                }
-
-                                // If card passes category and audience filters, check search term
-                                if (showCard && searchTerm !== '') {
-                                    const originalWords = searchTerm.split(/\s+/);
-
-                                    // ALL original search words must match (via themselves or their synonyms)
-                                    showCard = originalWords.every(function (originalWord) {
-                                        // Get this word plus its synonyms
-                                        const expandedTerms = getExpandedSearchTerms(originalWord);
-
-                                        // Check if ANY of the expanded terms match
-                                        return expandedTerms.some(function (term) {
-                                            const regex = new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-                                            return regex.test(searchableText);
-                                        });
-                                    });
-                                }
-
-                                // Categorize visible cards by SVdP status
-                                if (showCard) {
-                                    if (isSvdp) {
-                                        svdpCards.push(card);
-                                        hasSvdpResults = true;
-                                    } else {
-                                        partnerCards.push(card);
-                                        hasPartnerResults = true;
-                                    }
-                                    visible++;
-                                }
-                            });
-
-                            // Hide all cards first
-                            cards.forEach(function (card) {
-                                card.style.display = 'none';
-                            });
-
-                            // Show SVdP cards first, then partner cards (maintains sort order)
-                            svdpCards.forEach(function (card) {
-                                card.style.display = 'block';
-                            });
-                            partnerCards.forEach(function (card) {
-                                card.style.display = 'block';
-                            });
-
-                            // Show/hide the divider based on whether we have both types
-                            const divider = document.querySelector('.partner-divider');
-                            if (divider) {
-                                divider.style.display = (hasSvdpResults && hasPartnerResults) ? 'block' : 'none';
-                            }
-
-                            // Update visible count
-                            visibleCount.textContent = visible;
-
-                            // Show "no results" message if needed
-                            if (visible === 0) {
-                                const grid = document.getElementById('resources-grid');
-                                const noResults = document.createElement('div');
-                                noResults.className = 'no-results';
-
-                                let message = 'No resources found';
-                                if (selectedCategory !== '' && searchTerm !== '') {
-                                    message += ' matching category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '" and search "' + searchTerm + '"';
-                                } else if (selectedCategory !== '') {
-                                    message += ' in category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '"';
-                                } else if (searchTerm !== '') {
-                                    message += ' matching "' + searchTerm + '"';
-                                }
-
-                                if (selectedAudiences.length > 0) {
-                                    message += ' for selected population(s)';
-                                }
-
-                                noResults.textContent = message;
-                                grid.appendChild(noResults);
-                            }
+                        let message = 'No resources found';
+                        if (selectedCategory !== '' && searchTerm !== '') {
+                            message += ' matching category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '" and search "' + searchTerm + '"';
+                        } else if (selectedCategory !== '') {
+                            message += ' in category "' + categoryFilter.options[categoryFilter.selectedIndex].text + '"';
+                        } else if (searchTerm !== '') {
+                            message += ' matching "' + searchTerm + '"';
                         }
 
-                        // Add event listeners for all filters
-                        searchInput.addEventListener('input', filterResources);
-                        categoryFilter.addEventListener('change', filterResources);
-                        audienceCheckboxes.forEach(function (checkbox) {
-                            checkbox.addEventListener('change', filterResources);
-                        });
-                    })();
-                </script>
-                <?php
-                return ob_get_clean();
+                        if (selectedAudiences.length > 0) {
+                            message += ' for selected population(s)';
+                        }
+
+                        noResults.textContent = message;
+                        grid.appendChild(noResults);
+                    }
+                }
+
+                // Add event listeners for all filters
+                searchInput.addEventListener('input', filterResources);
+                categoryFilter.addEventListener('change', filterResources);
+                audienceCheckboxes.forEach(function (checkbox) {
+                    checkbox.addEventListener('change', filterResources);
+                });
+            })();
+        </script>
+        <?php
+        return ob_get_clean();
     }
 }
