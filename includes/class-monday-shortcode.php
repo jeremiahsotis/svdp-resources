@@ -3,9 +3,11 @@
  * Shortcode Display Class
  */
 
-class Monday_Resources_Shortcode {
+class Monday_Resources_Shortcode
+{
 
-    public function __construct() {
+    public function __construct()
+    {
         add_shortcode('monday_resources', array($this, 'display_resources'));
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
 
@@ -17,7 +19,8 @@ class Monday_Resources_Shortcode {
     /**
      * Enqueue frontend scripts and styles
      */
-    public function enqueue_scripts() {
+    public function enqueue_scripts()
+    {
         if (has_shortcode(get_post()->post_content ?? '', 'monday_resources')) {
             wp_enqueue_style(
                 'monday-resources-modal',
@@ -45,7 +48,8 @@ class Monday_Resources_Shortcode {
     /**
      * Handle Email List AJAX Request
      */
-    public function email_resource_list() {
+    public function email_resource_list()
+    {
         check_ajax_referer('monday_resources_email_nonce', 'nonce');
 
         $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
@@ -76,15 +80,15 @@ class Monday_Resources_Shortcode {
         $site_name = wp_strip_all_tags(get_bloginfo('name'));
         $site_name = str_replace(array('"', "'", "\n", "\r", ","), '', $site_name); // Sanitize name
         $admin_email = get_option('admin_email');
-        
+
         $subject = 'Your Community Resources List from ' . $site_name;
 
         $headers = array('Content-Type: text/html; charset=UTF-8');
-        
+
         // Use standard From header format: Name <email>
         if (is_email($admin_email)) {
-             $headers[] = 'From: "' . $site_name . '" <' . $admin_email . '>';
-             $headers[] = 'Reply-To: ' . $admin_email;
+            $headers[] = 'From: "' . $site_name . '" <' . $admin_email . '>';
+            $headers[] = 'Reply-To: ' . $admin_email;
         }
 
         ob_start();
@@ -278,7 +282,8 @@ class Monday_Resources_Shortcode {
     /**
      * Display resources shortcode
      */
-    public function display_resources($atts) {
+    public function display_resources($atts)
+    {
         // Extract shortcode attributes
         $atts = shortcode_atts(array(
             'geography' => '',
@@ -382,6 +387,7 @@ class Monday_Resources_Shortcode {
             body {
                 overflow-x: hidden;
             }
+
             .resources-container {
                 max-width: 1200px;
                 width: 100%;
@@ -391,10 +397,12 @@ class Monday_Resources_Shortcode {
                 overflow-x: hidden;
                 position: relative;
             }
+
             .resources-container * {
                 box-sizing: border-box;
                 max-width: 100%;
             }
+
             .resources-help-section {
                 background-color: #f8f9fa;
                 border: 2px solid #0073aa;
@@ -402,30 +410,36 @@ class Monday_Resources_Shortcode {
                 padding: 20px;
                 margin-bottom: 25px;
             }
+
             .resources-help-section h2 {
                 margin-top: 0;
                 color: #0073aa;
                 font-size: 1.4em;
                 margin-bottom: 15px;
             }
+
             .resources-help-section p {
                 font-size: 1.1em;
                 line-height: 1.6;
                 margin-bottom: 12px;
                 color: #333;
             }
+
             .resources-help-section ul {
                 font-size: 1.05em;
                 line-height: 1.7;
                 margin-left: 20px;
                 color: #333;
             }
+
             .resources-help-section li {
                 margin-bottom: 8px;
             }
+
             .resources-help-section strong {
                 color: #0073aa;
             }
+
             .submit-resource-btn {
                 display: inline-block;
                 padding: 12px 24px;
@@ -440,11 +454,13 @@ class Monday_Resources_Shortcode {
                 transition: background-color 0.3s ease;
                 font-size: 16px;
             }
+
             .submit-resource-btn:hover {
                 background-color: #005177;
                 color: white;
                 text-decoration: none;
             }
+
             /* Add email button style */
             .email-list-btn {
                 display: inline-block;
@@ -458,9 +474,11 @@ class Monday_Resources_Shortcode {
                 margin-left: 10px;
                 font-size: 0.9em;
             }
+
             .email-list-btn:hover {
                 background-color: #e0e0e0;
             }
+
             .resources-filters {
                 background-color: #fff;
                 padding: 20px;
@@ -468,12 +486,15 @@ class Monday_Resources_Shortcode {
                 border-radius: 8px;
                 margin-bottom: 20px;
             }
+
             .filter-group {
                 margin-bottom: 15px;
             }
+
             .filter-group:last-child {
                 margin-bottom: 0;
             }
+
             .filter-group label {
                 display: block;
                 font-weight: 600;
@@ -481,6 +502,7 @@ class Monday_Resources_Shortcode {
                 margin-bottom: 8px;
                 color: #333;
             }
+
             .resources-search input,
             .category-filter select {
                 width: 100%;
@@ -490,44 +512,53 @@ class Monday_Resources_Shortcode {
                 border: 2px solid #ddd;
                 border-radius: 4px;
             }
+
             .resources-search input:focus,
             .category-filter select:focus {
                 outline: none;
                 border-color: #0073aa;
                 box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.1);
             }
+
             .category-filter select {
                 cursor: pointer;
             }
+
             .filter-row {
                 display: flex;
                 gap: 20px;
                 flex-wrap: wrap;
                 align-items: flex-start;
             }
+
             .filter-column {
                 flex: 1;
                 min-width: 250px;
             }
+
             .target-audience-filter {
                 max-width: 600px;
             }
+
             .target-audience-checkboxes {
                 display: grid;
                 grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
                 gap: 8px;
                 margin-top: 8px;
             }
+
             .target-audience-checkbox {
                 display: flex;
                 align-items: center;
                 gap: 6px;
             }
+
             .target-audience-checkbox input[type="checkbox"] {
                 width: 18px;
                 height: 18px;
                 cursor: pointer;
             }
+
             .target-audience-checkbox label {
                 font-weight: normal !important;
                 font-size: 0.95em;
@@ -535,6 +566,7 @@ class Monday_Resources_Shortcode {
                 cursor: pointer;
                 color: #333;
             }
+
             .svdp-badge {
                 display: inline-block;
                 background-color: #0073aa;
@@ -547,6 +579,7 @@ class Monday_Resources_Shortcode {
                 letter-spacing: 0.5px;
                 margin-bottom: 10px;
             }
+
             .partner-divider {
                 grid-column: 1 / -1;
                 margin: 30px 0;
@@ -564,6 +597,7 @@ class Monday_Resources_Shortcode {
                 overflow-wrap: break-word;
                 word-wrap: break-word;
             }
+
             .resources-grid {
                 display: grid;
                 grid-template-columns: 1fr;
@@ -571,26 +605,30 @@ class Monday_Resources_Shortcode {
                 margin-top: 20px;
                 justify-content: center;
             }
+
             @media (min-width: 1080px) {
                 .resources-grid {
                     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
                 }
             }
+
             .resource-card {
                 border: 1px solid #ddd;
                 border-radius: 8px;
                 padding: 20px;
                 background: #fff;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
                 transition: box-shadow 0.3s ease;
                 width: 100%;
                 max-width: 100%;
                 overflow-wrap: break-word;
                 word-wrap: break-word;
             }
+
             .resource-card:hover {
-                box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
             }
+
             .resource-card h3 {
                 margin: 0 0 5px 0;
                 font-size: 1.3em;
@@ -598,6 +636,7 @@ class Monday_Resources_Shortcode {
                 border-bottom: 2px solid #0073aa;
                 padding-bottom: 10px;
             }
+
             .resource-organization {
                 margin: 0 0 15px 0;
                 padding-bottom: 10px;
@@ -606,9 +645,11 @@ class Monday_Resources_Shortcode {
                 font-style: italic;
                 border-bottom: 1px solid #eee;
             }
+
             .resource-field {
                 margin-bottom: 12px;
             }
+
             .resource-field-label {
                 font-weight: bold;
                 color: #666;
@@ -616,6 +657,7 @@ class Monday_Resources_Shortcode {
                 display: block;
                 margin-bottom: 3px;
             }
+
             .resource-field-value {
                 color: #333;
                 font-size: 1em;
@@ -623,19 +665,23 @@ class Monday_Resources_Shortcode {
                 overflow-wrap: break-word;
                 word-break: break-word;
             }
+
             .resource-field-value a {
                 color: #0073aa;
                 text-decoration: none;
                 word-break: break-all;
                 overflow-wrap: break-word;
             }
+
             .resource-field-value a:hover {
                 text-decoration: underline;
             }
+
             /* Hours of Operation Styles */
             .resource-hours {
                 margin: 15px 0;
             }
+
             .hours-special-flag {
                 display: inline-block;
                 padding: 8px 12px;
@@ -645,25 +691,31 @@ class Monday_Resources_Shortcode {
                 margin: 5px 0;
                 font-size: 0.95em;
             }
+
             .hours-24-7 {
                 background-color: #d4edda;
                 color: #155724;
             }
+
             .hours-closed {
                 background-color: #f8d7da;
                 color: #721c24;
             }
+
             .hours-breakdown {
                 line-height: 1.8;
             }
+
             .hours-section {
                 margin: 10px 0;
             }
+
             .hours-section strong {
                 display: block;
                 margin-bottom: 4px;
                 color: #444;
             }
+
             .hours-notes {
                 margin-top: 10px;
                 padding-top: 8px;
@@ -671,14 +723,17 @@ class Monday_Resources_Shortcode {
                 font-size: 0.9em;
                 color: #666;
             }
+
             .resource-details-hidden {
                 display: none;
             }
+
             .resource-toggle {
                 margin-top: 15px;
                 padding-top: 15px;
                 border-top: 1px solid #eee;
             }
+
             .resource-toggle-button {
                 background: none;
                 border: none;
@@ -688,9 +743,11 @@ class Monday_Resources_Shortcode {
                 padding: 0;
                 text-decoration: underline;
             }
+
             .resource-toggle-button:hover {
                 color: #005177;
             }
+
             .resource-report-btn {
                 background-color: #dc3232;
                 color: white;
@@ -702,12 +759,15 @@ class Monday_Resources_Shortcode {
                 font-size: 0.9em;
                 transition: background-color 0.3s ease;
             }
+
             .resource-report-btn:hover {
                 background-color: #a02222;
             }
+
             .resource-verification-status {
                 margin: 10px 0;
             }
+
             .verification-badge {
                 display: inline-block;
                 padding: 4px 8px;
@@ -715,26 +775,31 @@ class Monday_Resources_Shortcode {
                 font-size: 0.85em;
                 font-weight: 500;
             }
+
             .verification-badge.fresh {
                 background-color: #d4edda;
                 color: #155724;
                 border: 1px solid #c3e6cb;
             }
+
             .verification-badge.aging {
                 background-color: #fff3cd;
                 color: #856404;
                 border: 1px solid #ffeaa7;
             }
+
             .verification-badge.stale {
                 background-color: #f8d7da;
                 color: #721c24;
                 border: 1px solid #f5c6cb;
             }
+
             .verification-badge.unverified {
                 background-color: #e2e3e5;
                 color: #383d41;
                 border: 1px solid #d6d8db;
             }
+
             .no-results {
                 grid-column: 1 / -1;
                 text-align: center;
@@ -742,68 +807,86 @@ class Monday_Resources_Shortcode {
                 color: #666;
                 font-size: 1.1em;
             }
+
             .results-count {
                 margin: 10px 0;
                 color: #666;
                 font-size: 0.95em;
             }
+
             @media (max-width: 768px) {
                 .resources-container {
                     padding: 0 15px;
                 }
+
                 .resources-grid {
                     grid-template-columns: 1fr;
                     gap: 10px;
                 }
+
                 .resource-card {
                     padding: 15px;
                 }
+
                 .resources-help-section {
                     padding: 15px;
                 }
+
                 .resources-help-section h2 {
                     font-size: 1.2em;
                 }
+
                 .resources-help-section p,
                 .resources-help-section ul {
                     font-size: 1em;
                 }
+
                 .resources-filters {
                     padding: 15px;
                 }
+
                 .submit-resource-btn {
                     width: 100%;
                     text-align: center;
                 }
+
                 .partner-divider {
                     font-size: 1.1em;
                     margin: 20px 0;
                     padding: 12px 8px;
                 }
             }
+
             @media (max-width: 480px) {
                 .resources-container {
                     padding: 0 10px;
                 }
+
                 .resources-grid {
                     gap: 8px;
                 }
+
                 .resource-card {
                     padding: 12px;
                 }
+
                 .resources-help-section {
                     padding: 12px;
                 }
+
                 .resources-help-section h2 {
                     font-size: 1.1em;
                 }
+
                 .resources-help-section p,
                 .resources-help-section ul {
                     font-size: 0.95em;
                 }
+
                 .resources-filters {
                     padding: 12px;
                 }
+
                 .partner-divider {
                     font-size: 1em;
                     margin: 15px 0;
@@ -816,7 +899,11 @@ class Monday_Resources_Shortcode {
             <!-- Helpful Instructions Section -->
             <div class="resources-help-section">
                 <h2>How to Find Resources</h2>
-                <p>Browse by category or search by keyword to find what you need. You can also check boxes to filter by who the resource serves (like seniors, families, or veterans). All filters are optional – use what helps you most. Click "Click for more info..." on any resource for complete details. Use the "Report an Issue" button if you find incorrect information, or the "Submit a New Resource" button below to share resources we're missing.</p>
+                <p>Browse by category or search by keyword to find what you need. You can also check boxes to filter by who the
+                    resource serves (like seniors, families, or veterans). All filters are optional – use what helps you most.
+                    Click "Click for more info..." on any resource for complete details. Use the "Report an Issue" button if you
+                    find incorrect information, or the "Submit a New Resource" button below to share resources we're missing.
+                </p>
             </div>
 
             <button class="submit-resource-btn" onclick="openSubmitResourceModal()">Submit a New Resource</button>
@@ -842,12 +929,8 @@ class Monday_Resources_Shortcode {
                             <div class="target-audience-checkboxes">
                                 <?php foreach ($target_audiences as $index => $audience): ?>
                                     <div class="target-audience-checkbox">
-                                        <input
-                                            type="checkbox"
-                                            id="audience-<?php echo $index; ?>"
-                                            class="audience-checkbox"
-                                            value="<?php echo esc_attr($audience); ?>"
-                                        />
+                                        <input type="checkbox" id="audience-<?php echo $index; ?>" class="audience-checkbox"
+                                            value="<?php echo esc_attr($audience); ?>" />
                                         <label for="audience-<?php echo $index; ?>"><?php echo esc_html($audience); ?></label>
                                     </div>
                                 <?php endforeach; ?>
@@ -858,13 +941,30 @@ class Monday_Resources_Shortcode {
 
                 <div class="filter-group resources-search">
                     <label for="resource-search">Search by Keyword (Optional)</label>
-                    <input type="text" id="resource-search" placeholder="Type what you're looking for (e.g., food, rent help, medical care)..." />
+                    <input type="text" id="resource-search"
+                        placeholder="Type what you're looking for (e.g., food, rent help, medical care)..." />
                 </div>
             </div>
 
             <div class="results-count">
                 Showing <span id="visible-count"><?php echo count($items); ?></span> of <?php echo count($items); ?> resources
-                <button class="email-list-btn" onclick="openEmailModal()">Email this List</button>
+                <div style="display: inline-block; float: right;">
+                    <button type="button" class="email-list-btn" onclick="openEmailModal()" style="margin-right: 10px;">Email
+                        this List</button>
+                    <button type="button" class="email-list-btn" onclick="showPrintOptions()">Print this List</button>
+                    <div id="print-options"
+                        style="display:none; position: absolute; right: 20px; background: white; border: 1px solid #ccc; padding: 10px; z-index: 100; box-shadow: 0 2px 5px rgba(0,0,0,0.2);">
+                        <button type="button" class="submit-resource-btn"
+                            style="padding: 5px 10px; margin-bottom: 5px; width: 100%;"
+                            onclick="printResources('detailed')">Print Detailed</button>
+                        <button type="button" class="submit-resource-btn"
+                            style="padding: 5px 10px; margin-bottom: 5px; width: 100%;"
+                            onclick="printResources('compact')">Print Compact</button>
+                        <button type="button" class="submit-resource-btn"
+                            style="padding: 5px 10px; width: 100%; background-color: #666;"
+                            onclick="closePrintOptions()">Cancel</button>
+                    </div>
+                </div>
             </div>
 
             <!-- Email Modal -->
@@ -885,8 +985,10 @@ class Monday_Resources_Shortcode {
 
                         <div class="form-actions">
                             <button type="button" class="button-secondary" onclick="closeEmailModal()">Cancel</button>
-                            <button type="button" class="button-primary" onclick="sendEmailList('compact')">Send Compact List</button>
-                            <button type="button" class="button-primary" onclick="sendEmailList('detailed')">Send Detailed List</button>
+                            <button type="button" class="button-primary" onclick="sendEmailList('compact')">Send Compact
+                                List</button>
+                            <button type="button" class="button-primary" onclick="sendEmailList('detailed')">Send Detailed
+                                List</button>
                         </div>
                         <p style="font-size: 0.85em; color: #666; margin-top: 10px;">
                             <strong>Note:</strong> "Detailed" includes descriptions, hours, and notes. "Compact" is just names
@@ -906,7 +1008,7 @@ class Monday_Resources_Shortcode {
                     // Insert divider when transitioning from SVdP to partner resources
                     if ($previous_was_svdp && !$is_svdp): ?>
                         <div class="partner-divider">Partner Resources</div>
-                    <?php
+                        <?php
                     endif;
                     $previous_was_svdp = $is_svdp;
 
@@ -926,7 +1028,11 @@ class Monday_Resources_Shortcode {
                     // Get target audience for population filtering
                     $target_population = !empty($item['target_population']) ? strtolower($item['target_population']) : '';
                     ?>
-                    <div class="resource-card" data-resource-id="<?php echo esc_attr($item['id']); ?>" data-search="<?php echo esc_attr($searchable_text); ?>" data-category="<?php echo esc_attr($combined_services); ?>" data-audience="<?php echo esc_attr($target_population); ?>" data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
+                    <div class="resource-card" data-resource-id="<?php echo esc_attr($item['id']); ?>"
+                        data-search="<?php echo esc_attr($searchable_text); ?>"
+                        data-category="<?php echo esc_attr($combined_services); ?>"
+                        data-audience="<?php echo esc_attr($target_population); ?>"
+                        data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
                         <?php if ($is_svdp): ?>
                             <span class="svdp-badge">SVdP Resource</span>
                         <?php endif; ?>
@@ -950,9 +1056,11 @@ class Monday_Resources_Shortcode {
                             <?php if ($status === 'fresh' && $verified_date): ?>
                                 <span class="verification-badge fresh">✓ Verified <?php echo esc_html($relative_time); ?> ago</span>
                             <?php elseif ($status === 'aging' && $verified_date): ?>
-                                <span class="verification-badge aging">⚠ Last verified <?php echo esc_html($relative_time); ?> ago</span>
+                                <span class="verification-badge aging">⚠ Last verified <?php echo esc_html($relative_time); ?>
+                                    ago</span>
                             <?php elseif ($status === 'stale' && $verified_date): ?>
-                                <span class="verification-badge stale">⚠ Information may be outdated (verified <?php echo esc_html($relative_time); ?> ago)</span>
+                                <span class="verification-badge stale">⚠ Information may be outdated (verified
+                                    <?php echo esc_html($relative_time); ?> ago)</span>
                             <?php else: ?>
                                 <span class="verification-badge unverified">Not yet verified</span>
                             <?php endif; ?>
@@ -963,7 +1071,7 @@ class Monday_Resources_Shortcode {
                             <?php
                             if (!empty($item[$field_name])) {
                                 $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
-                            ?>
+                                ?>
                                 <div class="resource-field">
                                     <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                     <span class="resource-field-value">
@@ -976,7 +1084,7 @@ class Monday_Resources_Shortcode {
                                         ?>
                                     </span>
                                 </div>
-                            <?php
+                                <?php
                             }
                             ?>
                         <?php endforeach; ?>
@@ -1027,7 +1135,7 @@ class Monday_Resources_Shortcode {
                                                         }
 
                                                         if ($show_service_hours):
-                                                        ?>
+                                                            ?>
                                                             <div class="hours-section">
                                                                 <strong>Service Hours:</strong><br>
                                                                 <?php echo Resource_Hours_Manager::format_hours_display($hours_data['service_hours'], 'compact'); ?>
@@ -1055,12 +1163,12 @@ class Monday_Resources_Shortcode {
                                     }
                                 } elseif (!empty($item[$field_name])) {
                                     $formatted_value = Resources_Manager::format_column_value($item[$field_name]);
-                                ?>
+                                    ?>
                                     <div class="resource-field">
                                         <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                         <span class="resource-field-value"><?php echo $formatted_value; ?></span>
                                     </div>
-                                <?php
+                                    <?php
                                 }
                                 ?>
                             <?php endforeach; ?>
@@ -1068,11 +1176,13 @@ class Monday_Resources_Shortcode {
 
                         <!-- Toggle button -->
                         <div class="resource-toggle">
-                            <button class="resource-toggle-button" onclick="toggleDetails(<?php echo $index; ?>)" id="toggle-<?php echo $index; ?>">
+                            <button class="resource-toggle-button" onclick="toggleDetails(<?php echo $index; ?>)"
+                                id="toggle-<?php echo $index; ?>">
                                 Click for more info...
                             </button>
                             <br>
-                            <button class="resource-report-btn" onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo $index; ?>)">
+                            <button class="resource-report-btn"
+                                onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo $index; ?>)">
                                 Report an Issue
                             </button>
                         </div>
@@ -1088,6 +1198,105 @@ class Monday_Resources_Shortcode {
         ?>
 
         <script>
+            // Email and Print Functions
+            function openEmailModal() {
+                document.getElementById('emailListModal').style.display = 'block';
+            }
+
+            function closeEmailModal() {
+                document.getElementById('emailListModal').style.display = 'none';
+                document.getElementById('emailFormMessage').innerHTML = '';
+            }
+
+            function sendEmailList(format) {
+                var email = document.getElementById('recipient_email').value;
+                if (!email) {
+                    alert('Please enter an email address.');
+                    return;
+                }
+
+                var messageDiv = document.getElementById('emailFormMessage');
+                messageDiv.innerHTML = 'Sending...';
+                messageDiv.className = 'form-message';
+
+                // Get visible resource IDs
+                var visibleIds = [];
+                var cards = document.querySelectorAll('.resource-card');
+                cards.forEach(function (card) {
+                    if (card.style.display !== 'none') {
+                        visibleIds.push(card.getAttribute('data-resource-id'));
+                    }
+                });
+
+                if (visibleIds.length === 0) {
+                    messageDiv.innerHTML = 'No resources to send.';
+                    messageDiv.className = 'form-message error';
+                    return;
+                }
+
+                jQuery.ajax({
+                    url: mondayResources.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'monday_resources_email_list',
+                        nonce: mondayResources.email_nonce,
+                        email: email,
+                        format: format,
+                        resource_ids: visibleIds
+                    },
+                    success: function (response) {
+                        if (response.success) {
+                            messageDiv.innerHTML = response.data.message;
+                            messageDiv.className = 'form-message success';
+                            setTimeout(closeEmailModal, 2000);
+                        } else {
+                            messageDiv.innerHTML = response.data.message;
+                            messageDiv.className = 'form-message error';
+                        }
+                    },
+                    error: function () {
+                        messageDiv.innerHTML = 'An error occurred. Please try again.';
+                        messageDiv.className = 'form-message error';
+                    }
+                });
+            }
+
+            function showPrintOptions() {
+                var options = document.getElementById('print-options');
+                if (options.style.display === 'none') {
+                    options.style.display = 'block';
+                } else {
+                    options.style.display = 'none';
+                }
+            }
+
+            function closePrintOptions() {
+                document.getElementById('print-options').style.display = 'none';
+            }
+
+            function printResources(format) {
+                closePrintOptions();
+                // Add a print class to body for potential print styling (CSS not included here but good practice)
+                document.body.classList.add('printing-' + format);
+
+                // Expand details if detailed format
+                if (format === 'detailed') {
+                    var details = document.querySelectorAll('.resource-details-hidden');
+                    details.forEach(function (detail) {
+                        detail.style.display = 'block';
+                    });
+                    var toggles = document.querySelectorAll('.resource-toggle');
+                    toggles.forEach(function (toggle) {
+                        toggle.style.display = 'none';
+                    });
+                }
+
+                window.print();
+
+                // Reload to reset state
+                location.reload();
+            }
+
             // Tighter synonym mapping - only closely related terms
             const synonymMap = {
                 'rent': ['rent', 'eviction', 'housing assistance', 'lease'],
@@ -1122,7 +1331,7 @@ class Monday_Resources_Shortcode {
 
                 // Check if this word has synonyms
                 if (synonymMap[word]) {
-                    synonymMap[word].forEach(function(synonym) {
+                    synonymMap[word].forEach(function (synonym) {
                         expandedWords.add(synonym);
                     });
                 }
@@ -1143,7 +1352,7 @@ class Monday_Resources_Shortcode {
                 }
             }
 
-            (function() {
+            (function () {
                 const searchInput = document.getElementById('resource-search');
                 const categoryFilter = document.getElementById('category-filter');
                 const audienceCheckboxes = document.querySelectorAll('.audience-checkbox');
@@ -1174,7 +1383,7 @@ class Monday_Resources_Shortcode {
                     let hasSvdpResults = false;
                     let hasPartnerResults = false;
 
-                    cards.forEach(function(card) {
+                    cards.forEach(function (card) {
                         const searchableText = card.getAttribute('data-search');
                         const cardCategory = card.getAttribute('data-category');
                         const cardAudience = card.getAttribute('data-audience');
@@ -1191,7 +1400,7 @@ class Monday_Resources_Shortcode {
                         if (showCard && selectedAudiences.length > 0) {
                             // Card must match at least one selected audience
                             // Use word boundary matching to avoid "men" matching "women"
-                            showCard = selectedAudiences.some(function(audience) {
+                            showCard = selectedAudiences.some(function (audience) {
                                 // Escape special regex characters and create word boundary pattern
                                 var escapedAudience = audience.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                                 var regex = new RegExp('\\b' + escapedAudience + '\\b', 'i');
@@ -1204,12 +1413,12 @@ class Monday_Resources_Shortcode {
                             const originalWords = searchTerm.split(/\s+/);
 
                             // ALL original search words must match (via themselves or their synonyms)
-                            showCard = originalWords.every(function(originalWord) {
+                            showCard = originalWords.every(function (originalWord) {
                                 // Get this word plus its synonyms
                                 const expandedTerms = getExpandedSearchTerms(originalWord);
 
                                 // Check if ANY of the expanded terms match
-                                return expandedTerms.some(function(term) {
+                                return expandedTerms.some(function (term) {
                                     const regex = new RegExp('\\b' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
                                     return regex.test(searchableText);
                                 });
@@ -1230,15 +1439,15 @@ class Monday_Resources_Shortcode {
                     });
 
                     // Hide all cards first
-                    cards.forEach(function(card) {
+                    cards.forEach(function (card) {
                         card.style.display = 'none';
                     });
 
                     // Show SVdP cards first, then partner cards (maintains sort order)
-                    svdpCards.forEach(function(card) {
+                    svdpCards.forEach(function (card) {
                         card.style.display = 'block';
                     });
-                    partnerCards.forEach(function(card) {
+                    partnerCards.forEach(function (card) {
                         card.style.display = 'block';
                     });
 
@@ -1278,7 +1487,7 @@ class Monday_Resources_Shortcode {
                 // Add event listeners for all filters
                 searchInput.addEventListener('input', filterResources);
                 categoryFilter.addEventListener('change', filterResources);
-                audienceCheckboxes.forEach(function(checkbox) {
+                audienceCheckboxes.forEach(function (checkbox) {
                     checkbox.addEventListener('change', filterResources);
                 });
             })();
