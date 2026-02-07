@@ -78,15 +78,16 @@ class Monday_Resources_Shortcode
 
         // Build Email Content
         $site_name = wp_strip_all_tags(get_bloginfo('name'));
-        $site_name = str_replace(array('"', "'", "\n", "\r", ","), '', $site_name); // Sanitize for header
+        $site_name = str_replace(array('"', "'", "\n", "\r", ","), '', $site_name); // Sanitize name
         $admin_email = get_option('admin_email');
 
         $subject = 'Your Community Resources List from ' . $site_name;
 
         $headers = array('Content-Type: text/html; charset=UTF-8');
-        // Ensure From header is well-formed
+
+        // Use standard From header format: Name <email>
         if (is_email($admin_email)) {
-            $headers[] = 'From: ' . $site_name . ' (' . $admin_email . ')';
+            $headers[] = 'From: "' . $site_name . '" <' . $admin_email . '>';
             $headers[] = 'Reply-To: ' . $admin_email;
         }
 
@@ -417,7 +418,7 @@ class Monday_Resources_Shortcode
                 width: 100%;
                 margin: 0 auto;
                 padding: 0 20px;
-                box-sizing: border-box;
+                box-sizing: border-box !important;
                 overflow-x: hidden;
                 position: relative;
             }
@@ -699,17 +700,19 @@ class Monday_Resources_Shortcode
                 word-wrap: break-word;
             }
 
+            /* Force grid layout with high specificity */
             .resources-grid {
-                display: grid;
-                grid-template-columns: 1fr;
-                gap: 25px;
-                margin-top: 20px;
-                justify-content: center;
+                display: grid !important;
+                grid-template-columns: 1fr !important;
+                gap: 25px !important;
+                margin-top: 20px !important;
+                justify-content: center !important;
+                width: 100% !important;
             }
 
             @media (min-width: 900px) {
                 .resources-grid {
-                    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+                    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)) !important;
                 }
             }
 
