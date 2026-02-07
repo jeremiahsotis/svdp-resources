@@ -60,6 +60,8 @@ class Monday_Resources_Shortcode
             wp_send_json_error(array('message' => 'Invalid email address.'));
         }
 
+        error_log('Monday Resources Email Request: Email=' . $email . ', Format=' . $format . ', IDs=' . (is_array($resource_ids) ? implode(',', $resource_ids) : 'none'));
+
         if (empty($resource_ids)) {
             wp_send_json_error(array('message' => 'No resources selected.'));
         }
@@ -893,6 +895,103 @@ class Monday_Resources_Shortcode
                     padding: 10px 5px;
                 }
             }
+
+            @media print {
+
+                /* Reset basic layout */
+                body {
+                    background: white !important;
+                    margin: 0 !important;
+                    padding: 0 !important;
+                }
+
+                /* Hide theme elements */
+                header,
+                nav,
+                footer,
+                .sidebar,
+                .comments-area,
+                #wpadminbar,
+                .site-header,
+                .site-footer {
+                    display: none !important;
+                }
+
+                /* Hide plugin UI elements */
+                .resources-help-section,
+                .resources-filters,
+                .submit-resource-btn,
+                .results-count,
+                .resource-toggle,
+                .resource-report-btn,
+                .monday-modal,
+                .partner-divider {
+                    display: none !important;
+                }
+
+                /* Force visibility of the main container */
+                body * {
+                    visibility: hidden !important;
+                }
+
+                .resources-container,
+                .resources-container * {
+                    visibility: visible !important;
+                }
+
+                .resources-container {
+                    position: absolute !important;
+                    left: 0 !important;
+                    top: 0 !important;
+                    width: 100% !important;
+                    margin: 0 !important;
+                    padding: 20px !important;
+                }
+
+                /* Re-layout the grid for paper */
+                .resources-grid {
+                    display: block !important;
+                    width: 100% !important;
+                }
+
+                .resource-card {
+                    display: block !important;
+                    width: 100% !important;
+                    margin-bottom: 25px !important;
+                    padding: 20px !important;
+                    border: 1px solid #ccc !important;
+                    break-inside: avoid !important;
+                    page-break-inside: avoid !important;
+                    box-shadow: none !important;
+                    background: white !important;
+                }
+
+                .resource-card h3 {
+                    color: #000 !important;
+                    border-bottom: 2px solid #0073aa !important;
+                    font-size: 1.4em !important;
+                }
+
+                .svdp-badge {
+                    border: 1px solid #0073aa !important;
+                    color: #0073aa !important;
+                    background: none !important;
+                    font-size: 10pt !important;
+                }
+
+                .resource-field-label {
+                    color: #555 !important;
+                }
+
+                .resource-field-value {
+                    color: #000 !important;
+                }
+
+                .resource-field-value a {
+                    text-decoration: none !important;
+                    color: #000 !important;
+                }
+            }
         </style>
 
         <div class="resources-container">
@@ -1223,11 +1322,11 @@ class Monday_Resources_Shortcode
                 var visibleIds = [];
                 var cards = document.querySelectorAll('.resource-card');
                 cards.forEach(function (card) {
-                    if (card.style.display !== 'none') {
+                    var style = window.getComputedStyle(card);
+                    if (style.display !== 'none' && style.visibility !== 'hidden') {
                         visibleIds.push(card.getAttribute('data-resource-id'));
                     }
                 });
-
                 if (visibleIds.length === 0) {
                     messageDiv.innerHTML = 'No resources to send.';
                     messageDiv.className = 'form-message error';
@@ -1276,14 +1375,13 @@ class Monday_Resources_Shortcode
 
             function printResources(format) {
                 closePrintOptions();
-                // Add a print class to body for potential print styling (CSS not included here but good practice)
-                document.body.classList.add('printing-' + format);
 
                 // Expand details if detailed format
                 if (format === 'detailed') {
                     var details = document.querySelectorAll('.resource-details-hidden');
                     details.forEach(function (detail) {
                         detail.style.display = 'block';
+                        detail.style.visibility = 'visible';
                     });
                     var toggles = document.querySelectorAll('.resource-toggle');
                     toggles.forEach(function (toggle) {
@@ -1291,12 +1389,24 @@ class Monday_Resources_Shortcode
                     });
                 }
 
-                window.print();
+                // Short delay for DOM to catch up
+                setTimeout(function () {
+                    window.print();
 
-                // Reload to reset state
-                location.reload();
+                    // Reload to reset state after print dialog is closed
+                    // Some browsers need this event, others block JS until dialog closes
+                    window.onafterprint = function () {
+                        location.reload();
+                    };
+
+                    // Fallback for browsers without onafterprint
+                    setTimeout(function () {
+                        if (confirm('Print finished? Click OK to reset the page.')) {
+                            location.reload();
+                        }
+                    }, 500);
+                }, 250);
             }
-
             // Tighter synonym mapping - only closely related terms
             const synonymMap = {
                 'rent': ['rent', 'eviction', 'housing assistance', 'lease'],
