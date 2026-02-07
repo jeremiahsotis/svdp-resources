@@ -77,11 +77,18 @@ class Monday_Resources_Shortcode
         }
 
         // Build Email Content
-        $site_name = get_bloginfo('name');
+        $site_name = wp_strip_all_tags(get_bloginfo('name'));
+        $site_name = str_replace(array('"', "'", "\n", "\r", ","), '', $site_name); // Sanitize for header
+        $admin_email = get_option('admin_email');
+
         $subject = 'Your Community Resources List from ' . $site_name;
 
         $headers = array('Content-Type: text/html; charset=UTF-8');
-        $headers[] = 'From: ' . $site_name . ' <' . get_option('admin_email') . '>';
+        // Ensure From header is well-formed
+        if (is_email($admin_email)) {
+            $headers[] = 'From: ' . $site_name . ' (' . $admin_email . ')';
+            $headers[] = 'Reply-To: ' . $admin_email;
+        }
 
         ob_start();
         ?>
@@ -1307,7 +1314,6 @@ class Monday_Resources_Shortcode
                 // Get target audience for population filtering
                 $target_population = !empty($item['target_population']) ? strtolower($item['target_population']) : '';
                 ?>
-
                 <div class="resource-card" data-resource-id="<?php echo esc_attr($item['id']); ?>"
                     data-search="<?php echo esc_attr($searchable_text); ?>"
                     data-resource-type="<?php echo esc_attr($resource_type); ?>" data-need-met="<?php echo esc_attr($needs_met); ?>"
