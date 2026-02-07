@@ -100,10 +100,8 @@ class Monday_Resources_Shortcode
 
         $headers = array('Content-Type: text/html; charset=UTF-8');
 
-        // TEMPORARILY SIMPLIFIED HEADERS: Using standard WP From to test SMTP compatibility
+        // Allow WP Mail SMTP to handle From and Reply-To headers for better deliverability
         error_log('Monday Resources Email: Starting message build...');
-        $headers[] = 'From: ' . $site_name . ' <' . $admin_email . '>';
-        $headers[] = 'Reply-To: ' . $admin_email;
 
         ob_start();
         ?>
