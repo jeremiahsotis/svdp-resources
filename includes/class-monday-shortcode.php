@@ -194,11 +194,25 @@ class Monday_Resources_Shortcode
 
         // Get resources from database with optional filters
         $filters = array();
+        
+        // Split comma-separated geography values into array
         if (!empty($atts['geography'])) {
-            $filters['geography'] = $atts['geography'];
+            // Check if it contains a comma (multiple values)
+            if (strpos($atts['geography'], ',') !== false) {
+                $filters['geography'] = array_map('trim', explode(',', $atts['geography']));
+            } else {
+                $filters['geography'] = $atts['geography'];
+            }
         }
+        
+        // Split comma-separated service_type values into array
         if (!empty($atts['service_type'])) {
-            $filters['service_type'] = $atts['service_type'];
+            // Check if it contains a comma (multiple values)
+            if (strpos($atts['service_type'], ',') !== false) {
+                $filters['service_type'] = array_map('trim', explode(',', $atts['service_type']));
+            } else {
+                $filters['service_type'] = $atts['service_type'];
+            }
         }
 
         $items = Resources_Manager::get_all_resources($filters);
