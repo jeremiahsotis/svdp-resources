@@ -3,7 +3,7 @@
  * Plugin Name: Monday.com Resources Integration
  * Plugin URI: https://example.com
  * Description: Integrates Monday.com board data as searchable resource cards with filtering, issue reporting, and submission features
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: Your Name
  * Author URI: https://example.com
  * License: GPL v2 or later
@@ -17,7 +17,8 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MONDAY_RESOURCES_VERSION', '1.1.0');
+define('MONDAY_RESOURCES_VERSION', '1.1.1');
+define('MONDAY_RESOURCES_DB_SCHEMA_VERSION', '1.1.1');
 define('MONDAY_RESOURCES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('MONDAY_RESOURCES_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -51,8 +52,9 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-questionnaire-ajax.ph
 // Activation hook
 register_activation_hook(__FILE__, 'monday_resources_activate');
 
-// Run database upgrade check on admin_init to add any missing columns
-add_action('admin_init', 'monday_resources_maybe_upgrade_db');
+// Run migration checks in all contexts (not admin-only), with admin fallback.
+add_action('plugins_loaded', 'monday_resources_maybe_upgrade_db_bootstrap', 5);
+add_action('admin_init', 'monday_resources_maybe_upgrade_db_bootstrap', 1);
 
 /**
  * Capability used for managing resources in admin.
@@ -169,9 +171,156 @@ function monday_resources_ensure_taxonomy_import_audit_table() {
     dbDelta($sql);
 }
 
+/**
+ * Assess migration/schema health.
+ *
+ * @return array
+ */
+function monday_resources_get_schema_health() {
+    global $wpdb;
+
+    $health = array(
+        'ok' => true,
+        'details' => array()
+    );
+
+    $resources_table = $wpdb->prefix . 'resources';
+    $audit_table = $wpdb->prefix . 'resources_taxonomy_import_audit';
+
+    $resources_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resources_table));
+    if ($resources_exists !== $resources_table) {
+        $health['ok'] = false;
+        $health['details'][] = 'missing_table:' . $resources_table;
+        return $health;
+    }
+
+    $required_columns = array('service_area', 'services_offered', 'provider_type');
+    foreach ($required_columns as $column) {
+        $exists = $wpdb->get_var($wpdb->prepare("SHOW COLUMNS FROM $resources_table LIKE %s", $column));
+        if (!$exists) {
+            $health['ok'] = false;
+            $health['details'][] = 'missing_column:' . $column;
+        }
+    }
+
+    $required_indexes = array(
+        'idx_resources_service_area',
+        'idx_resources_provider_type',
+        'idx_resources_services_offered_prefix'
+    );
+    foreach ($required_indexes as $index_name) {
+        $exists = $wpdb->get_var(
+            $wpdb->prepare(
+                "SHOW INDEX FROM $resources_table WHERE Key_name = %s",
+                $index_name
+            )
+        );
+        if (!$exists) {
+            $health['ok'] = false;
+            $health['details'][] = 'missing_index:' . $index_name;
+        }
+    }
+
+    $audit_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $audit_table));
+    if ($audit_exists !== $audit_table) {
+        $health['ok'] = false;
+        $health['details'][] = 'missing_table:' . $audit_table;
+    }
+
+    return $health;
+}
+
+/**
+ * Persist migration diagnostics when schema is unhealthy.
+ *
+ * @param array $schema_health
+ * @return void
+ */
+function monday_resources_record_schema_health($schema_health) {
+    if (!is_array($schema_health) || empty($schema_health['ok'])) {
+        $payload = array(
+            'recorded_at' => current_time('mysql'),
+            'details' => isset($schema_health['details']) && is_array($schema_health['details']) ? $schema_health['details'] : array('unknown')
+        );
+        update_option('monday_resources_last_migration_error', $payload, false);
+        error_log('Monday Resources migration health check failed: ' . wp_json_encode($payload));
+        return;
+    }
+
+    delete_option('monday_resources_last_migration_error');
+}
+
+/**
+ * Admin notice for migration failures.
+ *
+ * @return void
+ */
+function monday_resources_migration_admin_notice() {
+    if (!is_admin() || !current_user_can('manage_options')) {
+        return;
+    }
+
+    $error = get_option('monday_resources_last_migration_error', array());
+    if (empty($error) || !is_array($error)) {
+        return;
+    }
+
+    $details = isset($error['details']) && is_array($error['details']) ? implode(', ', $error['details']) : 'unknown';
+    ?>
+    <div class="notice notice-error">
+        <p>
+            <strong>SVdP Resources migration check failed.</strong>
+            <?php echo esc_html('Details: ' . $details); ?>
+        </p>
+    </div>
+    <?php
+}
+add_action('admin_notices', 'monday_resources_migration_admin_notice');
+
+/**
+ * Migration bootstrap wrapper with a short lock to prevent concurrent upgrades.
+ *
+ * @return void
+ */
+function monday_resources_maybe_upgrade_db_bootstrap() {
+    static $ran = false;
+    if ($ran || wp_installing()) {
+        return;
+    }
+
+    $ran = true;
+    $lock_key = 'monday_resources_db_upgrade_lock';
+    $has_lock = get_transient($lock_key);
+    if ($has_lock) {
+        return;
+    }
+
+    set_transient($lock_key, 1, 5 * MINUTE_IN_SECONDS);
+    try {
+        monday_resources_maybe_upgrade_db();
+    } catch (Throwable $e) {
+        $payload = array(
+            'recorded_at' => current_time('mysql'),
+            'details' => array('exception:' . $e->getMessage())
+        );
+        update_option('monday_resources_last_migration_error', $payload, false);
+        error_log('Monday Resources migration bootstrap exception: ' . $e->getMessage());
+    }
+
+    delete_transient($lock_key);
+}
+
 function monday_resources_maybe_upgrade_db() {
     global $wpdb;
     $db_version = get_option('monday_resources_db_version', '1.0.0');
+    $resources_table = $wpdb->prefix . 'resources';
+    $resources_table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resources_table));
+
+    // If activation hook was skipped on deploy, create required tables and continue upgrades.
+    if ($resources_table_exists !== $resources_table) {
+        monday_resources_activate();
+        $db_version = get_option('monday_resources_db_version', '1.0.0');
+    }
 
     // Upgrade to 1.0.4 - Questionnaire columns
     if (version_compare($db_version, '1.0.4', '<')) {
@@ -254,11 +403,32 @@ function monday_resources_maybe_upgrade_db() {
         error_log('Monday Resources: Database upgraded to version 1.1.0 - taxonomy + browse filters');
     }
 
-    // Keep critical schema and role/canonical options synchronized.
-    monday_resources_ensure_resource_taxonomy_schema();
-    monday_resources_ensure_taxonomy_import_audit_table();
-    monday_resources_register_resource_manager_role();
-    Resource_Taxonomy::seed_canonical_options();
+    // Upgrade to 1.1.1 - migration bootstrap hardening + self-healing schema pass.
+    if (version_compare($db_version, MONDAY_RESOURCES_DB_SCHEMA_VERSION, '<')) {
+        monday_resources_ensure_resource_taxonomy_schema();
+        monday_resources_ensure_taxonomy_import_audit_table();
+        monday_resources_register_resource_manager_role();
+        Resource_Taxonomy::seed_canonical_options();
+
+        update_option('monday_resources_db_version', MONDAY_RESOURCES_DB_SCHEMA_VERSION);
+        $db_version = MONDAY_RESOURCES_DB_SCHEMA_VERSION;
+        error_log('Monday Resources: Database upgraded to version ' . MONDAY_RESOURCES_DB_SCHEMA_VERSION . ' - migration bootstrap hardening');
+    }
+
+    // Periodic self-heal (every 6 hours) to catch drift or interrupted deploys.
+    $last_self_heal = (int) get_option('monday_resources_last_schema_self_heal', 0);
+    $self_heal_interval = 6 * HOUR_IN_SECONDS;
+    $run_self_heal = (defined('WP_CLI') && WP_CLI) || ($last_self_heal < (time() - $self_heal_interval));
+
+    if ($run_self_heal) {
+        monday_resources_ensure_resource_taxonomy_schema();
+        monday_resources_ensure_taxonomy_import_audit_table();
+        monday_resources_register_resource_manager_role();
+        Resource_Taxonomy::seed_canonical_options();
+        update_option('monday_resources_last_schema_self_heal', time());
+    }
+
+    monday_resources_record_schema_health(monday_resources_get_schema_health());
 }
 
 function monday_resources_activate() {
@@ -686,6 +856,57 @@ function monday_resources_deactivate() {
 
     // Clear verification cron jobs
     Verification_Cron::clear_scheduled_jobs();
+}
+
+/**
+ * WP-CLI command to force schema migrations.
+ *
+ * Usage:
+ * wp monday-resources migrate-db [--force]
+ *
+ * @param array $args
+ * @param array $assoc_args
+ * @return void
+ */
+function monday_resources_wpcli_migrate_db($args, $assoc_args) {
+    if (!empty($assoc_args['force'])) {
+        delete_transient('monday_resources_db_upgrade_lock');
+    }
+
+    monday_resources_maybe_upgrade_db();
+    $db_version = get_option('monday_resources_db_version', 'unknown');
+    $schema_health = monday_resources_get_schema_health();
+    $last_error = get_option('monday_resources_last_migration_error', array());
+
+    if (!empty($schema_health['ok'])) {
+        WP_CLI::success('Monday Resources DB migration complete. Current version: ' . $db_version);
+        return;
+    }
+
+    $details = isset($schema_health['details']) && is_array($schema_health['details']) ? implode(', ', $schema_health['details']) : 'unknown';
+    WP_CLI::warning('Schema is still unhealthy after migration: ' . $details);
+
+    if (!empty($last_error) && is_array($last_error)) {
+        WP_CLI::warning('Last migration error payload: ' . wp_json_encode($last_error));
+    }
+}
+
+if (defined('WP_CLI') && WP_CLI && class_exists('WP_CLI')) {
+    WP_CLI::add_command(
+        'monday-resources migrate-db',
+        'monday_resources_wpcli_migrate_db',
+        array(
+            'shortdesc' => 'Force-run SVdP Resources DB migrations and print health status.',
+            'synopsis' => array(
+                array(
+                    'type' => 'flag',
+                    'name' => 'force',
+                    'optional' => true,
+                    'description' => 'Clear the migration lock before running.'
+                )
+            )
+        )
+    );
 }
 
 // Initialize the plugin
