@@ -5,6 +5,9 @@
 
 class Monday_Resources_Admin {
 
+    const IMPORT_NONCE_ACTION = 'svdp_resource_taxonomy_import';
+    const ROLLBACK_NONCE_ACTION = 'svdp_resource_taxonomy_rollback';
+
     public function __construct() {
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
@@ -14,6 +17,7 @@ class Monday_Resources_Admin {
         add_action('admin_post_delete_resource', array($this, 'delete_resource'));
         add_action('admin_post_save_resource', array($this, 'save_resource'));
         add_action('admin_post_bulk_action_resources', array($this, 'bulk_action_resources'));
+        add_action('admin_post_rollback_taxonomy_import', array($this, 'rollback_taxonomy_import'));
 
         // Issue and submission actions
         add_action('admin_post_delete_issue', array($this, 'delete_issue'));
@@ -54,10 +58,12 @@ class Monday_Resources_Admin {
      * Add admin menu pages
      */
     public function add_admin_menu() {
+        $resource_capability = $this->get_resource_capability();
+
         add_menu_page(
             'Community Resources',
             'Resources',
-            'manage_options',
+            $resource_capability,
             'monday-resources-manage',
             array($this, 'manage_resources_page'),
             'dashicons-list-view',
@@ -68,7 +74,7 @@ class Monday_Resources_Admin {
             'monday-resources-manage',
             'All Resources',
             'All Resources',
-            'manage_options',
+            $resource_capability,
             'monday-resources-manage',
             array($this, 'manage_resources_page')
         );
@@ -77,7 +83,7 @@ class Monday_Resources_Admin {
             'monday-resources-manage',
             'Add New Resource',
             'Add New',
-            'manage_options',
+            $resource_capability,
             'monday-resources-add',
             array($this, 'add_resource_page')
         );
@@ -86,7 +92,7 @@ class Monday_Resources_Admin {
             null, // Hidden from menu
             'Edit Resource',
             'Edit Resource',
-            'manage_options',
+            $resource_capability,
             'monday-resources-edit',
             array($this, 'edit_resource_page')
         );
@@ -95,7 +101,7 @@ class Monday_Resources_Admin {
             'monday-resources-manage',
             'Issue Reports',
             'Issue Reports',
-            'manage_options',
+            $resource_capability,
             'monday-resources-issues',
             array($this, 'issues_page')
         );
@@ -104,9 +110,18 @@ class Monday_Resources_Admin {
             'monday-resources-manage',
             'Resource Submissions',
             'Submissions',
-            'manage_options',
+            $resource_capability,
             'monday-resources-submissions',
             array($this, 'submissions_page')
+        );
+
+        add_submenu_page(
+            'monday-resources-manage',
+            'Taxonomy Import',
+            'Taxonomy Import',
+            'manage_options',
+            'monday-resources-taxonomy-import',
+            array($this, 'taxonomy_import_page')
         );
 
         add_submenu_page(
@@ -120,13 +135,143 @@ class Monday_Resources_Admin {
     }
 
     /**
+     * Resolve capability required to manage resources.
+     *
+     * @return string
+     */
+    private function get_resource_capability() {
+        if (function_exists('monday_resources_get_manage_capability')) {
+            return monday_resources_get_manage_capability();
+        }
+        return 'manage_options';
+    }
+
+    /**
+     * Canonical Service Area terms.
+     *
+     * @return array
+     */
+    private function get_service_area_terms() {
+        if (!class_exists('Resource_Taxonomy')) {
+            return array();
+        }
+        return Resource_Taxonomy::get_service_area_terms();
+    }
+
+    /**
+     * Canonical Services Offered terms.
+     *
+     * @return array
+     */
+    private function get_services_offered_terms() {
+        if (!class_exists('Resource_Taxonomy')) {
+            return array();
+        }
+        return Resource_Taxonomy::get_services_offered_terms();
+    }
+
+    /**
+     * Canonical Provider Type terms.
+     *
+     * @return array
+     */
+    private function get_provider_type_terms() {
+        if (!class_exists('Resource_Taxonomy')) {
+            return array();
+        }
+        return Resource_Taxonomy::get_provider_type_terms();
+    }
+
+    /**
+     * Get Service Area label from stored slug.
+     *
+     * @param string $service_area_slug
+     * @return string
+     */
+    private function get_service_area_label($service_area_slug) {
+        if (!class_exists('Resource_Taxonomy')) {
+            return '';
+        }
+        return Resource_Taxonomy::get_service_area_label($service_area_slug);
+    }
+
+    /**
+     * Resolve selected Service Area slug for admin form defaults.
+     *
+     * @param array $resource
+     * @return string
+     */
+    private function resolve_selected_service_area($resource) {
+        if (!class_exists('Resource_Taxonomy') || !is_array($resource)) {
+            return '';
+        }
+
+        if (!empty($resource['service_area'])) {
+            $slug = Resource_Taxonomy::normalize_service_area_slug($resource['service_area']);
+            if ($slug !== '') {
+                return $slug;
+            }
+        }
+
+        if (!empty($resource['primary_service_type'])) {
+            $slug = Resource_Taxonomy::normalize_service_area_slug($resource['primary_service_type']);
+            if ($slug !== '') {
+                return $slug;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Resolve selected Services Offered slugs for admin form defaults.
+     *
+     * @param array $resource
+     * @return array
+     */
+    private function resolve_selected_services_offered($resource) {
+        if (!class_exists('Resource_Taxonomy') || !is_array($resource)) {
+            return array();
+        }
+
+        if (!empty($resource['services_offered'])) {
+            $parsed = Resource_Taxonomy::parse_pipe_slugs($resource['services_offered']);
+            return Resource_Taxonomy::normalize_services_offered_slugs($parsed);
+        }
+
+        if (!empty($resource['secondary_service_type'])) {
+            $legacy_tokens = array_filter(array_map('trim', explode(',', $resource['secondary_service_type'])));
+            return Resource_Taxonomy::normalize_services_offered_slugs($legacy_tokens);
+        }
+
+        return array();
+    }
+
+    /**
+     * Resolve selected Provider Type slug for admin form defaults.
+     *
+     * @param array $resource
+     * @return string
+     */
+    private function resolve_selected_provider_type($resource) {
+        if (!class_exists('Resource_Taxonomy') || !is_array($resource)) {
+            return '';
+        }
+
+        if (!empty($resource['provider_type'])) {
+            return Resource_Taxonomy::normalize_provider_type_slug($resource['provider_type']);
+        }
+
+        return '';
+    }
+
+    /**
      * Register plugin settings
      */
     public function register_settings() {
         register_setting('monday_resources_settings', 'resource_conference_options');
         register_setting('monday_resources_settings', 'resource_counties_options');
         register_setting('monday_resources_settings', 'resource_service_types');
-        register_setting('monday_resources_settings', 'resource_need_options');
         register_setting('monday_resources_settings', 'resource_target_population_options');
         register_setting('monday_resources_settings', 'resource_income_requirements_options');
         register_setting('monday_resources_settings', 'resource_wait_time_options');
@@ -281,11 +426,6 @@ class Monday_Resources_Admin {
             update_option('resource_target_population_options', $default_target_populations);
         }
 
-        // Initialize Need Met options (will be populated by migration script)
-        if (!get_option('resource_need_options')) {
-            update_option('resource_need_options', array());
-        }
-
         if (!get_option('resource_income_requirements_options')) {
             $default_income_requirements = array(
                 '✅ No Income Limit (anyone qualifies)',
@@ -332,15 +472,18 @@ class Monday_Resources_Admin {
         // Handle search and filters
         $search = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
         $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
-        $service_filter = isset($_GET['service']) ? sanitize_text_field($_GET['service']) : '';
+        $service_area_filter = isset($_GET['service_area']) ? sanitize_text_field($_GET['service_area']) : '';
+        if ($service_area_filter === '' && isset($_GET['service'])) {
+            $service_area_filter = sanitize_text_field($_GET['service']);
+        }
 
         // Get all resources
         $filters = array();
         if ($status_filter) {
             $filters['verification_status'] = $status_filter;
         }
-        if ($service_filter) {
-            $filters['service_type'] = $service_filter;
+        if ($service_area_filter) {
+            $filters['service_area'] = $service_area_filter;
         }
 
         $resources = Resources_Manager::get_all_resources($filters);
@@ -353,8 +496,8 @@ class Monday_Resources_Admin {
             });
         }
 
-        // Get service types from centralized options
-        $service_types = get_option('resource_service_types', array());
+        // Get canonical Service Area terms.
+        $service_area_terms = $this->get_service_area_terms();
 
         // Get verification stats
         $stats = Resources_Manager::get_verification_stats();
@@ -407,18 +550,18 @@ class Monday_Resources_Admin {
                         <option value="unverified" <?php selected($status_filter, 'unverified'); ?>>Unverified</option>
                     </select>
 
-                    <label style="margin-left: 15px;">Service Type: </label>
-                    <select name="service" style="width: 350px; font-size: 14px;">
-                        <option value="">All Service Types</option>
-                        <?php foreach ($service_types as $type): ?>
-                            <option value="<?php echo esc_attr($type); ?>" <?php selected($service_filter, $type); ?>>
-                                <?php echo esc_html($type); ?>
+                    <label style="margin-left: 15px;">Service Area: </label>
+                    <select name="service_area" style="width: 350px; font-size: 14px;">
+                        <option value="">All Service Areas</option>
+                        <?php foreach ($service_area_terms as $service_area_slug => $service_area_label): ?>
+                            <option value="<?php echo esc_attr($service_area_slug); ?>" <?php selected($service_area_filter, $service_area_slug); ?>>
+                                <?php echo esc_html($service_area_label); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
 
                     <input type="submit" class="button" value="Filter">
-                    <?php if ($search || $status_filter || $service_filter): ?>
+                    <?php if ($search || $status_filter || $service_area_filter): ?>
                         <a href="<?php echo admin_url('admin.php?page=monday-resources-manage'); ?>" class="button">Clear</a>
                     <?php endif; ?>
                 </p>
@@ -454,7 +597,7 @@ class Monday_Resources_Admin {
                                 </td>
                                 <th>Resource Name</th>
                                 <th>Organization</th>
-                                <th>Service Type</th>
+                                <th>Service Area</th>
                                 <th>Conferences</th>
                                 <th>Status</th>
                                 <th>Last Verified</th>
@@ -489,6 +632,15 @@ class Monday_Resources_Admin {
                                 }
                                 ?>
                                 <tr>
+                                    <?php
+                                    $service_area_label = '';
+                                    if (!empty($resource['service_area'])) {
+                                        $service_area_label = $this->get_service_area_label($resource['service_area']);
+                                    }
+                                    if ($service_area_label === '' && !empty($resource['primary_service_type'])) {
+                                        $service_area_label = $resource['primary_service_type'];
+                                    }
+                                    ?>
                                     <th scope="row" class="check-column">
                                         <input type="checkbox" name="resource_ids[]" value="<?php echo $resource['id']; ?>">
                                     </th>
@@ -503,7 +655,7 @@ class Monday_Resources_Admin {
                                         <?php endif; ?>
                                     </td>
                                     <td><?php echo esc_html($resource['organization']); ?></td>
-                                    <td><?php echo esc_html($resource['primary_service_type']); ?></td>
+                                    <td><?php echo esc_html($service_area_label); ?></td>
                                     <td><?php echo esc_html($resource['geography']); ?></td>
                                     <td><span style="<?php echo $status_class; ?>"><?php echo $status_label; ?></span></td>
                                     <td><?php echo $verified_time; ?></td>
@@ -541,7 +693,7 @@ class Monday_Resources_Admin {
                         <label style="display: block; margin: 10px 0;">
                             <input type="radio" name="export_scope" value="filtered">
                             <strong>Export Current Filter Results</strong>
-                            <?php if ($search || $status_filter || $service_filter): ?>
+                            <?php if ($search || $status_filter || $service_area_filter): ?>
                                 (Active filters applied)
                             <?php else: ?>
                                 (No filters active - same as Export All)
@@ -556,8 +708,9 @@ class Monday_Resources_Admin {
                             <label><input type="checkbox" name="export_fields[]" value="id" checked> ID</label>
                             <label><input type="checkbox" name="export_fields[]" value="resource_name" checked> Resource Name</label>
                             <label><input type="checkbox" name="export_fields[]" value="organization"> Organization</label>
-                            <label><input type="checkbox" name="export_fields[]" value="primary_service_type" checked> Resource Type</label>
-                            <label><input type="checkbox" name="export_fields[]" value="secondary_service_type"> Needs Met</label>
+                            <label><input type="checkbox" name="export_fields[]" value="service_area" checked> Service Area</label>
+                            <label><input type="checkbox" name="export_fields[]" value="services_offered" checked> Services Offered</label>
+                            <label><input type="checkbox" name="export_fields[]" value="provider_type"> Provider Type</label>
                             <label><input type="checkbox" name="export_fields[]" value="phone" checked> Phone</label>
                             <label><input type="checkbox" name="export_fields[]" value="email"> Email</label>
                             <label><input type="checkbox" name="export_fields[]" value="website"> Website</label>
@@ -570,7 +723,7 @@ class Monday_Resources_Admin {
                             <label><input type="checkbox" name="export_fields[]" value="geography"> Geography</label>
                             <label><input type="checkbox" name="export_fields[]" value="office_hours" checked> Office Hours</label>
                             <label><input type="checkbox" name="export_fields[]" value="service_hours" checked> Service Hours</label>
-                            <label><input type="checkbox" name="export_fields[]" value="last_verified"> Last Verified</label>
+                            <label><input type="checkbox" name="export_fields[]" value="last_verified_date"> Last Verified</label>
                             <label><input type="checkbox" name="export_fields[]" value="verification_status"> Verification Status</label>
                         </div>
                         <div style="margin-top: 10px;">
@@ -711,8 +864,8 @@ class Monday_Resources_Admin {
                             <?php if ($status_filter): ?>
                             params.append('status', '<?php echo esc_js($status_filter); ?>');
                             <?php endif; ?>
-                            <?php if ($service_filter): ?>
-                            params.append('service', '<?php echo esc_js($service_filter); ?>');
+                            <?php if ($service_area_filter): ?>
+                            params.append('service_area', '<?php echo esc_js($service_area_filter); ?>');
                             <?php endif; ?>
                         }
 
@@ -739,49 +892,6 @@ class Monday_Resources_Admin {
     public function settings_page() {
         $stats = Resources_Manager::get_verification_stats();
         $migration_count = get_option('monday_resources_migration_count', 0);
-
-        // Handle migration file upload
-        $migration_result = null;
-        if (isset($_POST['upload_migration_file']) && check_admin_referer('migration_upload')) {
-            if (!empty($_FILES['migration_file']['tmp_name']) && $_FILES['migration_file']['error'] === UPLOAD_ERR_OK) {
-                $uploaded_file = $_FILES['migration_file']['tmp_name'];
-                $file_name = $_FILES['migration_file']['name'];
-                
-                // Validate file type
-                $allowed_extensions = array('csv', 'xlsx', 'xls');
-                $file_extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                
-                if (in_array($file_extension, $allowed_extensions)) {
-                    // Process the migration
-                    if (class_exists('Resource_Migration')) {
-                        $migration_result = Resource_Migration::process_spreadsheet($uploaded_file, $file_name);
-                        
-                        if ($migration_result['success']) {
-                            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html($migration_result['message']) . '</p></div>';
-                        } else {
-                            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html($migration_result['message']) . '</p></div>';
-                        }
-                    } else {
-                        echo '<div class="notice notice-error is-dismissible"><p>Migration class not found. Please ensure the migration class file is included.</p></div>';
-                    }
-                } else {
-                    echo '<div class="notice notice-error is-dismissible"><p>Invalid file type. Detected extension: ' . esc_html($file_extension) . '. Please upload a CSV or Excel (.xlsx, .xls) file.</p></div>';
-                }
-            } else {
-                $upload_error = !empty($_FILES['migration_file']['error']) ? $_FILES['migration_file']['error'] : 'Unknown error';
-                $error_messages = array(
-                    UPLOAD_ERR_INI_SIZE => 'File exceeds upload_max_filesize directive.',
-                    UPLOAD_ERR_FORM_SIZE => 'File exceeds MAX_FILE_SIZE directive.',
-                    UPLOAD_ERR_PARTIAL => 'File was only partially uploaded.',
-                    UPLOAD_ERR_NO_FILE => 'No file was uploaded.',
-                    UPLOAD_ERR_NO_TMP_DIR => 'Missing temporary folder.',
-                    UPLOAD_ERR_CANT_WRITE => 'Failed to write file to disk.',
-                    UPLOAD_ERR_EXTENSION => 'PHP extension stopped the file upload.'
-                );
-                $error_message = isset($error_messages[$upload_error]) ? $error_messages[$upload_error] : 'Upload error code: ' . $upload_error;
-                echo '<div class="notice notice-error is-dismissible"><p>File upload failed: ' . esc_html($error_message) . '</p></div>';
-            }
-        }
 
         // Handle add/remove actions
         if (isset($_POST['add_conference']) && check_admin_referer('manage_dropdowns')) {
@@ -856,31 +966,6 @@ class Monday_Resources_Admin {
                 $service_types = array_values($service_types);
                 update_option('resource_service_types', $service_types);
                 echo '<div class="notice notice-success is-dismissible"><p>Service Type removed successfully.</p></div>';
-            }
-        }
-
-        if (isset($_POST['add_need_option']) && check_admin_referer('manage_dropdowns')) {
-            $new_need_option = sanitize_text_field(wp_unslash($_POST['new_need_option']));
-            if (!empty($new_need_option)) {
-                $need_options = get_option('resource_need_options', array());
-                if (!in_array($new_need_option, $need_options)) {
-                    $need_options[] = $new_need_option;
-                    sort($need_options);
-                    update_option('resource_need_options', $need_options);
-                    echo '<div class="notice notice-success is-dismissible"><p>Need Met option added successfully.</p></div>';
-                }
-            }
-        }
-
-        if (isset($_POST['remove_need_option']) && check_admin_referer('manage_dropdowns')) {
-            $remove_need = sanitize_text_field(wp_unslash($_POST['need_option_to_remove']));
-            $need_options = get_option('resource_need_options', array());
-            $key = array_search($remove_need, $need_options);
-            if ($key !== false) {
-                unset($need_options[$key]);
-                $need_options = array_values($need_options);
-                update_option('resource_need_options', $need_options);
-                echo '<div class="notice notice-success is-dismissible"><p>Need Met option removed successfully.</p></div>';
             }
         }
 
@@ -960,7 +1045,6 @@ class Monday_Resources_Admin {
         $conferences = get_option('resource_conference_options', array());
         $counties = get_option('resource_counties_options', array());
         $service_types = get_option('resource_service_types', array());
-        $need_options = get_option('resource_need_options', array());
         $target_populations = get_option('resource_target_population_options', array());
         $income_requirements = get_option('resource_income_requirements_options', array());
         $wait_times = get_option('resource_wait_time_options', array());
@@ -1042,8 +1126,8 @@ class Monday_Resources_Admin {
 
                 <hr style="margin: 30px 0;">
 
-                <h3>Resource Type Options</h3>
-                <p>Manage the Resource Types used for primary categorization (Type-based, single selection). Include emoji at the beginning (e.g., 🍽️ Food Assistance).</p>
+                <h3>Service Type Options</h3>
+                <p>Manage the Service Types used for both Primary Service Type (single selection) and Secondary Service Type (multiple selection). Include emoji at the beginning (e.g., 🍽️ Food Assistance).</p>
 
                 <form method="post" style="margin-bottom: 20px;">
                     <?php wp_nonce_field('manage_dropdowns'); ?>
@@ -1074,48 +1158,6 @@ class Monday_Resources_Admin {
                                             <input type="hidden" name="service_type_to_remove" value="<?php echo esc_attr($service_type); ?>">
                                             <button type="submit" name="remove_service_type" class="button button-small"
                                                     onclick="return confirm('Remove this service type?')">Remove</button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
-
-                <hr style="margin: 30px 0;">
-
-                <h3>Need Met Options</h3>
-                <p>Manage the Need Met options used for secondary categorization (Need-based, multiple selection). Include emoji at the beginning (e.g., 🍽️ Food Assistance).</p>
-
-                <form method="post" style="margin-bottom: 20px;">
-                    <?php wp_nonce_field('manage_dropdowns'); ?>
-                    <input type="text" name="new_need_option" placeholder="Enter need met option with emoji (e.g., 🍽️ Food Assistance)" style="width: 500px; font-size: 15px;">
-                    <button type="submit" name="add_need_option" class="button button-primary">Add Need Met Option</button>
-                    <p class="description">💡 Tip: Copy emojis from <a href="https://emojipedia.org/" target="_blank">Emojipedia</a> or use your keyboard's emoji picker</p>
-                </form>
-
-                <table class="wp-list-table widefat" style="max-width: 700px;">
-                    <thead>
-                        <tr>
-                            <th>Need Met Option</th>
-                            <th style="width: 100px;">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($need_options)): ?>
-                            <tr>
-                                <td colspan="2">No need met options defined.</td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($need_options as $need_option): ?>
-                                <tr>
-                                    <td style="font-size: 15px;"><?php echo esc_html($need_option); ?></td>
-                                    <td>
-                                        <form method="post" style="display: inline;">
-                                            <?php wp_nonce_field('manage_dropdowns'); ?>
-                                            <input type="hidden" name="need_option_to_remove" value="<?php echo esc_attr($need_option); ?>">
-                                            <button type="submit" name="remove_need_option" class="button button-small"
-                                                    onclick="return confirm('Remove this need met option?')">Remove</button>
                                         </form>
                                     </td>
                                 </tr>
@@ -1230,52 +1272,6 @@ class Monday_Resources_Admin {
                 </table>
             </div>
 
-            <!-- Resource Migration Tool -->
-            <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
-                <h2 style="margin-top: 0;">Resource Migration Tool</h2>
-                <p>Upload a spreadsheet to update Resource Type, Need Met, and Target Population data for all resources. The spreadsheet should contain columns: Resource ID, Resource Name, Primary Category, Secondary Categories, Target Populations (New).</p>
-                <p><strong>Note:</strong> This will REPLACE existing category and target population data for all resources in the spreadsheet.</p>
-
-                <form method="post" enctype="multipart/form-data" style="margin-top: 20px;">
-                    <?php wp_nonce_field('migration_upload'); ?>
-                    <table class="form-table">
-                        <tr>
-                            <th scope="row"><label for="migration_file">Upload Spreadsheet</label></th>
-                            <td>
-                                <input type="file" name="migration_file" id="migration_file" accept=".csv,.xlsx,.xls" required>
-                                <p class="description">Accepted formats: CSV, Excel (.xlsx, .xls). Maximum file size: <?php echo size_format(wp_max_upload_size()); ?></p>
-                            </td>
-                        </tr>
-                    </table>
-                    <p class="submit">
-                        <button type="submit" name="upload_migration_file" class="button button-primary" onclick="return confirm('This will update all resources in the spreadsheet. Are you sure you want to continue?');">
-                            Upload and Process Migration
-                        </button>
-                    </p>
-                </form>
-
-                <?php if ($migration_result && $migration_result['success']): ?>
-                    <div style="margin-top: 20px; padding: 15px; background: #f0f6fc; border-left: 4px solid #0073aa; border-radius: 3px;">
-                        <h3 style="margin-top: 0;">Migration Results</h3>
-                        <ul style="margin: 10px 0; padding-left: 20px;">
-                            <li><strong>Resources Updated:</strong> <?php echo esc_html($migration_result['stats']['resources_updated']); ?></li>
-                            <?php if ($migration_result['stats']['resources_not_found'] > 0): ?>
-                                <li><strong>Resources Not Found:</strong> <?php echo esc_html($migration_result['stats']['resources_not_found']); ?></li>
-                            <?php endif; ?>
-                            <?php if ($migration_result['stats']['resource_types_added'] > 0): ?>
-                                <li><strong>New Resource Types Added:</strong> <?php echo esc_html($migration_result['stats']['resource_types_added']); ?></li>
-                            <?php endif; ?>
-                            <?php if ($migration_result['stats']['needs_met_added'] > 0): ?>
-                                <li><strong>New Need Met Options Added:</strong> <?php echo esc_html($migration_result['stats']['needs_met_added']); ?></li>
-                            <?php endif; ?>
-                            <?php if ($migration_result['stats']['target_populations_added'] > 0): ?>
-                                <li><strong>New Target Population Options Added:</strong> <?php echo esc_html($migration_result['stats']['target_populations_added']); ?></li>
-                            <?php endif; ?>
-                        </ul>
-                    </div>
-                <?php endif; ?>
-            </div>
-
             <!-- System Information -->
             <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
                 <h2 style="margin-top: 0;">System Information</h2>
@@ -1315,6 +1311,286 @@ class Monday_Resources_Admin {
             </div>
         </div>
         <?php
+    }
+
+    /**
+     * Taxonomy import page (dry run + apply).
+     *
+     * @return void
+     */
+    public function taxonomy_import_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        $import_result = null;
+        $errors = array();
+        $rollback_status = isset($_GET['rollback_status']) ? sanitize_key(wp_unslash($_GET['rollback_status'])) : '';
+        $rollback_message = isset($_GET['rollback_message']) ? sanitize_text_field(wp_unslash($_GET['rollback_message'])) : '';
+        $recent_runs = class_exists('Resource_Taxonomy_Import') ? Resource_Taxonomy_Import::get_recent_apply_runs(10) : array();
+
+        if (isset($_POST['run_taxonomy_import'])) {
+            check_admin_referer(self::IMPORT_NONCE_ACTION);
+
+            if (empty($_FILES['taxonomy_file']) || empty($_FILES['taxonomy_file']['tmp_name'])) {
+                $errors[] = 'Please select a CSV/XLSX/XLS file before running import.';
+            } else {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+
+                $upload = wp_handle_upload(
+                    $_FILES['taxonomy_file'],
+                    array(
+                        'test_form' => false,
+                        'test_type' => false,
+                        'mimes' => array(
+                            'csv' => 'text/csv',
+                            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            'xls' => 'application/vnd.ms-excel'
+                        )
+                    )
+                );
+
+                if (!empty($upload['error'])) {
+                    $errors[] = $upload['error'];
+                } else {
+                    $apply_changes = isset($_POST['import_mode']) && $_POST['import_mode'] === 'apply';
+                    $original_name = isset($_FILES['taxonomy_file']['name']) ? sanitize_file_name($_FILES['taxonomy_file']['name']) : basename($upload['file']);
+
+                    $import_result = Resource_Taxonomy_Import::process_file(
+                        $upload['file'],
+                        $original_name,
+                        $apply_changes
+                    );
+
+                    if (isset($upload['file']) && file_exists($upload['file'])) {
+                        @unlink($upload['file']);
+                    }
+
+                    if (empty($import_result['success'])) {
+                        $errors[] = !empty($import_result['message']) ? $import_result['message'] : 'Import failed.';
+                    }
+                }
+            }
+        }
+
+        ?>
+        <div class="wrap">
+            <h1>Taxonomy Import</h1>
+            <p>Import taxonomy-only mappings for existing resources: <code>Service Area</code>, <code>Services Offered</code>, and <code>Provider Type</code>.</p>
+            <p><strong>Mode guidance:</strong> Run Dry Run first. Use Apply only after reviewing duplicates and review queue items.</p>
+
+            <?php foreach ($errors as $error): ?>
+                <div class="notice notice-error is-dismissible">
+                    <p><?php echo esc_html($error); ?></p>
+                </div>
+            <?php endforeach; ?>
+
+            <?php if (is_array($import_result) && !empty($import_result['success'])): ?>
+                <div class="notice notice-success is-dismissible">
+                    <p><?php echo esc_html($import_result['message']); ?></p>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($rollback_status === 'success' && $rollback_message !== ''): ?>
+                <div class="notice notice-success is-dismissible">
+                    <p><?php echo esc_html($rollback_message); ?></p>
+                </div>
+            <?php elseif ($rollback_status === 'error' && $rollback_message !== ''): ?>
+                <div class="notice notice-error is-dismissible">
+                    <p><?php echo esc_html($rollback_message); ?></p>
+                </div>
+            <?php endif; ?>
+
+            <form method="post" enctype="multipart/form-data" style="background:#fff; border:1px solid #ccd0d4; padding:20px; max-width:920px;">
+                <?php wp_nonce_field(self::IMPORT_NONCE_ACTION); ?>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="taxonomy_file">Spreadsheet File</label></th>
+                        <td>
+                            <input type="file" id="taxonomy_file" name="taxonomy_file" accept=".csv,.xlsx,.xls" required>
+                            <p class="description">Accepted formats: CSV, XLSX, XLS.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Import Mode</th>
+                        <td>
+                            <label style="display:block; margin-bottom:6px;">
+                                <input type="radio" name="import_mode" value="dry_run" checked>
+                                Dry Run (no DB writes)
+                            </label>
+                            <label style="display:block;">
+                                <input type="radio" name="import_mode" value="apply">
+                                Apply Changes (writes taxonomy fields + audit records)
+                            </label>
+                        </td>
+                    </tr>
+                </table>
+
+                <p class="submit" style="margin-top:10px;">
+                    <button type="submit" name="run_taxonomy_import" class="button button-primary">Run Import</button>
+                </p>
+            </form>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="background:#fff; border:1px solid #ccd0d4; padding:20px; margin-top:20px; max-width:920px;">
+                <h2 style="margin-top:0;">Rollback Import Run</h2>
+                <p>Revert taxonomy fields for a prior <strong>Apply</strong> run using its <code>import_run_id</code>. This updates <code>service_area</code>, <code>services_offered</code>, and <code>provider_type</code> only.</p>
+                <input type="hidden" name="action" value="rollback_taxonomy_import">
+                <?php wp_nonce_field(self::ROLLBACK_NONCE_ACTION); ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="rollback_import_run_id">Import Run ID</label></th>
+                        <td>
+                            <input type="text" id="rollback_import_run_id" name="import_run_id" class="regular-text" required placeholder="e.g. 96b8fbe0-62f5-4e8c-8d8a-3c78f8e95ec7">
+                        </td>
+                    </tr>
+                </table>
+                <p class="submit" style="margin-top:10px;">
+                    <button type="submit" class="button">Run Rollback</button>
+                </p>
+            </form>
+
+            <?php if (!empty($recent_runs)): ?>
+                <div style="background:#fff; border:1px solid #ccd0d4; padding:20px; margin-top:20px; max-width:920px;">
+                    <h2 style="margin-top:0;">Recent Apply Runs</h2>
+                    <table class="widefat striped" style="max-width:920px;">
+                        <thead>
+                            <tr>
+                                <th>Import Run ID</th>
+                                <th>Last Activity</th>
+                                <th>Update Rows</th>
+                                <th>Resources Touched</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($recent_runs as $run): ?>
+                                <tr>
+                                    <td><code><?php echo esc_html(isset($run['import_run_id']) ? $run['import_run_id'] : ''); ?></code></td>
+                                    <td><?php echo esc_html(isset($run['last_activity_at']) ? $run['last_activity_at'] : ''); ?></td>
+                                    <td><?php echo isset($run['update_rows']) ? intval($run['update_rows']) : 0; ?></td>
+                                    <td><?php echo isset($run['resources_touched']) ? intval($run['resources_touched']) : 0; ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+
+            <?php if (is_array($import_result) && !empty($import_result['success'])): ?>
+                <?php $stats = isset($import_result['stats']) && is_array($import_result['stats']) ? $import_result['stats'] : array(); ?>
+                <div style="background:#fff; border:1px solid #ccd0d4; padding:20px; margin-top:20px; max-width:920px;">
+                    <h2 style="margin-top:0;">Import Summary</h2>
+                    <p><strong>Run ID:</strong> <?php echo esc_html(isset($import_result['import_run_id']) ? $import_result['import_run_id'] : ''); ?></p>
+                    <table class="widefat striped" style="max-width:720px;">
+                        <tbody>
+                            <tr><td>Rows total</td><td><?php echo isset($stats['rows_total']) ? intval($stats['rows_total']) : 0; ?></td></tr>
+                            <tr><td>Rows with ID</td><td><?php echo isset($stats['rows_with_id']) ? intval($stats['rows_with_id']) : 0; ?></td></tr>
+                            <tr><td>Rows valid</td><td><?php echo isset($stats['rows_valid']) ? intval($stats['rows_valid']) : 0; ?></td></tr>
+                            <tr><td>Rows updated</td><td><?php echo isset($stats['rows_updated']) ? intval($stats['rows_updated']) : 0; ?></td></tr>
+                            <tr><td>Rows unchanged</td><td><?php echo isset($stats['rows_unchanged']) ? intval($stats['rows_unchanged']) : 0; ?></td></tr>
+                            <tr><td>Duplicates ignored</td><td><?php echo isset($stats['duplicates_ignored']) ? intval($stats['duplicates_ignored']) : 0; ?></td></tr>
+                            <tr><td>Rows failed validation</td><td><?php echo isset($stats['rows_failed_validation']) ? intval($stats['rows_failed_validation']) : 0; ?></td></tr>
+                            <tr><td>Rows not found</td><td><?php echo isset($stats['rows_not_found']) ? intval($stats['rows_not_found']) : 0; ?></td></tr>
+                            <tr><td>Review queue count</td><td><?php echo isset($stats['review_queue_count']) ? intval($stats['review_queue_count']) : 0; ?></td></tr>
+                        </tbody>
+                    </table>
+
+                    <?php $duplicates_ignored = isset($import_result['duplicates_ignored']) && is_array($import_result['duplicates_ignored']) ? $import_result['duplicates_ignored'] : array(); ?>
+                    <?php if (!empty($duplicates_ignored)): ?>
+                        <h3>Duplicates Ignored</h3>
+                        <table class="widefat striped" style="max-width:920px;">
+                            <thead>
+                                <tr>
+                                    <th>Resource ID</th>
+                                    <th>Row Number</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($duplicates_ignored as $duplicate_item): ?>
+                                    <tr>
+                                        <td><?php echo isset($duplicate_item['resource_id']) ? intval($duplicate_item['resource_id']) : 0; ?></td>
+                                        <td><?php echo isset($duplicate_item['row_number']) ? intval($duplicate_item['row_number']) : 0; ?></td>
+                                        <td><?php echo esc_html(isset($duplicate_item['reason']) ? $duplicate_item['reason'] : 'duplicate'); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+
+                    <?php $review_queue = isset($import_result['review_queue']) && is_array($import_result['review_queue']) ? $import_result['review_queue'] : array(); ?>
+                    <?php if (!empty($review_queue)): ?>
+                        <h3>Review Queue</h3>
+                        <table class="widefat striped" style="max-width:920px;">
+                            <thead>
+                                <tr>
+                                    <th>Resource ID</th>
+                                    <th>Row</th>
+                                    <th>Reason</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($review_queue as $review_item): ?>
+                                    <tr>
+                                        <td><?php echo isset($review_item['resource_id']) ? intval($review_item['resource_id']) : 0; ?></td>
+                                        <td><?php echo isset($review_item['row_number']) ? intval($review_item['row_number']) : 0; ?></td>
+                                        <td><?php echo esc_html(isset($review_item['reason']) ? $review_item['reason'] : 'review'); ?></td>
+                                        <td><?php echo esc_html(isset($review_item['message']) ? $review_item['message'] : ''); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    /**
+     * Roll back taxonomy changes for a specific import run ID.
+     *
+     * @return void
+     */
+    public function rollback_taxonomy_import() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer(self::ROLLBACK_NONCE_ACTION);
+
+        $import_run_id = isset($_POST['import_run_id']) ? sanitize_text_field(wp_unslash($_POST['import_run_id'])) : '';
+        $redirect_base = admin_url('admin.php');
+
+        if ($import_run_id === '') {
+            wp_safe_redirect(add_query_arg(array(
+                'page' => 'monday-resources-taxonomy-import',
+                'rollback_status' => 'error',
+                'rollback_message' => 'Import Run ID is required.'
+            ), $redirect_base));
+            exit;
+        }
+
+        if (!class_exists('Resource_Taxonomy_Import')) {
+            wp_safe_redirect(add_query_arg(array(
+                'page' => 'monday-resources-taxonomy-import',
+                'rollback_status' => 'error',
+                'rollback_message' => 'Rollback service is unavailable.'
+            ), $redirect_base));
+            exit;
+        }
+
+        $rollback = Resource_Taxonomy_Import::rollback_import_run($import_run_id, get_current_user_id());
+        $status = !empty($rollback['success']) ? 'success' : 'error';
+        $message = !empty($rollback['message']) ? $rollback['message'] : 'Rollback finished.';
+
+        wp_safe_redirect(add_query_arg(array(
+            'page' => 'monday-resources-taxonomy-import',
+            'rollback_status' => $status,
+            'rollback_message' => $message
+        ), $redirect_base));
+        exit;
     }
 
     /**
@@ -1496,7 +1772,7 @@ class Monday_Resources_Admin {
      * Delete issue
      */
     public function delete_issue() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1515,7 +1791,7 @@ class Monday_Resources_Admin {
      * Delete submission
      */
     public function delete_submission() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1534,7 +1810,7 @@ class Monday_Resources_Admin {
      * Update issue status
      */
     public function update_issue_status() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1561,7 +1837,7 @@ class Monday_Resources_Admin {
      * Update submission status
      */
     public function update_submission_status() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1588,7 +1864,7 @@ class Monday_Resources_Admin {
      * Delete a resource
      */
     public function delete_resource() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1605,7 +1881,7 @@ class Monday_Resources_Admin {
      * Bulk action handler
      */
     public function bulk_action_resources() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1714,6 +1990,12 @@ class Monday_Resources_Admin {
                 </div>
             <?php endif; ?>
 
+            <?php if (isset($_GET['error']) && $_GET['error'] === 'missing_service_area'): ?>
+                <div class="notice notice-error is-dismissible">
+                    <p>Service Area is required. Please choose one Service Area before saving.</p>
+                </div>
+            <?php endif; ?>
+
             <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" style="max-width: 800px;">
                 <input type="hidden" name="action" value="save_resource">
                 <?php if ($is_edit): ?>
@@ -1749,51 +2031,92 @@ class Monday_Resources_Admin {
                         </td>
                     </tr>
 
+                    <?php
+                    $service_area_terms = $this->get_service_area_terms();
+                    $services_offered_terms = $this->get_services_offered_terms();
+                    $provider_type_terms = $this->get_provider_type_terms();
+                    $selected_service_area = $has_data ? $this->resolve_selected_service_area($resource) : '';
+                    $selected_services_offered = $has_data ? $this->resolve_selected_services_offered($resource) : array();
+                    $selected_provider_type = $has_data ? $this->resolve_selected_provider_type($resource) : '';
+                    ?>
+
                     <tr>
-                        <th scope="row"><label for="primary_service_type">Resource Type *</label></th>
+                        <th scope="row"><label>Service Area *</label></th>
                         <td>
-                            <?php
-                            $service_types = get_option('resource_service_types', array());
-                            $selected_primary = $has_data ? $resource['primary_service_type'] : '';
-                            ?>
-                            <select name="primary_service_type" id="primary_service_type" style="width: 500px; font-size: 15px;" required>
-                                <option value="">Select a resource type...</option>
-                                <?php foreach ($service_types as $service_type): ?>
-                                    <option value="<?php echo esc_attr($service_type); ?>"
-                                            <?php selected($selected_primary, $service_type); ?>>
-                                        <?php echo esc_html($service_type); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">Select the primary category for this resource (Type-based, single selection)</p>
+                            <?php if (empty($service_area_terms)): ?>
+                                <p style="margin: 0; color: #a00;">No Service Area terms are configured.</p>
+                            <?php else: ?>
+                                <fieldset id="service-area-fieldset" style="border: 1px solid #ddd; padding: 10px; background: #f9f9f9; max-width: 640px;">
+                                    <?php $service_area_index = 0; ?>
+                                    <?php foreach ($service_area_terms as $service_area_slug => $service_area_label): ?>
+                                        <label style="display: block; margin: 5px 0;">
+                                            <input
+                                                type="radio"
+                                                name="service_area"
+                                                value="<?php echo esc_attr($service_area_slug); ?>"
+                                                <?php checked($selected_service_area, $service_area_slug); ?>
+                                                <?php echo $service_area_index === 0 ? 'required' : ''; ?>>
+                                            <?php echo esc_html($service_area_label); ?>
+                                        </label>
+                                        <?php $service_area_index++; ?>
+                                    <?php endforeach; ?>
+                                </fieldset>
+                                <p class="description">Required to save. Service Area is controlled by admin-defined canonical terms.</p>
+                            <?php endif; ?>
                         </td>
                     </tr>
 
                     <tr>
-                        <th scope="row"><label>Needs Met</label></th>
+                        <th scope="row"><label for="services_offered_filter">Services Offered</label></th>
                         <td>
-                            <?php
-                            $need_options = get_option('resource_need_options', array());
-                            $selected_secondary = array();
-                            if ($has_data && !empty($resource['secondary_service_type'])) {
-                                $selected_secondary = array_map('trim', explode(',', $resource['secondary_service_type']));
-                            }
-                            ?>
-                            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f9f9f9;">
-                                <?php if (empty($need_options)): ?>
-                                    <p>No need met options available. Please add need met options in Settings.</p>
-                                <?php else: ?>
-                                    <?php foreach ($need_options as $need_option): ?>
-                                        <label style="display: block; margin: 5px 0; font-size: 15px;">
-                                            <input type="checkbox" name="secondary_service_type[]"
-                                                   value="<?php echo esc_attr($need_option); ?>"
-                                                   <?php checked(in_array($need_option, $selected_secondary)); ?>>
-                                            <?php echo esc_html($need_option); ?>
+                            <?php if (empty($services_offered_terms)): ?>
+                                <p style="margin: 0; color: #a00;">No Services Offered terms are configured.</p>
+                            <?php else: ?>
+                                <input
+                                    type="text"
+                                    id="services_offered_filter"
+                                    placeholder="Filter services offered..."
+                                    style="width: 100%; max-width: 520px; margin-bottom: 8px;">
+                                <div id="services_offered_list" style="max-height: 260px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f9f9f9; max-width: 640px;">
+                                    <?php foreach ($services_offered_terms as $service_offered_slug => $service_offered_label): ?>
+                                        <label class="services-offered-option" data-filter-text="<?php echo esc_attr(strtolower($service_offered_label)); ?>" style="display: block; margin: 5px 0;">
+                                            <input
+                                                type="checkbox"
+                                                name="services_offered[]"
+                                                value="<?php echo esc_attr($service_offered_slug); ?>"
+                                                <?php checked(in_array($service_offered_slug, $selected_services_offered, true)); ?>>
+                                            <?php echo esc_html($service_offered_label); ?>
                                         </label>
                                     <?php endforeach; ?>
-                                <?php endif; ?>
-                            </div>
-                            <p class="description">Select needs met by this resource (Need-based, multiple selection allowed)</p>
+                                </div>
+                                <p id="services-offered-warning" class="description" style="display: none; color: #b45309; font-weight: 600;">
+                                    Heads up: selecting more than 5 services may broaden results significantly.
+                                </p>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row"><label for="provider_type_toggle">System Type (rare)</label></th>
+                        <td>
+                            <?php if (empty($provider_type_terms)): ?>
+                                <p style="margin: 0; color: #a00;">No Provider Type terms are configured.</p>
+                            <?php else: ?>
+                                <button type="button" id="provider_type_toggle" class="button">System Type (rare)</button>
+                                <div id="provider_type_panel" style="display: none; margin-top: 10px; border: 1px solid #ddd; padding: 10px; background: #f9f9f9; max-width: 640px;">
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="radio" name="provider_type" value="" <?php checked($selected_provider_type, ''); ?>>
+                                        Not Set
+                                    </label>
+                                    <?php foreach ($provider_type_terms as $provider_type_slug => $provider_type_label): ?>
+                                        <label style="display: block; margin: 5px 0;">
+                                            <input type="radio" name="provider_type" value="<?php echo esc_attr($provider_type_slug); ?>" <?php checked($selected_provider_type, $provider_type_slug); ?>>
+                                            <?php echo esc_html($provider_type_label); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                                <p class="description">Optional. Intended for infrequent system-level classification.</p>
+                            <?php endif; ?>
                         </td>
                     </tr>
 
@@ -1854,11 +2177,7 @@ class Monday_Resources_Admin {
                     <tr>
                         <th scope="row"><label for="how_to_apply">How to Apply</label></th>
                         <td>
-                            <textarea name="how_to_apply" id="how_to_apply" class="large-text" rows="5"
-                                      placeholder="Call to schedule an appointment&#10;Walk-in hours: Monday-Friday 9am-5pm&#10;Complete online application at website&#10;Submit required documents in person"><?php echo $has_data ? esc_textarea($resource['how_to_apply']) : ''; ?></textarea>
-                            <p class="description">
-                                <strong>Enter one step per line</strong> - Each line will display as a bullet point.
-                            </p>
+                            <textarea name="how_to_apply" id="how_to_apply" class="large-text" rows="3"><?php echo $has_data ? esc_textarea($resource['how_to_apply']) : ''; ?></textarea>
                         </td>
                     </tr>
 
@@ -2464,6 +2783,52 @@ class Monday_Resources_Admin {
                 <hr style="margin: 40px 0;">
                 <?php Verification_System::render_verification_checklist_ui($resource['id']); ?>
             <?php endif; ?>
+
+            <script>
+                (function() {
+                    var filterInput = document.getElementById('services_offered_filter');
+                    var options = document.querySelectorAll('.services-offered-option');
+                    var warning = document.getElementById('services-offered-warning');
+                    var providerToggle = document.getElementById('provider_type_toggle');
+                    var providerPanel = document.getElementById('provider_type_panel');
+
+                    function updateServicesWarning() {
+                        if (!warning) {
+                            return;
+                        }
+                        var selectedCount = document.querySelectorAll('input[name="services_offered[]"]:checked').length;
+                        warning.style.display = selectedCount > 5 ? 'block' : 'none';
+                    }
+
+                    function filterServicesOffered() {
+                        if (!filterInput || !options.length) {
+                            return;
+                        }
+
+                        var query = filterInput.value.toLowerCase().trim();
+                        options.forEach(function(option) {
+                            var text = (option.getAttribute('data-filter-text') || '').toLowerCase();
+                            option.style.display = query === '' || text.indexOf(query) !== -1 ? 'block' : 'none';
+                        });
+                    }
+
+                    if (filterInput) {
+                        filterInput.addEventListener('input', filterServicesOffered);
+                    }
+
+                    document.querySelectorAll('input[name="services_offered[]"]').forEach(function(input) {
+                        input.addEventListener('change', updateServicesWarning);
+                    });
+
+                    if (providerToggle && providerPanel) {
+                        providerToggle.addEventListener('click', function() {
+                            providerPanel.style.display = providerPanel.style.display === 'none' || providerPanel.style.display === '' ? 'block' : 'none';
+                        });
+                    }
+
+                    updateServicesWarning();
+                })();
+            </script>
         </div>
         <?php
     }
@@ -2472,7 +2837,7 @@ class Monday_Resources_Admin {
      * Save resource (create or update)
      */
     public function save_resource() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -2488,53 +2853,91 @@ class Monday_Resources_Admin {
         // Handle geography array (checkboxes - conferences)
         $geography = '';
         if (isset($_POST['geography']) && is_array($_POST['geography'])) {
-            $geography = implode(', ', array_map('sanitize_text_field', $_POST['geography']));
+            $geography = implode(', ', array_map('sanitize_text_field', wp_unslash($_POST['geography'])));
         }
 
         // Handle counties_served array (checkboxes)
         $counties_served = '';
         if (isset($_POST['counties_served']) && is_array($_POST['counties_served'])) {
-            $counties_served = implode(', ', array_map('sanitize_text_field', $_POST['counties_served']));
-        }
-
-        // Handle secondary_service_type array (checkboxes)
-        $secondary_service_type = '';
-        if (isset($_POST['secondary_service_type']) && is_array($_POST['secondary_service_type'])) {
-            $secondary_service_type = implode(', ', array_map('sanitize_text_field', $_POST['secondary_service_type']));
+            $counties_served = implode(', ', array_map('sanitize_text_field', wp_unslash($_POST['counties_served'])));
         }
 
         // Handle target_population array (checkboxes)
         $target_population = '';
         if (isset($_POST['target_population']) && is_array($_POST['target_population'])) {
-            $target_population = implode(', ', array_map('sanitize_text_field', $_POST['target_population']));
+            $target_population = implode(', ', array_map('sanitize_text_field', wp_unslash($_POST['target_population'])));
         }
 
-        // Use wp_unslash() to remove WordPress's automatic slashing before sanitizing
+        $service_area = '';
+        if (isset($_POST['service_area']) && class_exists('Resource_Taxonomy')) {
+            $service_area = Resource_Taxonomy::normalize_service_area_slug(wp_unslash($_POST['service_area']));
+        }
+
+        if ($service_area === '') {
+            $redirect_args = array('page' => $resource_id ? 'monday-resources-edit' : 'monday-resources-add', 'error' => 'missing_service_area');
+            if ($resource_id) {
+                $redirect_args['id'] = $resource_id;
+            }
+            wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+
+        $services_offered_slugs = array();
+        if (isset($_POST['services_offered']) && class_exists('Resource_Taxonomy')) {
+            $raw_services_offered = is_array($_POST['services_offered']) ? wp_unslash($_POST['services_offered']) : array();
+            $services_offered_slugs = Resource_Taxonomy::normalize_services_offered_slugs($raw_services_offered);
+        }
+
+        $services_offered_pipe = class_exists('Resource_Taxonomy')
+            ? Resource_Taxonomy::to_pipe_slug_string($services_offered_slugs)
+            : '';
+
+        $provider_type = '';
+        if (isset($_POST['provider_type']) && class_exists('Resource_Taxonomy')) {
+            $provider_type = Resource_Taxonomy::normalize_provider_type_slug(wp_unslash($_POST['provider_type']));
+        }
+
+        // Keep legacy columns synchronized during rollback window.
+        $service_area_terms = $this->get_service_area_terms();
+        $services_offered_terms = $this->get_services_offered_terms();
+        $legacy_primary_service_type = isset($service_area_terms[$service_area]) ? $service_area_terms[$service_area] : '';
+
+        $legacy_secondary_labels = array();
+        foreach ($services_offered_slugs as $service_slug) {
+            if (isset($services_offered_terms[$service_slug])) {
+                $legacy_secondary_labels[] = $services_offered_terms[$service_slug];
+            }
+        }
+        $legacy_secondary_service_type = implode(', ', $legacy_secondary_labels);
+
         $data = array(
-            'resource_name' => sanitize_text_field(wp_unslash($_POST['resource_name'])),
-            'organization' => sanitize_text_field(wp_unslash($_POST['organization'])),
+            'resource_name' => isset($_POST['resource_name']) ? sanitize_text_field(wp_unslash($_POST['resource_name'])) : '',
+            'organization' => isset($_POST['organization']) ? sanitize_text_field(wp_unslash($_POST['organization'])) : '',
             'is_svdp' => isset($_POST['is_svdp']) ? 1 : 0,
-            'primary_service_type' => sanitize_text_field(wp_unslash($_POST['primary_service_type'])),
-            'secondary_service_type' => $secondary_service_type,
-            'phone' => sanitize_text_field(wp_unslash($_POST['phone'])),
-            'phone_extension' => sanitize_text_field(wp_unslash($_POST['phone_extension'])),
-            'alternate_phone' => sanitize_text_field(wp_unslash($_POST['alternate_phone'])),
-            'email' => sanitize_email($_POST['email']),
-            'website' => esc_url_raw($_POST['website']),
-            'physical_address' => sanitize_textarea_field(wp_unslash($_POST['physical_address'])),
-            'what_they_provide' => sanitize_textarea_field(wp_unslash($_POST['what_they_provide'])),
-            'how_to_apply' => sanitize_textarea_field(wp_unslash($_POST['how_to_apply'])),
-            'documents_required' => sanitize_textarea_field(wp_unslash($_POST['documents_required'])),
-            'hours_of_operation' => sanitize_text_field(wp_unslash($_POST['hours_of_operation'])),
+            'primary_service_type' => $legacy_primary_service_type,
+            'secondary_service_type' => $legacy_secondary_service_type,
+            'service_area' => $service_area,
+            'services_offered' => $services_offered_pipe,
+            'provider_type' => $provider_type,
+            'phone' => isset($_POST['phone']) ? sanitize_text_field(wp_unslash($_POST['phone'])) : '',
+            'phone_extension' => isset($_POST['phone_extension']) ? sanitize_text_field(wp_unslash($_POST['phone_extension'])) : '',
+            'alternate_phone' => isset($_POST['alternate_phone']) ? sanitize_text_field(wp_unslash($_POST['alternate_phone'])) : '',
+            'email' => isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '',
+            'website' => isset($_POST['website']) ? esc_url_raw(wp_unslash($_POST['website'])) : '',
+            'physical_address' => isset($_POST['physical_address']) ? sanitize_textarea_field(wp_unslash($_POST['physical_address'])) : '',
+            'what_they_provide' => isset($_POST['what_they_provide']) ? sanitize_textarea_field(wp_unslash($_POST['what_they_provide'])) : '',
+            'how_to_apply' => isset($_POST['how_to_apply']) ? sanitize_textarea_field(wp_unslash($_POST['how_to_apply'])) : '',
+            'documents_required' => isset($_POST['documents_required']) ? sanitize_textarea_field(wp_unslash($_POST['documents_required'])) : '',
+            'hours_of_operation' => isset($_POST['hours_of_operation']) ? sanitize_text_field(wp_unslash($_POST['hours_of_operation'])) : '',
             'target_population' => $target_population,
-            'income_requirements' => sanitize_text_field(wp_unslash($_POST['income_requirements'])),
-            'residency_requirements' => sanitize_textarea_field(wp_unslash($_POST['residency_requirements'])),
-            'other_eligibility' => sanitize_textarea_field(wp_unslash($_POST['other_eligibility'])),
-            'eligibility_notes' => sanitize_textarea_field(wp_unslash($_POST['eligibility_notes'])),
+            'income_requirements' => isset($_POST['income_requirements']) ? sanitize_text_field(wp_unslash($_POST['income_requirements'])) : '',
+            'residency_requirements' => isset($_POST['residency_requirements']) ? sanitize_textarea_field(wp_unslash($_POST['residency_requirements'])) : '',
+            'other_eligibility' => isset($_POST['other_eligibility']) ? sanitize_textarea_field(wp_unslash($_POST['other_eligibility'])) : '',
+            'eligibility_notes' => isset($_POST['eligibility_notes']) ? sanitize_textarea_field(wp_unslash($_POST['eligibility_notes'])) : '',
             'geography' => $geography,
             'counties_served' => $counties_served,
-            'wait_time' => sanitize_text_field(wp_unslash($_POST['wait_time'])),
-            'notes_and_tips' => sanitize_textarea_field(wp_unslash($_POST['notes_and_tips']))
+            'wait_time' => isset($_POST['wait_time']) ? sanitize_text_field(wp_unslash($_POST['wait_time'])) : '',
+            'notes_and_tips' => isset($_POST['notes_and_tips']) ? sanitize_textarea_field(wp_unslash($_POST['notes_and_tips'])) : ''
         );
 
         // Detect which button was clicked
@@ -2703,7 +3106,7 @@ class Monday_Resources_Admin {
         check_ajax_referer('export_resources');
 
         // Check permissions
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -2724,8 +3127,9 @@ class Monday_Resources_Admin {
             'id' => 'ID',
             'resource_name' => 'Resource Name',
             'organization' => 'Organization',
-            'primary_service_type' => 'Resource Type',
-            'secondary_service_type' => 'Needs Met',
+            'service_area' => 'Service Area',
+            'services_offered' => 'Services Offered',
+            'provider_type' => 'Provider Type',
             'phone' => 'Phone',
             'email' => 'Email',
             'website' => 'Website',
@@ -2738,7 +3142,7 @@ class Monday_Resources_Admin {
             'geography' => 'Geography',
             'office_hours' => 'Office Hours',
             'service_hours' => 'Service Hours',
-            'last_verified' => 'Last Verified',
+            'last_verified_date' => 'Last Verified',
             'verification_status' => 'Verification Status'
         );
 
@@ -2780,7 +3184,9 @@ class Monday_Resources_Admin {
 
             if (isset($_GET['search']) && !empty($_GET['search'])) {
                 $search = '%' . $wpdb->esc_like(sanitize_text_field($_GET['search'])) . '%';
-                $where[] = '(resource_name LIKE %s OR organization LIKE %s OR primary_service_type LIKE %s)';
+                $where[] = '(resource_name LIKE %s OR organization LIKE %s OR service_area LIKE %s OR services_offered LIKE %s OR provider_type LIKE %s)';
+                $query_params[] = $search;
+                $query_params[] = $search;
                 $query_params[] = $search;
                 $query_params[] = $search;
                 $query_params[] = $search;
@@ -2791,9 +3197,21 @@ class Monday_Resources_Admin {
                 $query_params[] = sanitize_text_field($_GET['status']);
             }
 
-            if (isset($_GET['service']) && !empty($_GET['service'])) {
-                $where[] = 'primary_service_type = %s';
-                $query_params[] = sanitize_text_field($_GET['service']);
+            $service_area_request = isset($_GET['service_area']) ? sanitize_text_field($_GET['service_area']) : '';
+            if ($service_area_request === '' && isset($_GET['service'])) {
+                $service_area_request = sanitize_text_field($_GET['service']);
+            }
+
+            if ($service_area_request !== '') {
+                $service_area_slug = $service_area_request;
+                if (class_exists('Resource_Taxonomy')) {
+                    $service_area_slug = Resource_Taxonomy::normalize_service_area_slug($service_area_slug);
+                }
+
+                if ($service_area_slug !== '') {
+                    $where[] = 'service_area = %s';
+                    $query_params[] = $service_area_slug;
+                }
             }
 
             $sql = "SELECT * FROM $resources_table WHERE " . implode(' AND ', $where) . " ORDER BY resource_name ASC";

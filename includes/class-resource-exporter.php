@@ -25,7 +25,9 @@ class Resource_Exporter {
             $fields = array(
                 'id' => 'ID',
                 'resource_name' => 'Resource Name',
-                'primary_service_type' => 'Primary Service',
+                'service_area' => 'Service Area',
+                'services_offered' => 'Services Offered',
+                'provider_type' => 'Provider Type',
                 'phone' => 'Phone',
                 'email' => 'Email',
                 'website' => 'Website',
@@ -35,7 +37,7 @@ class Resource_Exporter {
                 'income_requirements' => 'Income Requirements',
                 'office_hours' => 'Office Hours',
                 'service_hours' => 'Service Hours',
-                'last_verified' => 'Last Verified'
+                'last_verified_date' => 'Last Verified'
             );
         }
 
@@ -50,14 +52,7 @@ class Resource_Exporter {
             $row = array();
             foreach (array_keys($fields) as $field) {
                 if (isset($resource[$field])) {
-                    // Format complex fields
-                    if ($field === 'office_hours' || $field === 'service_hours') {
-                        $row[] = self::format_hours_for_export($resource[$field]);
-                    } elseif (is_array($resource[$field])) {
-                        $row[] = implode(', ', $resource[$field]);
-                    } else {
-                        $row[] = $resource[$field];
-                    }
+                    $row[] = self::format_export_field_value($field, $resource[$field]);
                 } else {
                     $row[] = '';
                 }
@@ -95,7 +90,9 @@ class Resource_Exporter {
             $fields = array(
                 'id' => 'ID',
                 'resource_name' => 'Resource Name',
-                'primary_service_type' => 'Primary Service',
+                'service_area' => 'Service Area',
+                'services_offered' => 'Services Offered',
+                'provider_type' => 'Provider Type',
                 'phone' => 'Phone',
                 'email' => 'Email',
                 'website' => 'Website',
@@ -105,7 +102,7 @@ class Resource_Exporter {
                 'income_requirements' => 'Income Requirements',
                 'office_hours' => 'Office Hours',
                 'service_hours' => 'Service Hours',
-                'last_verified' => 'Last Verified'
+                'last_verified_date' => 'Last Verified'
             );
         }
 
@@ -134,13 +131,7 @@ class Resource_Exporter {
                 $col = 1;
                 foreach (array_keys($fields) as $field) {
                     if (isset($resource[$field])) {
-                        if ($field === 'office_hours' || $field === 'service_hours') {
-                            $value = self::format_hours_for_export($resource[$field]);
-                        } elseif (is_array($resource[$field])) {
-                            $value = implode(', ', $resource[$field]);
-                        } else {
-                            $value = $resource[$field];
-                        }
+                        $value = self::format_export_field_value($field, $resource[$field]);
                         $sheet->setCellValueByColumnAndRow($col, $row, $value);
                     }
                     $col++;
@@ -204,9 +195,9 @@ class Resource_Exporter {
         if ($fields === null) {
             $fields = array(
                 'resource_name' => 'Resource Name',
-                'primary_service_type' => 'Service Type',
+                'service_area' => 'Service Area',
                 'phone' => 'Phone',
-                'address' => 'Address',
+                'physical_address' => 'Address',
                 'service_hours' => 'Hours'
             );
         }
@@ -238,10 +229,10 @@ class Resource_Exporter {
             // Calculate column widths
             $pageWidth = $pdf->getPageWidth() - 30; // 30 = margins
             $widths = array(
-                'name' => $pageWidth * 0.3,
-                'primary_service_type' => $pageWidth * 0.2,
+                'resource_name' => $pageWidth * 0.3,
+                'service_area' => $pageWidth * 0.2,
                 'phone' => $pageWidth * 0.15,
-                'address' => $pageWidth * 0.2,
+                'physical_address' => $pageWidth * 0.2,
                 'service_hours' => $pageWidth * 0.15
             );
 
@@ -258,13 +249,7 @@ class Resource_Exporter {
                 foreach (array_keys($fields) as $field) {
                     $value = '';
                     if (isset($resource[$field])) {
-                        if ($field === 'service_hours' || $field === 'office_hours') {
-                            $value = self::format_hours_for_export($resource[$field], true);
-                        } elseif (is_array($resource[$field])) {
-                            $value = implode(', ', $resource[$field]);
-                        } else {
-                            $value = $resource[$field];
-                        }
+                        $value = self::format_export_field_value($field, $resource[$field], true);
                     }
 
                     $pdf->MultiCell($widths[$field] ?? 30, $maxHeight, $value, 1, 'L', false, 0);
@@ -278,6 +263,44 @@ class Resource_Exporter {
         } catch (Exception $e) {
             return new WP_Error('export_failed', $e->getMessage());
         }
+    }
+
+    /**
+     * Format field values for export output.
+     *
+     * @param string $field
+     * @param mixed $value
+     * @param bool $compact
+     * @return string
+     */
+    private static function format_export_field_value($field, $value, $compact = false) {
+        if ($field === 'office_hours' || $field === 'service_hours') {
+            return self::format_hours_for_export($value, $compact);
+        }
+
+        if ($field === 'service_area' && class_exists('Resource_Taxonomy')) {
+            $label = Resource_Taxonomy::get_service_area_label((string) $value);
+            return $label !== '' ? $label : (string) $value;
+        }
+
+        if ($field === 'provider_type' && class_exists('Resource_Taxonomy')) {
+            $label = Resource_Taxonomy::get_provider_type_label((string) $value);
+            return $label !== '' ? $label : (string) $value;
+        }
+
+        if ($field === 'services_offered' && class_exists('Resource_Taxonomy')) {
+            $labels = Resource_Taxonomy::get_services_offered_labels_from_pipe((string) $value);
+            if (!empty($labels)) {
+                return implode(', ', $labels);
+            }
+            return (string) $value;
+        }
+
+        if (is_array($value)) {
+            return implode(', ', $value);
+        }
+
+        return (string) $value;
     }
 
     /**

@@ -72,9 +72,37 @@ $has_resources = !empty($resources);
                         </div>
 
                         <div class="resource-card-body">
-                            <?php if (!empty($resource['primary_service_type'])): ?>
+                            <?php
+                            $resource_service_area = '';
+                            $resource_services_offered = array();
+                            $resource_provider_type = '';
+
+                            if (class_exists('Resource_Taxonomy')) {
+                                $resource_service_area = Resource_Taxonomy::get_service_area_label(isset($resource['service_area']) ? $resource['service_area'] : '');
+                                $resource_services_offered = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($resource['services_offered']) ? $resource['services_offered'] : '');
+                                $resource_provider_type = Resource_Taxonomy::get_provider_type_label(isset($resource['provider_type']) ? $resource['provider_type'] : '');
+                            }
+
+                            if ($resource_service_area === '' && !empty($resource['primary_service_type'])) {
+                                $resource_service_area = $resource['primary_service_type'];
+                            }
+                            ?>
+
+                            <?php if ($resource_service_area !== ''): ?>
                                 <div class="resource-meta">
-                                    <strong>Service Type:</strong> <?php echo esc_html($resource['primary_service_type']); ?>
+                                    <strong>Service Area:</strong> <?php echo esc_html($resource_service_area); ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if (!empty($resource_services_offered)): ?>
+                                <div class="resource-meta">
+                                    <strong>Services Offered:</strong> <?php echo esc_html(implode(', ', $resource_services_offered)); ?>
+                                </div>
+                            <?php endif; ?>
+
+                            <?php if ($resource_provider_type !== ''): ?>
+                                <div class="resource-meta">
+                                    <strong>System Type:</strong> <?php echo esc_html($resource_provider_type); ?>
                                 </div>
                             <?php endif; ?>
 

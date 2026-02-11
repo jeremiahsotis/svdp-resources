@@ -34,7 +34,6 @@ class Questionnaire_Admin {
         add_action('wp_ajax_delete_outcome', array($this, 'ajax_delete_outcome'));
         add_action('wp_ajax_reorder_questions', array($this, 'ajax_reorder_questions'));
         add_action('wp_ajax_reorder_answer_options', array($this, 'ajax_reorder_answer_options'));
-        add_action('wp_ajax_search_resources_for_outcome', array($this, 'ajax_search_resources'));
     }
 
     /**
@@ -288,8 +287,8 @@ class Questionnaire_Admin {
             wp_die(__('Questionnaire not found.'));
         }
 
-        // Get all questions for this questionnaire with answer options (batch query - eliminates N+1 problem)
-        $questions = Question_Manager::get_questions_with_options($questionnaire_id);
+        // Get all questions for this questionnaire
+        $questions = Question_Manager::get_questions_for_questionnaire($questionnaire_id);
 
         // Get all outcomes for this questionnaire
         $outcomes = Outcome_Manager::get_outcomes_for_questionnaire($questionnaire_id);
@@ -773,13 +772,16 @@ class Questionnaire_Admin {
         // Check nonce
         check_admin_referer('save_outcome_' . $outcome_id);
 
+        $resource_filter_type = isset($_POST['resource_filter_type']) ? sanitize_text_field(wp_unslash($_POST['resource_filter_type'])) : 'none';
+        $resource_filter_data = $this->build_sanitized_outcome_filter_data($resource_filter_type);
+
         // Sanitize outcome data
         $data = array(
             'name' => sanitize_text_field(wp_unslash($_POST['name'])),
             'outcome_type' => sanitize_text_field(wp_unslash($_POST['outcome_type'])),
             'guidance_text' => isset($_POST['guidance_text']) ? wp_kses_post(wp_unslash($_POST['guidance_text'])) : '',
-            'resource_filter_type' => isset($_POST['resource_filter_type']) ? sanitize_text_field(wp_unslash($_POST['resource_filter_type'])) : 'none',
-            'resource_filter_data' => isset($_POST['resource_filter_data_json']) ? sanitize_text_field(wp_unslash($_POST['resource_filter_data_json'])) : '',
+            'resource_filter_type' => $resource_filter_type,
+            'resource_filter_data' => wp_json_encode($resource_filter_data),
         );
 
         // Update outcome
@@ -792,6 +794,173 @@ class Questionnaire_Admin {
             wp_redirect(admin_url('admin.php?page=questionnaires-builder&id=' . $questionnaire_id . '&error=Failed to save outcome'));
         }
         exit;
+    }
+
+    /**
+     * Build sanitized resource-filter payload for outcome saves.
+     *
+     * @param string $resource_filter_type
+     * @return array
+     */
+    private function build_sanitized_outcome_filter_data($resource_filter_type) {
+        $resource_filter_type = sanitize_text_field((string) $resource_filter_type);
+
+        if ($resource_filter_type === 'none') {
+            return array();
+        }
+
+        $raw_filter_data = array();
+        if (isset($_POST['resource_filter_data_json']) && $_POST['resource_filter_data_json'] !== '') {
+            $decoded = json_decode(wp_unslash($_POST['resource_filter_data_json']), true);
+            if (is_array($decoded)) {
+                $raw_filter_data = $decoded;
+            }
+        }
+
+        if ($resource_filter_type === 'specific_resources') {
+            $specific_ids = array();
+
+            if (!empty($raw_filter_data['specific_ids']) && is_array($raw_filter_data['specific_ids'])) {
+                $specific_ids = array_merge($specific_ids, $raw_filter_data['specific_ids']);
+            }
+
+            if (isset($_POST['specific_resource_ids']) && is_array($_POST['specific_resource_ids'])) {
+                $specific_ids = array_merge($specific_ids, wp_unslash($_POST['specific_resource_ids']));
+            }
+
+            $specific_ids = array_values(array_unique(array_filter(array_map('intval', $specific_ids))));
+            return array('specific_ids' => $specific_ids);
+        }
+
+        if ($resource_filter_type !== 'service_type') {
+            return $raw_filter_data;
+        }
+
+        $service_areas = array();
+        if (!empty($raw_filter_data['service_areas']) && is_array($raw_filter_data['service_areas'])) {
+            $service_areas = array_merge($service_areas, $raw_filter_data['service_areas']);
+        }
+        if (isset($_POST['service_areas']) && is_array($_POST['service_areas'])) {
+            $service_areas = array_merge($service_areas, wp_unslash($_POST['service_areas']));
+        }
+
+        $normalized_service_areas = array();
+        foreach ($service_areas as $service_area) {
+            $slug = Resource_Taxonomy::normalize_service_area_slug($service_area);
+            if ($slug !== '') {
+                $normalized_service_areas[$slug] = $slug;
+            }
+        }
+
+        $services_offered = array();
+        if (!empty($raw_filter_data['services_offered']) && is_array($raw_filter_data['services_offered'])) {
+            $services_offered = array_merge($services_offered, $raw_filter_data['services_offered']);
+        }
+        if (isset($_POST['services_offered']) && is_array($_POST['services_offered'])) {
+            $services_offered = array_merge($services_offered, wp_unslash($_POST['services_offered']));
+        }
+        if (isset($_POST['service_types']) && is_array($_POST['service_types'])) {
+            // Backward compatibility with prior field name.
+            $services_offered = array_merge($services_offered, wp_unslash($_POST['service_types']));
+        }
+        $normalized_services_offered = Resource_Taxonomy::normalize_services_offered_slugs($services_offered);
+
+        $provider_type = '';
+        if (!empty($raw_filter_data['provider_type'])) {
+            $provider_type = $raw_filter_data['provider_type'];
+        }
+        if (isset($_POST['provider_type'])) {
+            $provider_type = wp_unslash($_POST['provider_type']);
+        }
+        $normalized_provider_type = Resource_Taxonomy::normalize_provider_type_slug($provider_type);
+
+        $target_populations = array();
+        if (!empty($raw_filter_data['target_populations']) && is_array($raw_filter_data['target_populations'])) {
+            $target_populations = array_merge($target_populations, $raw_filter_data['target_populations']);
+        }
+        if (isset($_POST['target_populations']) && is_array($_POST['target_populations'])) {
+            $target_populations = array_merge($target_populations, wp_unslash($_POST['target_populations']));
+        }
+
+        $allowed_populations = get_option('resource_target_population_options', array());
+        $allowed_population_map = array();
+        foreach ((array) $allowed_populations as $population_label) {
+            $population_label = trim((string) $population_label);
+            if ($population_label !== '') {
+                $allowed_population_map[strtolower($population_label)] = $population_label;
+            }
+        }
+
+        $normalized_populations = array();
+        foreach ($target_populations as $population) {
+            $population = trim((string) $population);
+            if ($population === '') {
+                continue;
+            }
+
+            $key = strtolower($population);
+            if (isset($allowed_population_map[$key])) {
+                $normalized_populations[$allowed_population_map[$key]] = $allowed_population_map[$key];
+            }
+        }
+
+        $payload = array();
+        if (!empty($normalized_service_areas)) {
+            $payload['service_areas'] = array_values($normalized_service_areas);
+        }
+        if (!empty($normalized_services_offered)) {
+            $payload['services_offered'] = array_values($normalized_services_offered);
+        }
+        if ($normalized_provider_type !== '') {
+            $payload['provider_type'] = $normalized_provider_type;
+        }
+        if (!empty($normalized_populations)) {
+            $payload['target_populations'] = array_values($normalized_populations);
+        }
+
+        if (empty($payload)) {
+            $legacy_payload = $this->sanitize_legacy_outcome_filter_payload($raw_filter_data);
+            if (!empty($legacy_payload)) {
+                return $legacy_payload;
+            }
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Keep unmapped legacy filter data when no taxonomy filters can be produced.
+     *
+     * @param array $raw_filter_data
+     * @return array
+     */
+    private function sanitize_legacy_outcome_filter_payload($raw_filter_data) {
+        if (!is_array($raw_filter_data)) {
+            return array();
+        }
+
+        $legacy_payload = array();
+        $legacy_array_fields = array('service_types', 'resource_types', 'needs_met', 'target_audiences');
+
+        foreach ($legacy_array_fields as $legacy_field) {
+            if (empty($raw_filter_data[$legacy_field]) || !is_array($raw_filter_data[$legacy_field])) {
+                continue;
+            }
+
+            $values = array();
+            foreach ($raw_filter_data[$legacy_field] as $raw_value) {
+                $value = sanitize_text_field((string) $raw_value);
+                if ($value !== '') {
+                    $values[$value] = $value;
+                }
+            }
+
+            if (!empty($values)) {
+                $legacy_payload[$legacy_field] = array_values($values);
+            }
+        }
+
+        return $legacy_payload;
     }
 
     /**
@@ -1089,32 +1258,6 @@ class Questionnaire_Admin {
         }
 
         wp_send_json_success();
-    }
-
-    /**
-     * AJAX: Search resources for outcome linking
-     * Returns matching resources based on search term
-     */
-    public function ajax_search_resources() {
-        check_ajax_referer('questionnaire_admin_nonce', 'nonce');
-
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('Unauthorized');
-        }
-
-        $search_term = isset($_POST['search']) ? sanitize_text_field($_POST['search']) : '';
-        $limit = isset($_POST['limit']) ? intval($_POST['limit']) : 20;
-        $offset = isset($_POST['offset']) ? intval($_POST['offset']) : 0;
-
-        // Use Resources_Manager with search capability
-        $resources = Resources_Manager::search_resources($search_term, $limit, $offset);
-        $total = Resources_Manager::count_search_results($search_term);
-
-        wp_send_json_success(array(
-            'resources' => $resources,
-            'total' => $total,
-            'has_more' => ($offset + $limit) < $total
-        ));
     }
 }
 

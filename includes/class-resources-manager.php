@@ -38,384 +38,281 @@ class Resources_Manager {
      * Get all resources with optional filtering
      */
     public static function get_all_resources($filters = array()) {
+        $result = self::get_resources_paginated(
+            array_merge(
+                $filters,
+                array(
+                    'page' => 1,
+                    'per_page' => 5000
+                )
+            )
+        );
+
+        return isset($result['items']) ? $result['items'] : array();
+    }
+
+    /**
+     * Get paginated resources with total count.
+     *
+     * @param array $filters
+     * @return array{items: array, total_count: int}
+     */
+    public static function get_resources_paginated($filters = array()) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'resources';
 
+        $page = isset($filters['page']) ? max(1, (int) $filters['page']) : 1;
+        $per_page = isset($filters['per_page']) ? max(1, min(100, (int) $filters['per_page'])) : 25;
+        $offset = ($page - 1) * $per_page;
+
+        $cache_key = self::build_paged_cache_key($filters, $page, $per_page);
+        if ($page === 1) {
+            $cached = get_transient($cache_key);
+            if (is_array($cached) && isset($cached['items']) && isset($cached['total_count'])) {
+                return $cached;
+            }
+        }
+
+        $where_values = array();
+        $where_clause = self::build_where_clause($filters, $where_values);
+
+        $count_sql = "SELECT COUNT(*) FROM $table_name WHERE $where_clause";
+        $count_query = !empty($where_values) ? $wpdb->prepare($count_sql, $where_values) : $count_sql;
+        $total_count = (int) $wpdb->get_var($count_query);
+
+        if ($total_count === 0) {
+            return array('items' => array(), 'total_count' => 0);
+        }
+
+        $data_sql = "SELECT * FROM $table_name WHERE $where_clause ORDER BY is_svdp DESC, resource_name ASC LIMIT %d OFFSET %d";
+        $data_values = array_merge($where_values, array($per_page, $offset));
+        $data_query = $wpdb->prepare($data_sql, $data_values);
+        $items = $wpdb->get_results($data_query, ARRAY_A);
+
+        $result = array(
+            'items' => $items ? $items : array(),
+            'total_count' => $total_count
+        );
+
+        if ($page === 1) {
+            set_transient($cache_key, $result, MINUTE_IN_SECONDS);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Build SQL where clause for resource queries.
+     *
+     * @param array $filters
+     * @param array $where_values
+     * @return string
+     */
+    private static function build_where_clause($filters, &$where_values) {
+        global $wpdb;
         $where = array("status = 'active'");
         $where_values = array();
 
-        // Geography filter - now supports multiple values
         if (!empty($filters['geography'])) {
-            // Handle both single string and array of strings
             $geographies = is_array($filters['geography']) ? $filters['geography'] : array($filters['geography']);
-        
-            if (!empty($geographies)) {
-                $geography_conditions = array();
-                foreach ($geographies as $geo) {
-                    $geography_conditions[] = "geography LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($geo) . '%';
+            $geography_conditions = array();
+            foreach ($geographies as $geo) {
+                $geo = trim((string) $geo);
+                if ($geo === '') {
+                    continue;
                 }
-                // Use OR to match any of the geography values
+                $geography_conditions[] = "geography LIKE %s";
+                $where_values[] = '%' . $wpdb->esc_like($geo) . '%';
+            }
+            if (!empty($geography_conditions)) {
                 $where[] = '(' . implode(' OR ', $geography_conditions) . ')';
             }
         }
-    
-        // Primary type (Resource Type) filter - supports multiple values
-        if (!empty($filters['primary_type'])) {
-            // Handle both single string and array of strings
-            $primary_types = is_array($filters['primary_type']) ? $filters['primary_type'] : array($filters['primary_type']);
-        
-            if (!empty($primary_types)) {
-                $primary_conditions = array();
-                foreach ($primary_types as $type) {
-                    $primary_conditions[] = "primary_service_type LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($type) . '%';
+
+        if (!empty($filters['verification_status'])) {
+            $where[] = "verification_status = %s";
+            $where_values[] = sanitize_text_field($filters['verification_status']);
+        }
+
+        if (!empty($filters['service_area'])) {
+            $service_area_values = is_array($filters['service_area']) ? $filters['service_area'] : array($filters['service_area']);
+            $service_area_slugs = array();
+            foreach ($service_area_values as $service_area_value) {
+                $service_area_slug = Resource_Taxonomy::normalize_service_area_slug($service_area_value);
+                if ($service_area_slug !== '') {
+                    $service_area_slugs[$service_area_slug] = $service_area_slug;
                 }
-                // Use OR to match any of the primary types
-                $where[] = '(' . implode(' OR ', $primary_conditions) . ')';
+            }
+
+            if (!empty($service_area_slugs)) {
+                $service_area_conditions = array();
+                foreach (array_values($service_area_slugs) as $service_area_slug) {
+                    $service_area_conditions[] = "service_area = %s";
+                    $where_values[] = $service_area_slug;
+                }
+                $where[] = '(' . implode(' OR ', $service_area_conditions) . ')';
             }
         }
 
-        // Need Met filter - supports multiple values
-        if (!empty($filters['need_met'])) {
-            // Handle both single string and array of strings
-            $needs_met = is_array($filters['need_met']) ? $filters['need_met'] : array($filters['need_met']);
-        
-            if (!empty($needs_met)) {
-                $need_conditions = array();
-                foreach ($needs_met as $need) {
-                    $need_conditions[] = "secondary_service_type LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($need) . '%';
+        if (!empty($filters['provider_type'])) {
+            $provider_values = is_array($filters['provider_type']) ? $filters['provider_type'] : array($filters['provider_type']);
+            $provider_slugs = array();
+            foreach ($provider_values as $provider_value) {
+                $provider_slug = Resource_Taxonomy::normalize_provider_type_slug($provider_value);
+                if ($provider_slug !== '') {
+                    $provider_slugs[$provider_slug] = $provider_slug;
                 }
-                // Use OR to match any of the needs met
-                $where[] = '(' . implode(' OR ', $need_conditions) . ')';
+            }
+
+            if (!empty($provider_slugs)) {
+                $provider_conditions = array();
+                foreach (array_values($provider_slugs) as $provider_slug) {
+                    $provider_conditions[] = "provider_type = %s";
+                    $where_values[] = $provider_slug;
+                }
+                $where[] = '(' . implode(' OR ', $provider_conditions) . ')';
             }
         }
 
-        // Service type filter - backward compatibility (searches both primary and secondary)
+        if (!empty($filters['services_offered'])) {
+            $services_slugs = Resource_Taxonomy::normalize_services_offered_slugs($filters['services_offered']);
+            if (!empty($services_slugs)) {
+                $services_conditions = array();
+                foreach ($services_slugs as $slug) {
+                    $services_conditions[] = "services_offered LIKE %s";
+                    $where_values[] = '%|' . $wpdb->esc_like($slug) . '|%';
+                }
+                $where[] = '(' . implode(' OR ', $services_conditions) . ')';
+            }
+        }
+
+        if (!empty($filters['population'])) {
+            $population_filters = Resource_Taxonomy::normalize_population_filters($filters['population']);
+            if (!empty($population_filters)) {
+                $population_conditions = array();
+                foreach ($population_filters as $population) {
+                    $population_conditions[] = 'LOWER(target_population) LIKE %s';
+                    $where_values[] = '%' . $wpdb->esc_like($population) . '%';
+                }
+                $where[] = '(' . implode(' OR ', $population_conditions) . ')';
+            }
+        }
+
+        // Backward-compatible shortcode param behavior.
         if (!empty($filters['service_type'])) {
-            // Handle both single string and array of strings
             $service_types = is_array($filters['service_type']) ? $filters['service_type'] : array($filters['service_type']);
-        
-            if (!empty($service_types)) {
-                $service_conditions = array();
-                foreach ($service_types as $service) {
-                    $service_conditions[] = "(primary_service_type LIKE %s OR secondary_service_type LIKE %s)";
-                    $where_values[] = '%' . $wpdb->esc_like($service) . '%';
-                    $where_values[] = '%' . $wpdb->esc_like($service) . '%';
+            $service_conditions = array();
+
+            foreach ($service_types as $service) {
+                $service = trim((string) $service);
+                if ($service === '') {
+                    continue;
                 }
-                // Use OR to match any of the service types
+                $service_slug = Resource_Taxonomy::normalize_slug($service);
+                $service_conditions[] = "(service_area = %s OR services_offered LIKE %s OR primary_service_type LIKE %s OR secondary_service_type LIKE %s)";
+                $where_values[] = $service_slug;
+                $where_values[] = '%|' . $wpdb->esc_like($service_slug) . '|%';
+                $where_values[] = '%' . $wpdb->esc_like($service) . '%';
+                $where_values[] = '%' . $wpdb->esc_like($service) . '%';
+            }
+
+            if (!empty($service_conditions)) {
                 $where[] = '(' . implode(' OR ', $service_conditions) . ')';
             }
         }
 
-        // Verification status filter
-        if (!empty($filters['verification_status'])) {
-            $where[] = "verification_status = %s";
-            $where_values[] = $filters['verification_status'];
+        if (!empty($filters['q'])) {
+            $q = trim((string) $filters['q']);
+            if ($q !== '') {
+                $like = '%' . $wpdb->esc_like($q) . '%';
+                $search_fields = array(
+                    'resource_name',
+                    'organization',
+                    'service_area',
+                    'services_offered',
+                    'provider_type',
+                    'primary_service_type',
+                    'secondary_service_type',
+                    'target_population',
+                    'what_they_provide',
+                    'how_to_apply',
+                    'notes_and_tips'
+                );
+                $search_conditions = array();
+                foreach ($search_fields as $field) {
+                    $search_conditions[] = "$field LIKE %s";
+                    $where_values[] = $like;
+                }
+                $where[] = '(' . implode(' OR ', $search_conditions) . ')';
+            }
         }
 
-        // Hours filter - find resources open at specific day/time
         if (!empty($filters['open_at'])) {
             $day = isset($filters['open_at']['day']) ? intval($filters['open_at']['day']) : null;
             $time = isset($filters['open_at']['time']) ? $filters['open_at']['time'] : null;
             $hour_type = isset($filters['open_at']['type']) ? $filters['open_at']['type'] : 'service';
 
             if ($day !== null && $time !== null) {
-                // Get resource IDs that are open at this time
                 $open_resource_ids = Resource_Hours_Manager::find_open_resources($day, $time, $hour_type, $filters);
-
-                if (!empty($open_resource_ids)) {
+                if (empty($open_resource_ids)) {
+                    $where[] = '1 = 0';
+                } else {
                     $ids_placeholder = implode(',', array_fill(0, count($open_resource_ids), '%d'));
                     $where[] = "id IN ($ids_placeholder)";
-                    $where_values = array_merge($where_values, $open_resource_ids);
-                } else {
-                    // No resources open at this time - return empty
-                    return array();
+                    $where_values = array_merge($where_values, array_map('intval', $open_resource_ids));
                 }
             }
         }
 
-        // Build the query
-        $where_clause = implode(' AND ', $where);
-        $query = "SELECT * FROM $table_name WHERE $where_clause ORDER BY is_svdp DESC, primary_service_type ASC, resource_name ASC";
-
-        if (!empty($where_values)) {
-            $query = $wpdb->prepare($query, $where_values);
-        }
-
-        $resources = $wpdb->get_results($query, ARRAY_A);
-
-        return $resources ? $resources : array();
+        return implode(' AND ', $where);
     }
 
     /**
-     * Search resources by name, organization, or service type
-     * Optimized for AJAX autocomplete - returns only needed columns
+     * Build cache key for page-1 pagination result.
      *
-     * @param string $search_term Search query
-     * @param int $limit Maximum results to return
-     * @param int $offset Offset for pagination
-     * @return array Array of matching resources
-     */
-    public static function search_resources($search_term = '', $limit = 20, $offset = 0) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'resources';
-
-        $where = array("status = 'active'");
-        $where_values = array();
-
-        if (!empty($search_term)) {
-            // Search across multiple fields
-            $search_like = '%' . $wpdb->esc_like($search_term) . '%';
-            $where[] = "(
-                resource_name LIKE %s OR
-                organization LIKE %s OR
-                primary_service_type LIKE %s OR
-                secondary_service_type LIKE %s OR
-                target_population LIKE %s
-            )";
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-        }
-
-        $where_clause = implode(' AND ', $where);
-
-        // Return only columns needed for search results display
-        $query = "SELECT id, resource_name, organization, primary_service_type,
-                  secondary_service_type, target_population
-                  FROM $table_name
-                  WHERE $where_clause
-                  ORDER BY is_svdp DESC, resource_name ASC
-                  LIMIT %d OFFSET %d";
-
-        $where_values[] = $limit;
-        $where_values[] = $offset;
-
-        $query = $wpdb->prepare($query, $where_values);
-        $resources = $wpdb->get_results($query, ARRAY_A);
-
-        return $resources ? $resources : array();
-    }
-
-    /**
-     * Count total search results (for pagination)
-     *
-     * @param string $search_term Search query
-     * @return int Total matching resources
-     */
-    public static function count_search_results($search_term = '') {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'resources';
-
-        $where = array("status = 'active'");
-        $where_values = array();
-
-        if (!empty($search_term)) {
-            $search_like = '%' . $wpdb->esc_like($search_term) . '%';
-            $where[] = "(
-                resource_name LIKE %s OR
-                organization LIKE %s OR
-                primary_service_type LIKE %s OR
-                secondary_service_type LIKE %s OR
-                target_population LIKE %s
-            )";
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-        }
-
-        $where_clause = implode(' AND ', $where);
-        $query = "SELECT COUNT(*) FROM $table_name WHERE $where_clause";
-
-        if (!empty($where_values)) {
-            $query = $wpdb->prepare($query, $where_values);
-        }
-
-        return (int) $wpdb->get_var($query);
-    }
-
-    /**
-     * Search resources with full details for referrals
-     *
-     * @param string $search_term
      * @param array $filters
-     * @param int $limit
-     * @param int $offset
-     * @return array
+     * @param int $page
+     * @param int $per_page
+     * @return string
      */
-    public static function search_resources_with_details($search_term = '', $filters = array(), $limit = 20, $offset = 0) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'resources';
+    private static function build_paged_cache_key($filters, $page, $per_page) {
+        $services_offered = isset($filters['services_offered']) ? (array) $filters['services_offered'] : array();
+        $services_offered = array_values(array_unique(array_map('strval', $services_offered)));
+        sort($services_offered);
 
-        $where = array("status = 'active'");
-        $where_values = array();
+        $population = isset($filters['population']) ? (array) $filters['population'] : array();
+        $population = array_values(array_unique(array_map('strval', $population)));
+        sort($population);
 
-        if (!empty($filters['primary_type'])) {
-            $primary_types = is_array($filters['primary_type']) ? $filters['primary_type'] : array($filters['primary_type']);
-            if (!empty($primary_types)) {
-                $conditions = array();
-                foreach ($primary_types as $type) {
-                    $conditions[] = "primary_service_type LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($type) . '%';
-                }
-                $where[] = '(' . implode(' OR ', $conditions) . ')';
-            }
-        }
+        $service_area = isset($filters['service_area']) ? (array) $filters['service_area'] : array();
+        $service_area = array_values(array_unique(array_map('strval', $service_area)));
+        sort($service_area);
 
-        if (!empty($filters['need_met'])) {
-            $needs_met = is_array($filters['need_met']) ? $filters['need_met'] : array($filters['need_met']);
-            if (!empty($needs_met)) {
-                $conditions = array();
-                foreach ($needs_met as $need) {
-                    $conditions[] = "secondary_service_type LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($need) . '%';
-                }
-                $where[] = '(' . implode(' OR ', $conditions) . ')';
-            }
-        }
+        $provider_type = isset($filters['provider_type']) ? (array) $filters['provider_type'] : array();
+        $provider_type = array_values(array_unique(array_map('strval', $provider_type)));
+        sort($provider_type);
 
-        if (!empty($filters['target_audience'])) {
-            $audiences = is_array($filters['target_audience']) ? $filters['target_audience'] : array($filters['target_audience']);
-            if (!empty($audiences)) {
-                $conditions = array();
-                foreach ($audiences as $audience) {
-                    $conditions[] = "target_population LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($audience) . '%';
-                }
-                $where[] = '(' . implode(' OR ', $conditions) . ')';
-            }
-        }
+        $service_type = isset($filters['service_type']) ? (array) $filters['service_type'] : array();
+        $service_type = array_values(array_unique(array_map('strval', $service_type)));
+        sort($service_type);
 
-        if (!empty($search_term)) {
-            $search_like = '%' . $wpdb->esc_like($search_term) . '%';
-            $where[] = "(
-                resource_name LIKE %s OR
-                organization LIKE %s OR
-                primary_service_type LIKE %s OR
-                secondary_service_type LIKE %s OR
-                target_population LIKE %s OR
-                phone LIKE %s OR
-                email LIKE %s OR
-                website LIKE %s OR
-                physical_address LIKE %s
-            )";
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-        }
+        $geography = isset($filters['geography']) ? (array) $filters['geography'] : array();
+        $geography = array_values(array_unique(array_map('strval', $geography)));
+        sort($geography);
 
-        $where_clause = implode(' AND ', $where);
-        $query = "SELECT id, resource_name, organization, primary_service_type,
-                  secondary_service_type, target_population, phone, phone_extension,
-                  email, website, physical_address, hours_of_operation
-                  FROM $table_name
-                  WHERE $where_clause
-                  ORDER BY is_svdp DESC, resource_name ASC
-                  LIMIT %d OFFSET %d";
+        $cache_filters = array(
+            'service_area' => $service_area,
+            'services_offered' => $services_offered,
+            'provider_type' => $provider_type,
+            'population' => $population,
+            'q' => isset($filters['q']) ? $filters['q'] : '',
+            'geography' => $geography,
+            'service_type' => $service_type,
+            'verification_status' => isset($filters['verification_status']) ? (string) $filters['verification_status'] : '',
+            'open_at' => isset($filters['open_at']) ? $filters['open_at'] : array()
+        );
 
-        $where_values[] = $limit;
-        $where_values[] = $offset;
-
-        $query = $wpdb->prepare($query, $where_values);
-        $resources = $wpdb->get_results($query, ARRAY_A);
-
-        return $resources ? $resources : array();
-    }
-
-    /**
-     * Count results for detailed resource search
-     *
-     * @param string $search_term
-     * @param array $filters
-     * @return int
-     */
-    public static function count_search_resources_with_details($search_term = '', $filters = array()) {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'resources';
-
-        $where = array("status = 'active'");
-        $where_values = array();
-
-        if (!empty($filters['primary_type'])) {
-            $primary_types = is_array($filters['primary_type']) ? $filters['primary_type'] : array($filters['primary_type']);
-            if (!empty($primary_types)) {
-                $conditions = array();
-                foreach ($primary_types as $type) {
-                    $conditions[] = "primary_service_type LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($type) . '%';
-                }
-                $where[] = '(' . implode(' OR ', $conditions) . ')';
-            }
-        }
-
-        if (!empty($filters['need_met'])) {
-            $needs_met = is_array($filters['need_met']) ? $filters['need_met'] : array($filters['need_met']);
-            if (!empty($needs_met)) {
-                $conditions = array();
-                foreach ($needs_met as $need) {
-                    $conditions[] = "secondary_service_type LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($need) . '%';
-                }
-                $where[] = '(' . implode(' OR ', $conditions) . ')';
-            }
-        }
-
-        if (!empty($filters['target_audience'])) {
-            $audiences = is_array($filters['target_audience']) ? $filters['target_audience'] : array($filters['target_audience']);
-            if (!empty($audiences)) {
-                $conditions = array();
-                foreach ($audiences as $audience) {
-                    $conditions[] = "target_population LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($audience) . '%';
-                }
-                $where[] = '(' . implode(' OR ', $conditions) . ')';
-            }
-        }
-
-        if (!empty($search_term)) {
-            $search_like = '%' . $wpdb->esc_like($search_term) . '%';
-            $where[] = "(
-                resource_name LIKE %s OR
-                organization LIKE %s OR
-                primary_service_type LIKE %s OR
-                secondary_service_type LIKE %s OR
-                target_population LIKE %s OR
-                phone LIKE %s OR
-                email LIKE %s OR
-                website LIKE %s OR
-                physical_address LIKE %s
-            )";
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-            $where_values[] = $search_like;
-        }
-
-        $where_clause = implode(' AND ', $where);
-        $query = "SELECT COUNT(*) FROM $table_name WHERE $where_clause";
-
-        if (!empty($where_values)) {
-            $query = $wpdb->prepare($query, $where_values);
-        }
-
-        return (int) $wpdb->get_var($query);
+        return 'svdp_res_paged_' . md5(wp_json_encode(array($cache_filters, (int) $page, (int) $per_page)));
     }
 
     /**
@@ -436,6 +333,7 @@ class Resources_Manager {
         );
 
         $data = wp_parse_args($data, $defaults);
+        $data = self::normalize_taxonomy_fields_in_data($data);
 
         // Insert the resource
         $result = $wpdb->insert($table_name, $data);
@@ -457,6 +355,7 @@ class Resources_Manager {
         // Add update metadata
         $data['updated_at'] = current_time('mysql');
         $data['updated_by'] = get_current_user_id();
+        $data = self::normalize_taxonomy_fields_in_data($data);
 
         $result = $wpdb->update(
             $table_name,
@@ -814,5 +713,42 @@ class Resources_Manager {
         }
     
         return esc_html($value);
+    }
+
+    /**
+     * Normalize taxonomy fields before write.
+     *
+     * @param array $data
+     * @return array
+     */
+    private static function normalize_taxonomy_fields_in_data($data) {
+        if (!is_array($data)) {
+            return $data;
+        }
+
+        if (array_key_exists('service_area', $data)) {
+            $data['service_area'] = Resource_Taxonomy::normalize_service_area_slug($data['service_area']);
+        }
+
+        if (array_key_exists('provider_type', $data)) {
+            $data['provider_type'] = Resource_Taxonomy::normalize_provider_type_slug($data['provider_type']);
+        }
+
+        if (array_key_exists('services_offered', $data)) {
+            if (is_array($data['services_offered'])) {
+                $slugs = Resource_Taxonomy::normalize_services_offered_slugs($data['services_offered']);
+                $data['services_offered'] = Resource_Taxonomy::to_pipe_slug_string($slugs);
+            } else {
+                $value = trim((string) $data['services_offered']);
+                if (strpos($value, '|') !== false) {
+                    $slugs = Resource_Taxonomy::normalize_services_offered_slugs(Resource_Taxonomy::parse_pipe_slugs($value));
+                } else {
+                    $slugs = Resource_Taxonomy::normalize_services_offered_slugs(array_filter(array_map('trim', preg_split('/\s*,\s*|\s*;\s*/', $value))));
+                }
+                $data['services_offered'] = Resource_Taxonomy::to_pipe_slug_string($slugs);
+            }
+        }
+
+        return $data;
     }
 }

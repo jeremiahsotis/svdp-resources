@@ -146,105 +146,6 @@
         });
 
         // ========================================
-        // ACCORDION BEHAVIOR FOR QUESTIONS AND OUTCOMES
-        // ========================================
-
-        // Toggle QUESTION details on Edit button click
-        $(document).on('click', '.edit-question-btn', function(e) {
-            e.preventDefault();
-            e.stopPropagation(); // Prevent header click from interfering
-
-            var $btn = $(this);
-            var $questionItem = $btn.closest('.question-item');
-            var $details = $questionItem.find('.question-details');
-            var isExpanded = $btn.attr('data-expanded') === 'true';
-
-            if (isExpanded) {
-                // Collapse
-                $details.slideUp(200);
-                $btn.text('Edit').attr('data-expanded', 'false');
-                $questionItem.find('.toggle-question-details')
-                    .removeClass('dashicons-arrow-up')
-                    .addClass('dashicons-arrow-down');
-            } else {
-                // Expand
-                $details.slideDown(200);
-                $btn.text('Collapse').attr('data-expanded', 'true');
-                $questionItem.find('.toggle-question-details')
-                    .removeClass('dashicons-arrow-down')
-                    .addClass('dashicons-arrow-up');
-            }
-        });
-
-        // Toggle OUTCOME details on Edit button click
-        $(document).on('click', '.edit-outcome-btn', function(e) {
-            e.preventDefault();
-            e.stopPropagation(); // Prevent header click from interfering
-
-            var $btn = $(this);
-            var $outcomeItem = $btn.closest('.outcome-item');
-            var $details = $outcomeItem.find('.outcome-details');
-            var isExpanded = $btn.attr('data-expanded') === 'true';
-
-            if (isExpanded) {
-                // Collapse
-                $details.slideUp(200);
-                $btn.text('Edit').attr('data-expanded', 'false');
-                $outcomeItem.find('.toggle-outcome-details')
-                    .removeClass('dashicons-arrow-up')
-                    .addClass('dashicons-arrow-down');
-            } else {
-                // Expand
-                $details.slideDown(200);
-                $btn.text('Collapse').attr('data-expanded', 'true');
-                $outcomeItem.find('.toggle-outcome-details')
-                    .removeClass('dashicons-arrow-down')
-                    .addClass('dashicons-arrow-up');
-            }
-        });
-
-        // Cancel button collapses form (Questions)
-        $(document).on('click', '.cancel-edit-btn', function(e) {
-            e.preventDefault();
-            $(this).closest('.question-item').find('.edit-question-btn').click();
-        });
-
-        // Cancel button collapses form (Outcomes)
-        $(document).on('click', '.cancel-edit-outcome-btn', function(e) {
-            e.preventDefault();
-            $(this).closest('.outcome-item').find('.edit-outcome-btn').click();
-        });
-
-        // Arrow icon toggle for questions
-        $(document).on('click', '.toggle-question-details', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            $(this).closest('.question-header').find('.edit-question-btn').click();
-        });
-
-        // Arrow icon toggle for outcomes
-        $(document).on('click', '.toggle-outcome-details', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            $(this).closest('.outcome-header').find('.edit-outcome-btn').click();
-        });
-
-        // Also allow clicking header area (but not buttons) to toggle
-        $(document).on('click', '.question-header', function(e) {
-            // Only toggle if clicking the header itself, not buttons
-            if (!$(e.target).is('button') && !$(e.target).closest('button').length && !$(e.target).hasClass('dashicons')) {
-                $(this).find('.edit-question-btn').click();
-            }
-        });
-
-        $(document).on('click', '.outcome-header', function(e) {
-            // Only toggle if clicking the header itself, not buttons
-            if (!$(e.target).is('button') && !$(e.target).closest('button').length && !$(e.target).hasClass('dashicons')) {
-                $(this).find('.edit-outcome-btn').click();
-            }
-        });
-
-        // ========================================
         // TAB NAVIGATION
         // ========================================
         $('.nav-tab').on('click', function(e) {
@@ -539,6 +440,43 @@
         // QUESTION MANAGEMENT
         // ========================================
 
+        // Toggle question details (expand/collapse)
+        $(document).on('click', '.question-header', function(e) {
+            // Don't toggle if clicking buttons
+            if ($(e.target).is('button') || $(e.target).closest('button').length) {
+                return;
+            }
+
+            var $details = $(this).next('.question-details');
+            var $icon = $(this).find('.toggle-question-details');
+
+            $details.slideToggle(200);
+
+            if ($icon.hasClass('dashicons-arrow-down')) {
+                $icon.removeClass('dashicons-arrow-down').addClass('dashicons-arrow-up');
+            } else {
+                $icon.removeClass('dashicons-arrow-up').addClass('dashicons-arrow-down');
+            }
+        });
+
+        // Edit question button
+        $(document).on('click', '.edit-question-btn', function(e) {
+            e.stopPropagation();
+            var $details = $(this).closest('.question-header').next('.question-details');
+            $details.slideDown(200);
+            $(this).closest('.question-header').find('.toggle-question-details')
+                .removeClass('dashicons-arrow-down').addClass('dashicons-arrow-up');
+        });
+
+        // Cancel edit button
+        $(document).on('click', '.cancel-edit-btn', function(e) {
+            e.preventDefault();
+            var $details = $(this).closest('.question-details');
+            $details.slideUp(200);
+            $details.prev('.question-header').find('.toggle-question-details')
+                .removeClass('dashicons-arrow-up').addClass('dashicons-arrow-down');
+        });
+
         // Delete question
         $(document).on('click', '.delete-question-btn', function(e) {
             e.stopPropagation();
@@ -779,6 +717,43 @@
         // OUTCOME MANAGEMENT
         // ========================================
 
+        // Toggle outcome details
+        $(document).on('click', '.outcome-header', function(e) {
+            // Don't toggle if clicking buttons
+            if ($(e.target).is('button') || $(e.target).closest('button').length) {
+                return;
+            }
+
+            var $details = $(this).next('.outcome-details');
+            var $icon = $(this).find('.toggle-outcome-details');
+
+            $details.slideToggle(200);
+
+            if ($icon.hasClass('dashicons-arrow-down')) {
+                $icon.removeClass('dashicons-arrow-down').addClass('dashicons-arrow-up');
+            } else {
+                $icon.removeClass('dashicons-arrow-up').addClass('dashicons-arrow-down');
+            }
+        });
+
+        // Edit outcome button
+        $(document).on('click', '.edit-outcome-btn', function(e) {
+            e.stopPropagation();
+            var $details = $(this).closest('.outcome-header').next('.outcome-details');
+            $details.slideDown(200);
+            $(this).closest('.outcome-header').find('.toggle-outcome-details')
+                .removeClass('dashicons-arrow-down').addClass('dashicons-arrow-up');
+        });
+
+        // Cancel edit outcome
+        $(document).on('click', '.cancel-edit-outcome-btn', function(e) {
+            e.preventDefault();
+            var $details = $(this).closest('.outcome-details');
+            $details.slideUp(200);
+            $details.prev('.outcome-header').find('.toggle-outcome-details')
+                .removeClass('dashicons-arrow-up').addClass('dashicons-arrow-down');
+        });
+
         // Delete outcome
         $(document).on('click', '.delete-outcome-btn', function(e) {
             e.stopPropagation();
@@ -905,36 +880,38 @@
             var filterData = {};
 
             if (filterType === 'service_type') {
-                // Collect Resource Types
-                var resourceTypes = [];
-                $form.find('input[name="resource_types[]"]:checked').each(function() {
-                    resourceTypes.push($(this).val());
+                var serviceAreas = [];
+                $form.find('input[name="service_areas[]"]:checked').each(function() {
+                    serviceAreas.push($(this).val());
                 });
-                if (resourceTypes.length > 0) {
-                    filterData.resource_types = resourceTypes;
+                if (serviceAreas.length > 0) {
+                    filterData.service_areas = serviceAreas;
                 }
 
-                // Collect Needs Met
-                var needsMet = [];
-                $form.find('input[name="needs_met[]"]:checked').each(function() {
-                    needsMet.push($(this).val());
+                var servicesOffered = [];
+                $form.find('input[name="services_offered[]"]:checked').each(function() {
+                    servicesOffered.push($(this).val());
                 });
-                if (needsMet.length > 0) {
-                    filterData.needs_met = needsMet;
+                if (servicesOffered.length > 0) {
+                    filterData.services_offered = servicesOffered;
                 }
 
-                // Collect Target Audiences
-                var targetAudiences = [];
-                $form.find('input[name="target_audiences[]"]:checked').each(function() {
-                    targetAudiences.push($(this).val());
+                var targetPopulations = [];
+                $form.find('input[name="target_populations[]"]:checked').each(function() {
+                    targetPopulations.push($(this).val());
                 });
-                if (targetAudiences.length > 0) {
-                    filterData.target_audiences = targetAudiences;
+                if (targetPopulations.length > 0) {
+                    filterData.target_populations = targetPopulations;
+                }
+
+                var providerType = $form.find('input[name="provider_type"]:checked').val();
+                if (providerType) {
+                    filterData.provider_type = providerType;
                 }
             } else if (filterType === 'specific_resources') {
-                // Collect selected resource IDs from hidden inputs
+                // Collect selected resource IDs
                 var resourceIds = [];
-                $form.find('input[name="specific_resource_ids[]"]').each(function() {
+                $form.find('select[name="specific_resource_ids[]"] option:selected').each(function() {
                     resourceIds.push(parseInt($(this).val()));
                 });
                 if (resourceIds.length > 0) {
@@ -1063,219 +1040,6 @@
             // so we return to the outcomes tab after the page reloads
             if ($form.hasClass('outcome-edit-form')) {
                 sessionStorage.setItem('questionnaire_active_tab', 'outcomes');
-            }
-        });
-
-        // ========================================
-        // SEARCHABLE RESOURCE SELECTION
-        // ========================================
-        // AJAX RESOURCE SEARCH FOR OUTCOMES
-        // ========================================
-
-        var searchTimeout = null;
-        var currentSearchRequest = null;
-
-        // Helper function to escape HTML
-        function escapeHtml(text) {
-            var map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
-            return text.toString().replace(/[&<>"']/g, function(m) { return map[m]; });
-        }
-
-        // Debounced AJAX search
-        $(document).on('input', '.resource-ajax-search-input', function() {
-            var $input = $(this);
-            var searchTerm = $input.val().trim();
-            var $container = $input.closest('.specific-resources-selection');
-            var $results = $container.find('.resource-search-results');
-            var $list = $results.find('.resource-search-list');
-            var $loading = $results.find('.resource-search-loading');
-            var $empty = $results.find('.resource-search-empty');
-
-            // Clear previous timeout
-            if (searchTimeout) {
-                clearTimeout(searchTimeout);
-            }
-
-            // Hide results if empty search
-            if (searchTerm.length === 0) {
-                $results.hide();
-                // Cancel pending request
-                if (currentSearchRequest) {
-                    currentSearchRequest.abort();
-                    currentSearchRequest = null;
-                }
-                return;
-            }
-
-            // Show results container
-            $results.show();
-            $loading.show();
-            $list.empty();
-            $empty.hide();
-
-            // Debounce: wait 300ms after user stops typing
-            searchTimeout = setTimeout(function() {
-                // Cancel previous request
-                if (currentSearchRequest) {
-                    currentSearchRequest.abort();
-                }
-
-                // Perform AJAX search
-                currentSearchRequest = $.ajax({
-                    url: questionnaireAdmin.ajaxUrl,
-                    type: 'POST',
-                    data: {
-                        action: 'search_resources_for_outcome',
-                        nonce: questionnaireAdmin.nonce,
-                        search: searchTerm,
-                        limit: 50,
-                        offset: 0
-                    },
-                    success: function(response) {
-                        $loading.hide();
-
-                        if (response.success && response.data.resources.length > 0) {
-                            renderSearchResults($list, response.data.resources, $container);
-                            $empty.hide();
-                        } else {
-                            $list.empty();
-                            $empty.show();
-                        }
-                        currentSearchRequest = null;
-                    },
-                    error: function(xhr) {
-                        if (xhr.statusText !== 'abort') {
-                            $loading.hide();
-                            $empty.html('<span style="color: #d63638;">Error loading results. Please try again.</span>').show();
-                        }
-                        currentSearchRequest = null;
-                    }
-                });
-            }, 300); // 300ms debounce
-        });
-
-        // Render search results
-        function renderSearchResults($list, resources, $container) {
-            $list.empty();
-
-            // Get already selected resource IDs
-            var selectedIds = [];
-            $container.find('.selected-resources-list input[name="specific_resource_ids[]"]').each(function() {
-                selectedIds.push(parseInt($(this).val()));
-            });
-
-            resources.forEach(function(resource) {
-                var isSelected = selectedIds.indexOf(resource.id) !== -1;
-                var $item = $('<div>')
-                    .addClass('resource-search-result-item')
-                    .attr('data-resource-id', resource.id)
-                    .css({
-                        padding: '12px',
-                        cursor: isSelected ? 'default' : 'pointer',
-                        borderBottom: '1px solid #e0e0e0',
-                        background: isSelected ? '#f0f0f0' : '#fff',
-                        opacity: isSelected ? '0.6' : '1',
-                        transition: 'background-color 0.2s'
-                    })
-                    .html(
-                        '<div style="font-weight: 600; color: ' + (isSelected ? '#666' : '#0073aa') + '; margin-bottom: 4px;">' +
-                            escapeHtml(resource.resource_name) +
-                            (isSelected ? ' <span style="color: #00a32a; font-size: 0.9em;">(Selected)</span>' : '') +
-                        '</div>' +
-                        (resource.organization ? '<div style="font-size: 0.9em; color: #555; margin-bottom: 3px;">' + escapeHtml(resource.organization) + '</div>' : '') +
-                        '<div style="font-size: 0.85em; color: #666;">' + escapeHtml(resource.primary_service_type || '') + '</div>'
-                    );
-
-                if (!isSelected) {
-                    $item.hover(
-                        function() { $(this).css('background', '#f5f5f5'); },
-                        function() { $(this).css('background', '#fff'); }
-                    );
-
-                    $item.on('click', function() {
-                        addSelectedResource(resource, $container);
-                        $(this).css({background: '#f0f0f0', opacity: '0.6', cursor: 'default'})
-                              .find('div:first')
-                              .append(' <span style="color: #00a32a; font-size: 0.9em;">(Selected)</span>');
-                    });
-                }
-
-                $list.append($item);
-            });
-        }
-
-        // Add resource to selected list
-        function addSelectedResource(resource, $container) {
-            var $selectedList = $container.find('.selected-resources-list');
-            var $count = $container.find('.selected-count');
-
-            // Remove "no resources" message if exists
-            $selectedList.find('p').remove();
-
-            // Create selected item
-            var $item = $('<div>')
-                .addClass('selected-resource-item')
-                .attr('data-resource-id', resource.id)
-                .css({
-                    padding: '10px',
-                    marginBottom: '8px',
-                    border: '1px solid #e0e0e0',
-                    borderRadius: '3px',
-                    background: '#f9f9f9',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                })
-                .html(
-                    '<div style="flex: 1;">' +
-                        '<div style="font-weight: 600; color: #0073aa;">' + escapeHtml(resource.resource_name) + '</div>' +
-                        (resource.organization ? '<div style="font-size: 0.9em; color: #555;">' + escapeHtml(resource.organization) + '</div>' : '') +
-                        '<div style="font-size: 0.85em; color: #666;">' + escapeHtml(resource.primary_service_type || '') + '</div>' +
-                    '</div>' +
-                    '<button type="button" class="button button-small remove-resource-btn" data-resource-id="' + resource.id + '" style="color: #b32d2e;">Remove</button>' +
-                    '<input type="hidden" name="specific_resource_ids[]" value="' + resource.id + '">'
-                );
-
-            $selectedList.append($item);
-
-            // Update count
-            var newCount = parseInt($count.text()) + 1;
-            $count.text(newCount);
-
-            // Show animation
-            $item.hide().slideDown(200);
-        }
-
-        // Remove resource from selected list
-        $(document).on('click', '.remove-resource-btn', function() {
-            var $item = $(this).closest('.selected-resource-item');
-            var $container = $(this).closest('.specific-resources-selection');
-            var $count = $container.find('.selected-count');
-
-            $item.slideUp(200, function() {
-                $(this).remove();
-
-                // Update count
-                var newCount = parseInt($count.text()) - 1;
-                $count.text(newCount);
-
-                // Show "no resources" message if list is empty
-                var $selectedList = $container.find('.selected-resources-list');
-                if ($selectedList.find('.selected-resource-item').length === 0) {
-                    $selectedList.html(
-                        '<p style="color: #666; margin: 40px 0; text-align: center;">' +
-                        'No resources selected. Use the search above to add resources.' +
-                        '</p>'
-                    );
-                }
-            });
-        });
-
-        // Clear search when clicking outside
-        $(document).on('click', function(e) {
-            if (!$(e.target).closest('.resource-ajax-search-input, .resource-search-results').length) {
-                $('.resource-search-results').hide();
-                $('.resource-ajax-search-input').val('');
             }
         });
     });

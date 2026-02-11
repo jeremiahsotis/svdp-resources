@@ -3,7 +3,7 @@
  * Plugin Name: Monday.com Resources Integration
  * Plugin URI: https://example.com
  * Description: Integrates Monday.com board data as searchable resource cards with filtering, issue reporting, and submission features
- * Version: 1.0.7
+ * Version: 1.1.0
  * Author: Your Name
  * Author URI: https://example.com
  * License: GPL v2 or later
@@ -17,11 +17,12 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MONDAY_RESOURCES_VERSION', '1.0.7');
+define('MONDAY_RESOURCES_VERSION', '1.1.0');
 define('MONDAY_RESOURCES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('MONDAY_RESOURCES_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Include required files
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-taxonomy.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resources-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-hours-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-verification-system.php';
@@ -30,7 +31,7 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-shortcode.php'
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-admin.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-submissions.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-exporter.php';
-require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-migration.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-taxonomy-import.php';
 
 // Include Composer autoloader if available (for Excel/PDF export)
 if (file_exists(MONDAY_RESOURCES_PLUGIN_DIR . 'vendor/autoload.php')) {
@@ -52,6 +53,121 @@ register_activation_hook(__FILE__, 'monday_resources_activate');
 
 // Run database upgrade check on admin_init to add any missing columns
 add_action('admin_init', 'monday_resources_maybe_upgrade_db');
+
+/**
+ * Capability used for managing resources in admin.
+ *
+ * @return string
+ */
+function monday_resources_get_manage_capability() {
+    return 'svdp_manage_resources';
+}
+
+/**
+ * Ensure role and capability assignments exist for resource managers.
+ *
+ * @return void
+ */
+function monday_resources_register_resource_manager_role() {
+    $capability = monday_resources_get_manage_capability();
+    $resource_caps = array(
+        $capability => true,
+        'read' => true,
+        'upload_files' => true
+    );
+
+    $role = get_role('svdp_resource_manager');
+    if (!$role) {
+        add_role(
+            'svdp_resource_manager',
+            'SVdP Resource Manager',
+            $resource_caps
+        );
+    } else {
+        foreach ($resource_caps as $cap => $grant) {
+            $role->add_cap($cap, $grant);
+        }
+    }
+
+    $admin_role = get_role('administrator');
+    if ($admin_role) {
+        $admin_role->add_cap($capability, true);
+    }
+}
+
+/**
+ * Ensure taxonomy-related columns and indexes exist on resources table.
+ *
+ * @return void
+ */
+function monday_resources_ensure_resource_taxonomy_schema() {
+    global $wpdb;
+    $resources_table = $wpdb->prefix . 'resources';
+
+    $columns = array(
+        'service_area' => "ALTER TABLE $resources_table ADD COLUMN service_area VARCHAR(191) NOT NULL DEFAULT '' AFTER secondary_service_type",
+        'services_offered' => "ALTER TABLE $resources_table ADD COLUMN services_offered TEXT NULL AFTER service_area",
+        'provider_type' => "ALTER TABLE $resources_table ADD COLUMN provider_type VARCHAR(191) DEFAULT NULL AFTER services_offered"
+    );
+
+    foreach ($columns as $column => $query) {
+        $exists = $wpdb->get_var($wpdb->prepare("SHOW COLUMNS FROM $resources_table LIKE %s", $column));
+        if (!$exists) {
+            $wpdb->query($query);
+        }
+    }
+
+    $indexes = array(
+        'idx_resources_service_area' => "ALTER TABLE $resources_table ADD INDEX idx_resources_service_area (service_area)",
+        'idx_resources_provider_type' => "ALTER TABLE $resources_table ADD INDEX idx_resources_provider_type (provider_type)",
+        'idx_resources_services_offered_prefix' => "ALTER TABLE $resources_table ADD INDEX idx_resources_services_offered_prefix (services_offered(100))"
+    );
+
+    foreach ($indexes as $index_name => $query) {
+        $index_exists = $wpdb->get_var(
+            $wpdb->prepare(
+                "SHOW INDEX FROM $resources_table WHERE Key_name = %s",
+                $index_name
+            )
+        );
+        if (!$index_exists) {
+            $wpdb->query($query);
+        }
+    }
+}
+
+/**
+ * Ensure import audit table exists for taxonomy migration runs.
+ *
+ * @return void
+ */
+function monday_resources_ensure_taxonomy_import_audit_table() {
+    global $wpdb;
+    $table_name = $wpdb->prefix . 'resources_taxonomy_import_audit';
+    $charset_collate = $wpdb->get_charset_collate();
+
+    $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        import_run_id varchar(64) NOT NULL,
+        resource_id bigint(20) DEFAULT NULL,
+        action varchar(50) NOT NULL,
+        field_name varchar(100) DEFAULT NULL,
+        old_value longtext DEFAULT NULL,
+        new_value longtext DEFAULT NULL,
+        `row_number` int(11) DEFAULT NULL,
+        source_file varchar(255) DEFAULT NULL,
+        source_file_hash varchar(64) DEFAULT NULL,
+        raw_row_json longtext DEFAULT NULL,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_import_run_id (import_run_id),
+        KEY idx_resource_id (resource_id),
+        KEY idx_action (action)
+    ) $charset_collate;";
+
+    require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+    dbDelta($sql);
+}
 
 function monday_resources_maybe_upgrade_db() {
     global $wpdb;
@@ -123,7 +239,26 @@ function monday_resources_maybe_upgrade_db() {
         // Update version
         update_option('monday_resources_db_version', '1.0.7');
         error_log('Monday Resources: Database upgraded to version 1.0.7 - Enhanced hours system');
+        $db_version = '1.0.7';
     }
+
+    // Upgrade to 1.1.0 - taxonomy schema + canonical vocab + import audit + role capabilities
+    if (version_compare($db_version, '1.1.0', '<')) {
+        monday_resources_ensure_resource_taxonomy_schema();
+        monday_resources_ensure_taxonomy_import_audit_table();
+        monday_resources_register_resource_manager_role();
+        Resource_Taxonomy::seed_canonical_options();
+
+        update_option('monday_resources_db_version', '1.1.0');
+        $db_version = '1.1.0';
+        error_log('Monday Resources: Database upgraded to version 1.1.0 - taxonomy + browse filters');
+    }
+
+    // Keep critical schema and role/canonical options synchronized.
+    monday_resources_ensure_resource_taxonomy_schema();
+    monday_resources_ensure_taxonomy_import_audit_table();
+    monday_resources_register_resource_manager_role();
+    Resource_Taxonomy::seed_canonical_options();
 }
 
 function monday_resources_activate() {
@@ -140,6 +275,9 @@ function monday_resources_activate() {
         is_svdp tinyint(1) DEFAULT 0,
         primary_service_type varchar(255) DEFAULT NULL,
         secondary_service_type varchar(255) DEFAULT NULL,
+        service_area varchar(191) NOT NULL DEFAULT '',
+        services_offered text DEFAULT NULL,
+        provider_type varchar(191) DEFAULT NULL,
         phone varchar(50) DEFAULT NULL,
         phone_extension varchar(20) DEFAULT NULL,
         alternate_phone varchar(50) DEFAULT NULL,
@@ -176,6 +314,8 @@ function monday_resources_activate() {
         KEY verification_status (verification_status),
         KEY geography (geography),
         KEY primary_service_type (primary_service_type),
+        KEY service_area (service_area),
+        KEY provider_type (provider_type),
         KEY is_svdp (is_svdp)
     ) $charset_collate;";
 
@@ -383,14 +523,6 @@ function monday_resources_activate() {
     dbDelta($sql_responses);
     dbDelta($sql_resource_views);
 
-    // Add indexes for resource search performance
-    // These improve query speed for AJAX search functionality
-    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_resource_name ON {$resources_table}(resource_name)");
-    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_organization ON {$resources_table}(organization)");
-    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_primary_service ON {$resources_table}(primary_service_type)");
-    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_secondary_service ON {$resources_table}(secondary_service_type)");
-    $wpdb->query("CREATE INDEX IF NOT EXISTS idx_status ON {$resources_table}(status)");
-
     // Add hours-related columns to resources table if they don't exist
     // Check and add each column individually for MySQL compatibility
     $columns_to_add = array(
@@ -423,6 +555,12 @@ function monday_resources_activate() {
             $wpdb->query($query);
         }
     }
+
+    monday_resources_ensure_resource_taxonomy_schema();
+    monday_resources_ensure_taxonomy_import_audit_table();
+    monday_resources_register_resource_manager_role();
+    Resource_Taxonomy::seed_canonical_options();
+    update_option('monday_resources_db_version', '1.1.0');
 
     // Run migration from Monday.com transient cache to new database
     monday_resources_migrate_data();
