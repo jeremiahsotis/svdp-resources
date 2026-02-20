@@ -38,6 +38,18 @@ class Monday_Resources_Shortcode {
             true
         );
 
+        $request_uri = isset($_SERVER['REQUEST_URI']) ? wp_unslash($_SERVER['REQUEST_URI']) : '';
+        $share_cap = class_exists('Resource_Snapshot_Manager')
+            ? Resource_Snapshot_Manager::issue_share_cap_for_request($request_uri)
+            : '';
+        $snapshot_cap = function_exists('monday_resources_get_snapshot_capability')
+            ? monday_resources_get_snapshot_capability()
+            : 'edit_view_resources';
+        $manage_cap = function_exists('monday_resources_get_manage_capability')
+            ? monday_resources_get_manage_capability()
+            : 'manage_options';
+        $can_snapshot = current_user_can($snapshot_cap) || current_user_can($manage_cap) || !empty($share_cap);
+
         wp_localize_script('monday-resources-frontend', 'mondayResources', array(
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('monday_resources_nonce'),
@@ -45,7 +57,10 @@ class Monday_Resources_Shortcode {
             'servicesOffered' => Resource_Taxonomy::get_services_offered_terms(),
             'providerTypes' => Resource_Taxonomy::get_provider_type_terms(),
             'populations' => get_option('resource_target_population_options', array()),
-            'perPage' => self::DEFAULT_PER_PAGE
+            'perPage' => self::DEFAULT_PER_PAGE,
+            'shareCap' => $share_cap,
+            'sharedRouteBase' => home_url('/resources/shared/'),
+            'canSnapshot' => $can_snapshot
         ));
     }
 
@@ -120,6 +135,73 @@ class Monday_Resources_Shortcode {
             .submit-resource-btn:hover {
                 background-color: #005177;
                 color: #fff;
+            }
+            .snapshot-actions-panel {
+                border: 1px solid #dbe1ea;
+                border-radius: 10px;
+                padding: 14px;
+                margin: 4px 0 16px;
+                background: #f8fbff;
+            }
+            .snapshot-actions-panel h3 {
+                margin: 0 0 8px;
+                font-size: 1.12rem;
+                color: #0f172a;
+            }
+            .snapshot-actions-help {
+                margin: 0 0 10px;
+                color: #4b5563;
+                font-size: 0.96rem;
+            }
+            .snapshot-actions-grid {
+                display: grid;
+                gap: 10px;
+                grid-template-columns: 1fr;
+            }
+            .snapshot-actions-grid label {
+                display: block;
+                font-weight: 600;
+                margin-bottom: 4px;
+                color: #1f2933;
+            }
+            .snapshot-actions-grid input {
+                width: 100%;
+                min-height: 44px;
+                border: 2px solid #d2d6dc;
+                border-radius: 6px;
+                padding: 10px 12px;
+                font-size: 16px;
+            }
+            .snapshot-action-buttons {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 8px;
+            }
+            .snapshot-action-btn {
+                min-height: 44px;
+                border-radius: 6px;
+                border: 2px solid #0073aa;
+                background: #0073aa;
+                color: #fff;
+                font-weight: 600;
+                cursor: pointer;
+                font-size: 0.95rem;
+            }
+            .snapshot-action-btn.secondary {
+                background: #fff;
+                color: #005177;
+            }
+            .snapshot-action-message {
+                margin-top: 8px;
+                font-size: 0.95rem;
+                color: #1f2933;
+                min-height: 1.2em;
+            }
+            .snapshot-action-message.error {
+                color: #b91c1c;
+            }
+            .snapshot-action-message.success {
+                color: #166534;
             }
             .service-area-tiles {
                 display: grid;
@@ -252,6 +334,23 @@ class Monday_Resources_Shortcode {
             }
             .resource-card:hover {
                 box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            }
+            .resource-card.is-unavailable {
+                opacity: 0.68;
+                background: #f8fafc;
+                border-color: #d7dde6;
+            }
+            .resource-unavailable-badge {
+                display: inline-block;
+                background: #f3f4f6;
+                color: #374151;
+                border-radius: 999px;
+                padding: 4px 10px;
+                font-size: 0.75rem;
+                font-weight: 700;
+                margin-bottom: 10px;
+                text-transform: uppercase;
+                letter-spacing: 0.4px;
             }
             .resource-card h3 {
                 margin: 0 0 5px 0;
@@ -582,6 +681,9 @@ class Monday_Resources_Shortcode {
                 .resource-card {
                     padding: 20px;
                 }
+                .snapshot-action-buttons {
+                    grid-template-columns: 1fr;
+                }
             }
         </style>
 
@@ -589,6 +691,27 @@ class Monday_Resources_Shortcode {
             <h2 class="directory-title">Find Help For Someone</h2>
 
             <button class="submit-resource-btn" onclick="openSubmitResourceModal()">Submit a New Resource</button>
+
+            <div class="snapshot-actions-panel" id="snapshot-actions-panel">
+                <h3>Share This Resource List</h3>
+                <p class="snapshot-actions-help">Create a shareable snapshot of the currently visible resources, then print, email, or text it.</p>
+                <div class="snapshot-actions-grid">
+                    <div>
+                        <label for="snapshot-neighbor-name">Neighbor Name</label>
+                        <input type="text" id="snapshot-neighbor-name" placeholder="Neighbor name">
+                    </div>
+                    <div>
+                        <label for="snapshot-contact-value">Email or Mobile (for Email/Text)</label>
+                        <input type="text" id="snapshot-contact-value" placeholder="name@example.com or (260) 555-1234">
+                    </div>
+                    <div class="snapshot-action-buttons">
+                        <button type="button" class="snapshot-action-btn secondary" id="snapshot-print-btn">Print</button>
+                        <button type="button" class="snapshot-action-btn" id="snapshot-email-btn">Email</button>
+                        <button type="button" class="snapshot-action-btn" id="snapshot-text-btn">Text</button>
+                    </div>
+                </div>
+                <div id="snapshot-action-message" class="snapshot-action-message" aria-live="polite"></div>
+            </div>
 
             <div class="service-area-tiles" id="service-area-tiles">
                 <?php foreach ($service_area_terms as $slug => $label): ?>
@@ -722,11 +845,16 @@ class Monday_Resources_Shortcode {
      *
      * @param array $items
      * @param int $render_offset
+     * @param array $options
      * @return string
      */
-    public static function render_resources_grid_html($items, $render_offset = 0) {
+    public static function render_resources_grid_html($items, $render_offset = 0, $options = array()) {
         $always_visible = self::get_always_visible_fields();
         $hidden_details = self::get_hidden_details_fields();
+        $options = wp_parse_args($options, array(
+            'shared_snapshot' => false
+        ));
+        $is_shared_snapshot = !empty($options['shared_snapshot']);
 
         if (empty($items)) {
             return '<div class="no-results">No resources found for the selected filters.</div>';
@@ -756,8 +884,17 @@ class Monday_Resources_Shortcode {
             $services_offered_labels = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
             $combined_services = trim(strtolower($service_area_label . ' ' . implode(' ', $services_offered_labels)));
             $target_population = !empty($item['target_population']) ? strtolower((string) $item['target_population']) : '';
+            $resource_id = isset($item['id']) ? (int) $item['id'] : 0;
+            $is_unavailable = $is_shared_snapshot && (
+                !empty($item['_snapshot_unavailable']) ||
+                (isset($item['status']) && (string) $item['status'] !== 'active')
+            );
+            $card_classes = 'resource-card' . ($is_unavailable ? ' is-unavailable' : '');
             ?>
-            <div class="resource-card" data-search="<?php echo esc_attr($searchable_text); ?>" data-category="<?php echo esc_attr($combined_services); ?>" data-audience="<?php echo esc_attr($target_population); ?>" data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
+            <div class="<?php echo esc_attr($card_classes); ?>" data-resource-id="<?php echo esc_attr((string) $resource_id); ?>" data-search="<?php echo esc_attr($searchable_text); ?>" data-category="<?php echo esc_attr($combined_services); ?>" data-audience="<?php echo esc_attr($target_population); ?>" data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
+                <?php if ($is_unavailable): ?>
+                    <span class="resource-unavailable-badge">No longer available</span>
+                <?php endif; ?>
                 <?php if ($is_svdp): ?>
                     <span class="svdp-badge">SVdP Resource</span>
                 <?php endif; ?>
@@ -765,7 +902,7 @@ class Monday_Resources_Shortcode {
                 <h3><?php echo esc_html($item['resource_name']); ?></h3>
 
                 <?php if (!empty($item['organization'])): ?>
-                    <?php $org_value = Resources_Manager::format_column_value($item['organization']); ?>
+                    <?php $org_value = $is_unavailable ? esc_html((string) $item['organization']) : Resources_Manager::format_column_value($item['organization']); ?>
                     <div class="resource-organization"><?php echo $org_value; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
                 <?php endif; ?>
 
@@ -793,7 +930,7 @@ class Monday_Resources_Shortcode {
                         continue;
                     }
 
-                    if ($field_name === 'phone') {
+                    if ($field_name === 'phone' && !$is_unavailable) {
                         $formatted_value = Resources_Manager::format_column_value($field_value);
                     } else {
                         $formatted_value = esc_html($field_value);
@@ -890,6 +1027,9 @@ class Monday_Resources_Shortcode {
                                 } else {
                                     $formatted_value = Resources_Manager::format_column_value($display_value);
                                 }
+                                if ($is_unavailable) {
+                                    $formatted_value = self::strip_links($formatted_value);
+                                }
                                 ?>
                                 <div class="resource-field">
                                     <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
@@ -909,10 +1049,12 @@ class Monday_Resources_Shortcode {
                         aria-controls="details-<?php echo esc_attr((string) $render_index); ?>">
                         Show Full Details
                     </button>
-                    <br>
-                    <button class="resource-report-btn" onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo esc_attr((string) $render_index); ?>)">
-                        Report an Issue
-                    </button>
+                    <?php if (!$is_shared_snapshot): ?>
+                        <br>
+                        <button class="resource-report-btn" onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo esc_attr((string) $render_index); ?>)">
+                            Report an Issue
+                        </button>
+                    <?php endif; ?>
                 </div>
             </div>
         <?php endforeach;
@@ -1086,6 +1228,22 @@ class Monday_Resources_Shortcode {
                 )
             )
         );
+    }
+
+    /**
+     * Remove outbound links from already-formatted HTML while preserving text.
+     *
+     * @param string $html
+     * @return string
+     */
+    private static function strip_links($html) {
+        $html = (string) $html;
+        if ($html === '') {
+            return '';
+        }
+
+        $stripped = preg_replace('/<a\b[^>]*>(.*?)<\/a>/is', '$1', $html);
+        return is_string($stripped) ? $stripped : $html;
     }
 
     /**

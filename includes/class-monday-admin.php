@@ -2940,6 +2940,15 @@ class Monday_Resources_Admin {
             'notes_and_tips' => isset($_POST['notes_and_tips']) ? sanitize_textarea_field(wp_unslash($_POST['notes_and_tips'])) : ''
         );
 
+        if (class_exists('Resource_Organization_Manager')) {
+            $organization_name = trim((string) $data['organization']);
+            if ($organization_name === '') {
+                $data['organization_id'] = null;
+            } else {
+                $data['organization_id'] = Resource_Organization_Manager::upsert_organization($organization_name);
+            }
+        }
+
         // Detect which button was clicked
         $save_and_new = isset($_POST['save_and_new']);
 

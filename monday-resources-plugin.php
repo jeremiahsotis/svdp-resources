@@ -3,7 +3,7 @@
  * Plugin Name: Monday.com Resources Integration
  * Plugin URI: https://example.com
  * Description: Integrates Monday.com board data as searchable resource cards with filtering, issue reporting, and submission features
- * Version: 1.1.1
+ * Version: 1.2.0
  * Author: Your Name
  * Author URI: https://example.com
  * License: GPL v2 or later
@@ -17,13 +17,15 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MONDAY_RESOURCES_VERSION', '1.1.1');
-define('MONDAY_RESOURCES_DB_SCHEMA_VERSION', '1.1.1');
+define('MONDAY_RESOURCES_VERSION', '1.2.0');
+define('MONDAY_RESOURCES_DB_SCHEMA_VERSION', '1.2.0');
 define('MONDAY_RESOURCES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('MONDAY_RESOURCES_PLUGIN_URL', plugin_dir_url(__FILE__));
 
 // Include required files
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-taxonomy.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-organization-manager.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-snapshot-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resources-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-hours-manager.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-verification-system.php';
@@ -55,6 +57,7 @@ register_activation_hook(__FILE__, 'monday_resources_activate');
 // Run migration checks in all contexts (not admin-only), with admin fallback.
 add_action('plugins_loaded', 'monday_resources_maybe_upgrade_db_bootstrap', 5);
 add_action('admin_init', 'monday_resources_maybe_upgrade_db_bootstrap', 1);
+add_action('init', 'monday_resources_maybe_flush_rewrite_rules', 99);
 
 /**
  * Capability used for managing resources in admin.
@@ -66,14 +69,25 @@ function monday_resources_get_manage_capability() {
 }
 
 /**
+ * Capability used for snapshot creation/sharing actions on the directory.
+ *
+ * @return string
+ */
+function monday_resources_get_snapshot_capability() {
+    return 'edit_view_resources';
+}
+
+/**
  * Ensure role and capability assignments exist for resource managers.
  *
  * @return void
  */
 function monday_resources_register_resource_manager_role() {
     $capability = monday_resources_get_manage_capability();
+    $snapshot_capability = monday_resources_get_snapshot_capability();
     $resource_caps = array(
         $capability => true,
+        $snapshot_capability => true,
         'read' => true,
         'upload_files' => true
     );
@@ -94,6 +108,18 @@ function monday_resources_register_resource_manager_role() {
     $admin_role = get_role('administrator');
     if ($admin_role) {
         $admin_role->add_cap($capability, true);
+        $admin_role->add_cap($snapshot_capability, true);
+    }
+}
+
+/**
+ * Ensure snapshot and organization schema exists.
+ *
+ * @return void
+ */
+function monday_resources_ensure_snapshot_schema() {
+    if (class_exists('Resource_Snapshot_Manager')) {
+        Resource_Snapshot_Manager::ensure_snapshot_schema();
     }
 }
 
@@ -186,6 +212,8 @@ function monday_resources_get_schema_health() {
 
     $resources_table = $wpdb->prefix . 'resources';
     $audit_table = $wpdb->prefix . 'resources_taxonomy_import_audit';
+    $snapshot_table = $wpdb->prefix . 'svdpr_snapshots';
+    $organizations_table = $wpdb->prefix . 'svdpr_organizations';
 
     $resources_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resources_table));
     if ($resources_exists !== $resources_table) {
@@ -206,7 +234,8 @@ function monday_resources_get_schema_health() {
     $required_indexes = array(
         'idx_resources_service_area',
         'idx_resources_provider_type',
-        'idx_resources_services_offered_prefix'
+        'idx_resources_services_offered_prefix',
+        'idx_resources_organization_id'
     );
     foreach ($required_indexes as $index_name) {
         $exists = $wpdb->get_var(
@@ -225,6 +254,24 @@ function monday_resources_get_schema_health() {
     if ($audit_exists !== $audit_table) {
         $health['ok'] = false;
         $health['details'][] = 'missing_table:' . $audit_table;
+    }
+
+    $snapshot_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $snapshot_table));
+    if ($snapshot_exists !== $snapshot_table) {
+        $health['ok'] = false;
+        $health['details'][] = 'missing_table:' . $snapshot_table;
+    }
+
+    $organizations_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $organizations_table));
+    if ($organizations_exists !== $organizations_table) {
+        $health['ok'] = false;
+        $health['details'][] = 'missing_table:' . $organizations_table;
+    }
+
+    $organization_column_exists = $wpdb->get_var("SHOW COLUMNS FROM $resources_table LIKE 'organization_id'");
+    if (!$organization_column_exists) {
+        $health['ok'] = false;
+        $health['details'][] = 'missing_column:organization_id';
     }
 
     return $health;
@@ -403,16 +450,18 @@ function monday_resources_maybe_upgrade_db() {
         error_log('Monday Resources: Database upgraded to version 1.1.0 - taxonomy + browse filters');
     }
 
-    // Upgrade to 1.1.1 - migration bootstrap hardening + self-healing schema pass.
+    // Upgrade to latest schema version.
     if (version_compare($db_version, MONDAY_RESOURCES_DB_SCHEMA_VERSION, '<')) {
         monday_resources_ensure_resource_taxonomy_schema();
         monday_resources_ensure_taxonomy_import_audit_table();
+        monday_resources_ensure_snapshot_schema();
         monday_resources_register_resource_manager_role();
         Resource_Taxonomy::seed_canonical_options();
+        update_option('monday_resources_flush_rewrite_needed', 1, false);
 
         update_option('monday_resources_db_version', MONDAY_RESOURCES_DB_SCHEMA_VERSION);
         $db_version = MONDAY_RESOURCES_DB_SCHEMA_VERSION;
-        error_log('Monday Resources: Database upgraded to version ' . MONDAY_RESOURCES_DB_SCHEMA_VERSION . ' - migration bootstrap hardening');
+        error_log('Monday Resources: Database upgraded to version ' . MONDAY_RESOURCES_DB_SCHEMA_VERSION . ' - snapshots + sharing + inline save support');
     }
 
     // Periodic self-heal (every 6 hours) to catch drift or interrupted deploys.
@@ -423,6 +472,7 @@ function monday_resources_maybe_upgrade_db() {
     if ($run_self_heal) {
         monday_resources_ensure_resource_taxonomy_schema();
         monday_resources_ensure_taxonomy_import_audit_table();
+        monday_resources_ensure_snapshot_schema();
         monday_resources_register_resource_manager_role();
         Resource_Taxonomy::seed_canonical_options();
         update_option('monday_resources_last_schema_self_heal', time());
@@ -442,6 +492,7 @@ function monday_resources_activate() {
         id bigint(20) NOT NULL AUTO_INCREMENT,
         resource_name varchar(255) NOT NULL,
         organization varchar(255) DEFAULT NULL,
+        organization_id bigint(20) unsigned DEFAULT NULL,
         is_svdp tinyint(1) DEFAULT 0,
         primary_service_type varchar(255) DEFAULT NULL,
         secondary_service_type varchar(255) DEFAULT NULL,
@@ -486,6 +537,7 @@ function monday_resources_activate() {
         KEY primary_service_type (primary_service_type),
         KEY service_area (service_area),
         KEY provider_type (provider_type),
+        KEY idx_resources_organization_id (organization_id),
         KEY is_svdp (is_svdp)
     ) $charset_collate;";
 
@@ -728,9 +780,16 @@ function monday_resources_activate() {
 
     monday_resources_ensure_resource_taxonomy_schema();
     monday_resources_ensure_taxonomy_import_audit_table();
+    monday_resources_ensure_snapshot_schema();
     monday_resources_register_resource_manager_role();
     Resource_Taxonomy::seed_canonical_options();
-    update_option('monday_resources_db_version', '1.1.0');
+    update_option('monday_resources_db_version', MONDAY_RESOURCES_DB_SCHEMA_VERSION);
+    update_option('monday_resources_flush_rewrite_needed', 1, false);
+
+    if (class_exists('Resource_Snapshot_Manager')) {
+        Resource_Snapshot_Manager::register_rewrite_rules();
+    }
+    flush_rewrite_rules(false);
 
     // Run migration from Monday.com transient cache to new database
     monday_resources_migrate_data();
@@ -859,6 +918,25 @@ function monday_resources_deactivate() {
 }
 
 /**
+ * Flush rewrite rules when flagged by activation/upgrade.
+ *
+ * @return void
+ */
+function monday_resources_maybe_flush_rewrite_rules() {
+    $needs_flush = (int) get_option('monday_resources_flush_rewrite_needed', 0);
+    if ($needs_flush !== 1) {
+        return;
+    }
+
+    if (class_exists('Resource_Snapshot_Manager')) {
+        Resource_Snapshot_Manager::register_rewrite_rules();
+    }
+
+    flush_rewrite_rules(false);
+    delete_option('monday_resources_flush_rewrite_needed');
+}
+
+/**
  * WP-CLI command to force schema migrations.
  *
  * Usage:
@@ -913,6 +991,7 @@ if (defined('WP_CLI') && WP_CLI && class_exists('WP_CLI')) {
 add_action('plugins_loaded', 'monday_resources_init');
 
 function monday_resources_init() {
+    new Resource_Snapshot_Manager();
     new Monday_Resources_Shortcode();
     new Monday_Resources_Admin();
     new Monday_Resources_Submissions();

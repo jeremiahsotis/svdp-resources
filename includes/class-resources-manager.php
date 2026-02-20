@@ -35,6 +35,33 @@ class Resources_Manager {
     }
 
     /**
+     * Get resources by explicit IDs in the same order.
+     *
+     * @param array $resource_ids
+     * @param bool $include_inactive
+     * @return array
+     */
+    public static function get_resources_by_ids($resource_ids, $include_inactive = false) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'resources';
+
+        $resource_ids = array_values(array_unique(array_filter(array_map('intval', (array) $resource_ids))));
+        if (empty($resource_ids)) {
+            return array();
+        }
+
+        $placeholders = implode(',', array_fill(0, count($resource_ids), '%d'));
+        $order_sql = implode(',', $resource_ids);
+        $where_status = $include_inactive ? '' : "AND status = 'active'";
+
+        $sql = "SELECT * FROM $table_name WHERE id IN ($placeholders) $where_status ORDER BY FIELD(id, $order_sql)";
+        $query = $wpdb->prepare($sql, $resource_ids);
+        $rows = $wpdb->get_results($query, ARRAY_A);
+
+        return is_array($rows) ? $rows : array();
+    }
+
+    /**
      * Get all resources with optional filtering
      */
     public static function get_all_resources($filters = array()) {

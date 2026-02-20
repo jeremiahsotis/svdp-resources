@@ -135,7 +135,7 @@ window.onclick = function(event) {
 
     function setControlsDisabled(disabled) {
         const controls = document.querySelectorAll(
-            '.service-area-tile, #resource-search, #narrow-results-btn, #resources-load-more, #narrow-apply-btn, #narrow-clear-btn'
+            '.service-area-tile, #resource-search, #narrow-results-btn, #resources-load-more, #narrow-apply-btn, #narrow-clear-btn, #snapshot-print-btn, #snapshot-email-btn, #snapshot-text-btn'
         );
 
         controls.forEach(function(control) {
@@ -190,6 +190,167 @@ window.onclick = function(event) {
         const visibleCount = document.getElementById('visible-count');
         const totalCount = document.getElementById('total-count');
         const loadingIndicator = document.getElementById('resources-filter-loading');
+        const snapshotPanel = document.getElementById('snapshot-actions-panel');
+        const snapshotNeighborInput = document.getElementById('snapshot-neighbor-name');
+        const snapshotContactInput = document.getElementById('snapshot-contact-value');
+        const snapshotPrintBtn = document.getElementById('snapshot-print-btn');
+        const snapshotEmailBtn = document.getElementById('snapshot-email-btn');
+        const snapshotTextBtn = document.getElementById('snapshot-text-btn');
+        const snapshotMessage = document.getElementById('snapshot-action-message');
+
+        let snapshotRequest = null;
+
+        function setSnapshotMessage(message, type) {
+            if (!snapshotMessage) {
+                return;
+            }
+
+            snapshotMessage.classList.remove('error', 'success');
+            if (type === 'error') {
+                snapshotMessage.classList.add('error');
+            } else if (type === 'success') {
+                snapshotMessage.classList.add('success');
+            }
+            snapshotMessage.textContent = message || '';
+        }
+
+        function setSnapshotControlsDisabled(disabled) {
+            [snapshotPrintBtn, snapshotEmailBtn, snapshotTextBtn].forEach(function(button) {
+                if (button) {
+                    button.disabled = disabled;
+                }
+            });
+        }
+
+        function getVisibleResourceIds() {
+            if (!grid) {
+                return [];
+            }
+
+            return Array.from(grid.querySelectorAll('.resource-card[data-resource-id]'))
+                .map(function(card) {
+                    return Number(card.getAttribute('data-resource-id') || 0);
+                })
+                .filter(function(id) {
+                    return id > 0;
+                });
+        }
+
+        function extractAjaxErrorMessage(xhr, fallbackMessage) {
+            const fallback = fallbackMessage || 'Something went wrong. Please try again.';
+            if (!xhr) {
+                return fallback;
+            }
+
+            if (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) {
+                return String(xhr.responseJSON.data.message);
+            }
+
+            return fallback;
+        }
+
+        function createSnapshot(channel, contactValue) {
+            const resourceIds = getVisibleResourceIds();
+            if (!resourceIds.length) {
+                setSnapshotMessage('No visible resources to share yet.', 'error');
+                return $.Deferred().reject().promise();
+            }
+
+            const payload = {
+                action: 'svdp_snapshot_create',
+                nonce: mondayResources.nonce,
+                resource_ids: resourceIds,
+                neighbor_name: snapshotNeighborInput ? snapshotNeighborInput.value.trim() : '',
+                primary_contact_type: channel,
+                primary_contact_value: contactValue || '',
+                source_url: window.location.href,
+                share_cap: mondayResources.shareCap || ''
+            };
+
+            if (snapshotRequest && snapshotRequest.readyState !== 4) {
+                snapshotRequest.abort();
+            }
+
+            snapshotRequest = $.ajax({
+                url: mondayResources.ajaxurl,
+                type: 'POST',
+                dataType: 'json',
+                data: payload
+            });
+
+            return snapshotRequest;
+        }
+
+        function sendSnapshot(token, channel, contactValue) {
+            return $.ajax({
+                url: mondayResources.ajaxurl,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    action: 'svdp_snapshot_send',
+                    nonce: mondayResources.nonce,
+                    token: token,
+                    channel: channel,
+                    contact_value: contactValue || '',
+                    source_url: window.location.href,
+                    share_cap: mondayResources.shareCap || ''
+                }
+            });
+        }
+
+        function handleSnapshotAction(channel) {
+            if (!snapshotPanel) {
+                return;
+            }
+
+            const contactValue = snapshotContactInput ? snapshotContactInput.value.trim() : '';
+            if ((channel === 'email' || channel === 'text') && !contactValue) {
+                setSnapshotMessage('Enter an email or mobile number first.', 'error');
+                return;
+            }
+
+            setSnapshotMessage('Preparing shared snapshot...', '');
+            setSnapshotControlsDisabled(true);
+
+            createSnapshot(channel, contactValue)
+                .done(function(createResponse) {
+                    if (!createResponse || !createResponse.success || !createResponse.data) {
+                        setSnapshotMessage('Could not create shared snapshot.', 'error');
+                        return;
+                    }
+
+                    const snapshotData = createResponse.data;
+                    if (channel === 'print') {
+                        const printUrl = snapshotData.print_url || '';
+                        if (printUrl) {
+                            window.open(printUrl, '_blank', 'noopener');
+                        }
+                        setSnapshotMessage('Print view opened in a new tab.', 'success');
+                        return;
+                    }
+
+                    sendSnapshot(snapshotData.token, channel, contactValue)
+                        .done(function(sendResponse) {
+                            if (sendResponse && sendResponse.success) {
+                                setSnapshotMessage(
+                                    channel === 'email' ? 'Email sent successfully.' : 'Text sent successfully.',
+                                    'success'
+                                );
+                            } else {
+                                setSnapshotMessage('Snapshot created, but delivery failed.', 'error');
+                            }
+                        })
+                        .fail(function(sendXhr) {
+                            setSnapshotMessage(extractAjaxErrorMessage(sendXhr, 'Snapshot created, but delivery failed.'), 'error');
+                        });
+                })
+                .fail(function(xhr) {
+                    setSnapshotMessage(extractAjaxErrorMessage(xhr, 'Unable to create shared snapshot.'), 'error');
+                })
+                .always(function() {
+                    setSnapshotControlsDisabled(false);
+                });
+        }
 
         function showLoading(isLoading) {
             if (loadingIndicator) {
@@ -398,6 +559,30 @@ window.onclick = function(event) {
                 state.page += 1;
                 performRequest({ append: true });
             });
+        }
+
+        if (snapshotPanel) {
+            if (!mondayResources.canSnapshot) {
+                snapshotPanel.style.display = 'none';
+            } else {
+                if (snapshotPrintBtn) {
+                    snapshotPrintBtn.addEventListener('click', function() {
+                        handleSnapshotAction('print');
+                    });
+                }
+
+                if (snapshotEmailBtn) {
+                    snapshotEmailBtn.addEventListener('click', function() {
+                        handleSnapshotAction('email');
+                    });
+                }
+
+                if (snapshotTextBtn) {
+                    snapshotTextBtn.addEventListener('click', function() {
+                        handleSnapshotAction('text');
+                    });
+                }
+            }
         }
 
         applyTileSelection();
