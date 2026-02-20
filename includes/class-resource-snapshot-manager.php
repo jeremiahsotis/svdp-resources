@@ -369,6 +369,10 @@ class Resource_Snapshot_Manager {
         }
 
         if ($contact_type === 'text') {
+            if (!self::is_twilio_configured()) {
+                wp_send_json_error(array('message' => 'Text sharing is unavailable until Twilio settings are configured.'), 400);
+            }
+
             $normalized_phone = self::normalize_phone_to_e164($contact_value);
             if ($normalized_phone === '') {
                 wp_send_json_error(array('message' => 'Enter a valid mobile number.'), 400);
@@ -482,6 +486,10 @@ class Resource_Snapshot_Manager {
         }
 
         if ($channel === 'text') {
+            if (!self::is_twilio_configured()) {
+                wp_send_json_error(array('message' => 'Text sharing is unavailable until Twilio settings are configured.'), 400);
+            }
+
             $to = self::normalize_phone_to_e164($contact_value);
             if ($to === '') {
                 wp_send_json_error(array('message' => 'Enter a valid mobile number.'), 400);
@@ -980,14 +988,95 @@ class Resource_Snapshot_Manager {
      */
     private static function send_snapshot_email($to_email, $neighbor_name, $shared_url, $snapshot) {
         $subject = sprintf('Resources for %s', $neighbor_name);
-        $resource_count = isset($snapshot['resource_count']) ? (int) $snapshot['resource_count'] : 0;
-        $body = '<p>Hello ' . esc_html($neighbor_name) . ',</p>'
-            . '<p>Here are the resources shared with you.</p>'
-            . '<p><a href="' . esc_url($shared_url) . '">' . esc_html($shared_url) . '</a></p>'
-            . '<p>This link includes ' . esc_html((string) $resource_count) . ' resource entries and can be printed at any time.</p>';
+        $body = self::build_snapshot_email_html($neighbor_name, $shared_url, $snapshot);
 
         $headers = array('Content-Type: text/html; charset=UTF-8');
         return (bool) wp_mail($to_email, $subject, $body, $headers);
+    }
+
+    /**
+     * Build email body using the same snapshot object contract as print/shared.
+     *
+     * @param string $neighbor_name
+     * @param string $shared_url
+     * @param array $snapshot
+     * @return string
+     */
+    private static function build_snapshot_email_html($neighbor_name, $shared_url, $snapshot) {
+        $items = self::load_snapshot_resources($snapshot);
+        $print_url = add_query_arg('print', '1', $shared_url);
+        $resource_count = isset($snapshot['resource_count']) ? (int) $snapshot['resource_count'] : count($items);
+        $org_name = wp_specialchars_decode(get_bloginfo('name'), ENT_QUOTES);
+        if ($org_name === '') {
+            $org_name = 'SVdP';
+        }
+
+        $cards_html = '';
+        foreach ($items as $item) {
+            $is_unavailable = !empty($item['_snapshot_unavailable']) || (isset($item['status']) && (string) $item['status'] !== 'active');
+            $name = isset($item['resource_name']) ? (string) $item['resource_name'] : 'Resource';
+            $organization = isset($item['organization']) ? (string) $item['organization'] : '';
+            $service_area = Resource_Taxonomy::get_service_area_label(isset($item['service_area']) ? $item['service_area'] : '');
+            $services = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
+            $provider = Resource_Taxonomy::get_provider_type_label(isset($item['provider_type']) ? $item['provider_type'] : '');
+            $phone = isset($item['phone']) ? trim((string) $item['phone']) : '';
+            $website = isset($item['website']) ? trim((string) $item['website']) : '';
+
+            $status_badge = '';
+            if ($is_unavailable) {
+                $status_badge = '<div style="display:inline-block;margin:0 0 8px;padding:4px 9px;border-radius:999px;background:#f3f4f6;color:#374151;font-size:12px;font-weight:700;text-transform:uppercase;">No longer available</div>';
+            }
+
+            $contact_lines = '';
+            if ($phone !== '') {
+                if ($is_unavailable) {
+                    $contact_lines .= '<div><strong>Phone:</strong> ' . esc_html($phone) . '</div>';
+                } else {
+                    $digits = preg_replace('/\D+/', '', $phone);
+                    if (is_string($digits) && strlen($digits) >= 10) {
+                        $contact_lines .= '<div><strong>Phone:</strong> <a href="tel:' . esc_attr('+' . $digits) . '" style="color:#0073aa;">' . esc_html($phone) . '</a></div>';
+                    } else {
+                        $contact_lines .= '<div><strong>Phone:</strong> ' . esc_html($phone) . '</div>';
+                    }
+                }
+            }
+
+            if ($website !== '') {
+                if ($is_unavailable) {
+                    $contact_lines .= '<div><strong>Website:</strong> ' . esc_html($website) . '</div>';
+                } else {
+                    $contact_lines .= '<div><strong>Website:</strong> <a href="' . esc_url($website) . '" style="color:#0073aa;" target="_blank" rel="noopener">' . esc_html($website) . '</a></div>';
+                }
+            }
+
+            $service_lines = '';
+            if ($service_area !== '') {
+                $service_lines .= '<div><strong>Service Area:</strong> ' . esc_html($service_area) . '</div>';
+            }
+            if (!empty($services)) {
+                $service_lines .= '<div><strong>Services Offered:</strong> ' . esc_html(implode(', ', $services)) . '</div>';
+            }
+            if ($provider !== '') {
+                $service_lines .= '<div><strong>System Type:</strong> ' . esc_html($provider) . '</div>';
+            }
+
+            $cards_html .= '<div style="border:1px solid #d9dee6;border-radius:8px;padding:14px;margin:0 0 12px;background:' . ($is_unavailable ? '#f8fafc' : '#ffffff') . ';opacity:' . ($is_unavailable ? '0.72' : '1') . ';">'
+                . $status_badge
+                . '<h3 style="margin:0 0 6px;font-size:18px;color:#0f172a;">' . esc_html($name) . '</h3>'
+                . ($organization !== '' ? '<div style="margin:0 0 8px;color:#4b5563;font-style:italic;">' . esc_html($organization) . '</div>' : '')
+                . $service_lines
+                . $contact_lines
+                . '</div>';
+        }
+
+        return '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#1f2933;line-height:1.5;">'
+            . '<h2 style="margin:0 0 8px;color:#0f172a;">Resources for ' . esc_html($neighbor_name) . '</h2>'
+            . '<p style="margin:0 0 12px;">' . esc_html($org_name) . ' shared this resource snapshot for you.</p>'
+            . '<p style="margin:0 0 12px;"><a href="' . esc_url($shared_url) . '" style="color:#0073aa;">View Online</a> | <a href="' . esc_url($print_url) . '" style="color:#0073aa;">Open Print Version</a></p>'
+            . '<p style="margin:0 0 14px;color:#4b5563;">This list contains ' . esc_html((string) $resource_count) . ' resources. Print view includes a QR code labeled "Scan to view online".</p>'
+            . $cards_html
+            . '<p style="margin:14px 0 0;color:#4b5563;">If you need help, call <strong>(260) 456-3561</strong>.</p>'
+            . '</div>';
     }
 
     /**
@@ -1066,6 +1155,16 @@ class Resource_Snapshot_Manager {
             'auth_token' => $auth_token,
             'from_number' => $from_number
         );
+    }
+
+    /**
+     * Public configuration check used by UI controls.
+     *
+     * @return bool
+     */
+    public static function is_twilio_configured() {
+        $credentials = self::get_twilio_credentials();
+        return !is_wp_error($credentials);
     }
 
     /**

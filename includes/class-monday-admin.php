@@ -275,6 +275,9 @@ class Monday_Resources_Admin {
         register_setting('monday_resources_settings', 'resource_target_population_options');
         register_setting('monday_resources_settings', 'resource_income_requirements_options');
         register_setting('monday_resources_settings', 'resource_wait_time_options');
+        register_setting('monday_resources_settings', 'svdp_twilio_account_sid');
+        register_setting('monday_resources_settings', 'svdp_twilio_auth_token');
+        register_setting('monday_resources_settings', 'svdp_twilio_from_number');
 
         // Initialize default options if not set
         if (!get_option('resource_conference_options')) {
@@ -1042,12 +1045,36 @@ class Monday_Resources_Admin {
             }
         }
 
+        if (isset($_POST['save_twilio_settings']) && check_admin_referer('manage_twilio_settings')) {
+            $twilio_account_sid = isset($_POST['svdp_twilio_account_sid']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_account_sid'])) : '';
+            $twilio_auth_token = isset($_POST['svdp_twilio_auth_token']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_auth_token'])) : '';
+            $twilio_from_number = isset($_POST['svdp_twilio_from_number']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_from_number'])) : '';
+
+            update_option('svdp_twilio_account_sid', $twilio_account_sid);
+            update_option('svdp_twilio_auth_token', $twilio_auth_token);
+            update_option('svdp_twilio_from_number', $twilio_from_number);
+
+            echo '<div class="notice notice-success is-dismissible"><p>Twilio settings saved.</p></div>';
+        }
+
+        if (isset($_POST['clear_twilio_settings']) && check_admin_referer('manage_twilio_settings')) {
+            update_option('svdp_twilio_account_sid', '');
+            update_option('svdp_twilio_auth_token', '');
+            update_option('svdp_twilio_from_number', '');
+            echo '<div class="notice notice-success is-dismissible"><p>Twilio settings cleared.</p></div>';
+        }
+
         $conferences = get_option('resource_conference_options', array());
         $counties = get_option('resource_counties_options', array());
         $service_types = get_option('resource_service_types', array());
         $target_populations = get_option('resource_target_population_options', array());
         $income_requirements = get_option('resource_income_requirements_options', array());
         $wait_times = get_option('resource_wait_time_options', array());
+        $twilio_account_sid = get_option('svdp_twilio_account_sid', '');
+        $twilio_auth_token = get_option('svdp_twilio_auth_token', '');
+        $twilio_from_number = get_option('svdp_twilio_from_number', '');
+        $twilio_configured = class_exists('Resource_Snapshot_Manager') ? Resource_Snapshot_Manager::is_twilio_configured() : false;
+        $twilio_using_constants = (defined('SVDP_TWILIO_ACCOUNT_SID') || defined('SVDP_TWILIO_AUTH_TOKEN') || defined('SVDP_TWILIO_FROM_NUMBER'));
         ?>
         <div class="wrap">
             <h1>Community Resources Settings</h1>
@@ -1270,6 +1297,52 @@ class Monday_Resources_Admin {
                         <?php endforeach; ?>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Snapshot Messaging Settings -->
+            <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
+                <h2 style="margin-top: 0;">Snapshot Messaging (Twilio SMS)</h2>
+                <p>Configure Twilio credentials used by the <strong>Text This List</strong> action in the public resource directory.</p>
+                <p>
+                    Status:
+                    <?php if ($twilio_configured): ?>
+                        <strong style="color:#15803d;">Configured</strong>
+                    <?php else: ?>
+                        <strong style="color:#b91c1c;">Not configured</strong>
+                    <?php endif; ?>
+                </p>
+                <?php if ($twilio_using_constants): ?>
+                    <p class="description">Twilio constants are defined in PHP configuration. These values are used when corresponding options are empty.</p>
+                <?php endif; ?>
+
+                <form method="post">
+                    <?php wp_nonce_field('manage_twilio_settings'); ?>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="svdp_twilio_account_sid">Account SID</label></th>
+                            <td>
+                                <input type="text" id="svdp_twilio_account_sid" name="svdp_twilio_account_sid" value="<?php echo esc_attr($twilio_account_sid); ?>" class="regular-text">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="svdp_twilio_auth_token">Auth Token</label></th>
+                            <td>
+                                <input type="text" id="svdp_twilio_auth_token" name="svdp_twilio_auth_token" value="<?php echo esc_attr($twilio_auth_token); ?>" class="regular-text">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="svdp_twilio_from_number">From Number</label></th>
+                            <td>
+                                <input type="text" id="svdp_twilio_from_number" name="svdp_twilio_from_number" value="<?php echo esc_attr($twilio_from_number); ?>" class="regular-text" placeholder="+12605551234">
+                                <p class="description">Use E.164 format (example: +12605551234).</p>
+                            </td>
+                        </tr>
+                    </table>
+                    <p>
+                        <button type="submit" name="save_twilio_settings" class="button button-primary">Save Twilio Settings</button>
+                        <button type="submit" name="clear_twilio_settings" class="button" onclick="return confirm('Clear all saved Twilio options?');">Clear Saved Options</button>
+                    </p>
+                </form>
             </div>
 
             <!-- System Information -->

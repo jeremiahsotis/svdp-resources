@@ -49,6 +49,8 @@ class Monday_Resources_Shortcode {
             ? monday_resources_get_manage_capability()
             : 'manage_options';
         $can_snapshot = current_user_can($snapshot_cap) || current_user_can($manage_cap) || !empty($share_cap);
+        $can_inline_edit = self::current_user_can_inline_edit();
+        $twilio_enabled = class_exists('Resource_Snapshot_Manager') && Resource_Snapshot_Manager::is_twilio_configured();
 
         wp_localize_script('monday-resources-frontend', 'mondayResources', array(
             'ajaxurl' => admin_url('admin-ajax.php'),
@@ -60,7 +62,9 @@ class Monday_Resources_Shortcode {
             'perPage' => self::DEFAULT_PER_PAGE,
             'shareCap' => $share_cap,
             'sharedRouteBase' => home_url('/resources/shared/'),
-            'canSnapshot' => $can_snapshot
+            'canSnapshot' => $can_snapshot,
+            'canInlineEdit' => $can_inline_edit,
+            'twilioEnabled' => $twilio_enabled
         ));
     }
 
@@ -87,6 +91,7 @@ class Monday_Resources_Shortcode {
         $items = isset($result['items']) ? $result['items'] : array();
         $total_count = isset($result['total_count']) ? (int) $result['total_count'] : 0;
         $has_more = (self::DEFAULT_PER_PAGE < $total_count);
+        $allow_inline_edit = self::current_user_can_inline_edit();
 
         $service_area_terms = Resource_Taxonomy::get_service_area_terms();
         $services_offered_terms = Resource_Taxonomy::get_services_offered_terms();
@@ -190,6 +195,13 @@ class Monday_Resources_Shortcode {
             .snapshot-action-btn.secondary {
                 background: #fff;
                 color: #005177;
+            }
+            .snapshot-action-btn.is-disabled,
+            .snapshot-action-btn[disabled].is-disabled {
+                background: #f3f4f6;
+                color: #6b7280;
+                border-color: #d1d5db;
+                cursor: not-allowed;
             }
             .snapshot-action-message {
                 margin-top: 8px;
@@ -471,6 +483,84 @@ class Monday_Resources_Shortcode {
                 text-decoration: underline;
                 min-height: 44px;
             }
+            .resource-inline-edit-toggle {
+                background: none;
+                border: none;
+                color: #0073aa;
+                text-decoration: underline;
+                min-height: 44px;
+                cursor: pointer;
+                font-size: 0.95em;
+                padding: 0;
+                margin-top: 4px;
+            }
+            .resource-inline-edit-panel {
+                display: none;
+                margin-top: 10px;
+                padding: 12px;
+                border: 1px solid #dbe1ea;
+                border-radius: 8px;
+                background: #f9fbff;
+            }
+            .resource-inline-edit-panel.is-open {
+                display: block;
+            }
+            .inline-edit-row {
+                margin-bottom: 10px;
+            }
+            .inline-edit-row label {
+                display: block;
+                font-weight: 600;
+                margin-bottom: 4px;
+                color: #1f2933;
+            }
+            .inline-edit-row input,
+            .inline-edit-row select,
+            .inline-edit-row textarea {
+                width: 100%;
+                min-height: 40px;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px 10px;
+                font-size: 15px;
+            }
+            .inline-edit-row textarea {
+                min-height: 88px;
+                resize: vertical;
+            }
+            .inline-edit-actions {
+                display: flex;
+                gap: 8px;
+                margin-top: 6px;
+            }
+            .inline-edit-actions button {
+                min-height: 40px;
+                border-radius: 6px;
+                border: none;
+                cursor: pointer;
+                padding: 8px 12px;
+                font-weight: 600;
+            }
+            .inline-edit-save {
+                background: #0073aa;
+                color: #fff;
+            }
+            .inline-edit-cancel {
+                background: #e5e7eb;
+                color: #111827;
+            }
+            .inline-edit-message {
+                margin-top: 8px;
+                font-size: 0.92rem;
+                min-height: 1.2em;
+                color: #1f2933;
+            }
+            .inline-edit-message.error {
+                color: #b91c1c;
+            }
+            .inline-edit-message.success {
+                color: #166534;
+            }
             .resource-report-btn {
                 background-color: #dc3232;
                 color: #fff;
@@ -707,7 +797,7 @@ class Monday_Resources_Shortcode {
                     <div class="snapshot-action-buttons">
                         <button type="button" class="snapshot-action-btn secondary" id="snapshot-print-btn">Print</button>
                         <button type="button" class="snapshot-action-btn" id="snapshot-email-btn">Email</button>
-                        <button type="button" class="snapshot-action-btn" id="snapshot-text-btn">Text</button>
+                        <button type="button" class="snapshot-action-btn" id="snapshot-text-btn">Text This List</button>
                     </div>
                 </div>
                 <div id="snapshot-action-message" class="snapshot-action-message" aria-live="polite"></div>
@@ -735,7 +825,7 @@ class Monday_Resources_Shortcode {
             </div>
 
             <div class="resources-grid" id="resources-grid">
-                <?php echo self::render_resources_grid_html($items, 0); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                <?php echo self::render_resources_grid_html($items, 0, array('allow_inline_edit' => $allow_inline_edit)); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
             </div>
 
             <div class="load-more-wrap">
@@ -852,9 +942,13 @@ class Monday_Resources_Shortcode {
         $always_visible = self::get_always_visible_fields();
         $hidden_details = self::get_hidden_details_fields();
         $options = wp_parse_args($options, array(
-            'shared_snapshot' => false
+            'shared_snapshot' => false,
+            'allow_inline_edit' => false
         ));
         $is_shared_snapshot = !empty($options['shared_snapshot']);
+        $allow_inline_edit = !$is_shared_snapshot && !empty($options['allow_inline_edit']);
+        $inline_service_area_terms = $allow_inline_edit ? Resource_Taxonomy::get_service_area_terms() : array();
+        $inline_provider_type_terms = $allow_inline_edit ? Resource_Taxonomy::get_provider_type_terms() : array();
 
         if (empty($items)) {
             return '<div class="no-results">No resources found for the selected filters.</div>';
@@ -882,9 +976,12 @@ class Monday_Resources_Shortcode {
 
             $service_area_label = Resource_Taxonomy::get_service_area_label(isset($item['service_area']) ? $item['service_area'] : '');
             $services_offered_labels = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
+            $services_offered_input = implode(', ', $services_offered_labels);
             $combined_services = trim(strtolower($service_area_label . ' ' . implode(' ', $services_offered_labels)));
             $target_population = !empty($item['target_population']) ? strtolower((string) $item['target_population']) : '';
             $resource_id = isset($item['id']) ? (int) $item['id'] : 0;
+            $service_area_slug = isset($item['service_area']) ? Resource_Taxonomy::normalize_service_area_slug($item['service_area']) : '';
+            $provider_type_slug = isset($item['provider_type']) ? Resource_Taxonomy::normalize_provider_type_slug($item['provider_type']) : '';
             $is_unavailable = $is_shared_snapshot && (
                 !empty($item['_snapshot_unavailable']) ||
                 (isset($item['status']) && (string) $item['status'] !== 'active')
@@ -1049,6 +1146,74 @@ class Monday_Resources_Shortcode {
                         aria-controls="details-<?php echo esc_attr((string) $render_index); ?>">
                         Show Full Details
                     </button>
+                    <?php if ($allow_inline_edit): ?>
+                        <br>
+                        <button
+                            type="button"
+                            class="resource-inline-edit-toggle"
+                            data-target-id="inline-edit-panel-<?php echo esc_attr((string) $render_index); ?>"
+                            aria-expanded="false"
+                            aria-controls="inline-edit-panel-<?php echo esc_attr((string) $render_index); ?>">
+                            Inline Edit
+                        </button>
+                        <div
+                            class="resource-inline-edit-panel"
+                            id="inline-edit-panel-<?php echo esc_attr((string) $render_index); ?>"
+                            data-resource-id="<?php echo esc_attr((string) $resource_id); ?>"
+                            aria-hidden="true">
+                            <div class="inline-edit-row">
+                                <label>Resource Name</label>
+                                <input type="text" class="inline-edit-resource-name" value="<?php echo esc_attr(isset($item['resource_name']) ? (string) $item['resource_name'] : ''); ?>">
+                            </div>
+                            <div class="inline-edit-row">
+                                <label>Organization</label>
+                                <input type="text" class="inline-edit-organization" value="<?php echo esc_attr(isset($item['organization']) ? (string) $item['organization'] : ''); ?>">
+                            </div>
+                            <div class="inline-edit-row">
+                                <label>Service Area</label>
+                                <select class="inline-edit-service-area">
+                                    <option value="">Select service area</option>
+                                    <?php foreach ($inline_service_area_terms as $slug => $label): ?>
+                                        <option value="<?php echo esc_attr($slug); ?>" <?php selected($slug, $service_area_slug); ?>><?php echo esc_html($label); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="inline-edit-row">
+                                <label>Services Offered (comma-separated labels)</label>
+                                <input type="text" class="inline-edit-services-offered" value="<?php echo esc_attr($services_offered_input); ?>">
+                            </div>
+                            <div class="inline-edit-row">
+                                <label>System Type</label>
+                                <select class="inline-edit-provider-type">
+                                    <option value="">Any System Type</option>
+                                    <?php foreach ($inline_provider_type_terms as $slug => $label): ?>
+                                        <option value="<?php echo esc_attr($slug); ?>" <?php selected($slug, $provider_type_slug); ?>><?php echo esc_html($label); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="inline-edit-row">
+                                <label>Phone</label>
+                                <input type="text" class="inline-edit-phone" value="<?php echo esc_attr(isset($item['phone']) ? (string) $item['phone'] : ''); ?>">
+                            </div>
+                            <div class="inline-edit-row">
+                                <label>Email</label>
+                                <input type="text" class="inline-edit-email" value="<?php echo esc_attr(isset($item['email']) ? (string) $item['email'] : ''); ?>">
+                            </div>
+                            <div class="inline-edit-row">
+                                <label>Website</label>
+                                <input type="text" class="inline-edit-website" value="<?php echo esc_attr(isset($item['website']) ? (string) $item['website'] : ''); ?>">
+                            </div>
+                            <div class="inline-edit-row">
+                                <label>Notes & Tips</label>
+                                <textarea class="inline-edit-notes-and-tips"><?php echo esc_textarea(isset($item['notes_and_tips']) ? (string) $item['notes_and_tips'] : ''); ?></textarea>
+                            </div>
+                            <div class="inline-edit-actions">
+                                <button type="button" class="inline-edit-save">Save Changes</button>
+                                <button type="button" class="inline-edit-cancel">Cancel</button>
+                            </div>
+                            <div class="inline-edit-message" aria-live="polite"></div>
+                        </div>
+                    <?php endif; ?>
                     <?php if (!$is_shared_snapshot): ?>
                         <br>
                         <button class="resource-report-btn" onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo esc_attr((string) $render_index); ?>)">
@@ -1125,9 +1290,10 @@ class Monday_Resources_Shortcode {
         $visible_count = min($page * $per_page, $total_count);
         $has_more = $visible_count < $total_count;
         $render_offset = ($page - 1) * $per_page;
+        $allow_inline_edit = self::current_user_can_inline_edit();
 
         wp_send_json_success(array(
-            'html' => self::render_resources_grid_html($items, $render_offset),
+            'html' => self::render_resources_grid_html($items, $render_offset, array('allow_inline_edit' => $allow_inline_edit)),
             'page' => $page,
             'per_page' => $per_page,
             'visible_count' => $visible_count,
@@ -1162,6 +1328,19 @@ class Monday_Resources_Shortcode {
         }
 
         return $filters;
+    }
+
+    /**
+     * Check whether current user can use inline edit controls.
+     *
+     * @return bool
+     */
+    private static function current_user_can_inline_edit() {
+        $manage_cap = function_exists('monday_resources_get_manage_capability')
+            ? monday_resources_get_manage_capability()
+            : 'manage_options';
+
+        return current_user_can($manage_cap) || current_user_can('manage_options');
     }
 
     /**

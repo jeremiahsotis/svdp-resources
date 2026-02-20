@@ -139,6 +139,10 @@ window.onclick = function(event) {
         );
 
         controls.forEach(function(control) {
+            if (control.id === 'snapshot-text-btn' && !mondayResources.twilioEnabled) {
+                control.disabled = true;
+                return;
+            }
             control.disabled = disabled;
         });
     }
@@ -217,6 +221,10 @@ window.onclick = function(event) {
         function setSnapshotControlsDisabled(disabled) {
             [snapshotPrintBtn, snapshotEmailBtn, snapshotTextBtn].forEach(function(button) {
                 if (button) {
+                    if (button.id === 'snapshot-text-btn' && !mondayResources.twilioEnabled) {
+                        button.disabled = true;
+                        return;
+                    }
                     button.disabled = disabled;
                 }
             });
@@ -303,6 +311,11 @@ window.onclick = function(event) {
                 return;
             }
 
+            if (channel === 'text' && !mondayResources.twilioEnabled) {
+                setSnapshotMessage('Text sharing is unavailable until Twilio settings are configured.', 'error');
+                return;
+            }
+
             const contactValue = snapshotContactInput ? snapshotContactInput.value.trim() : '';
             if ((channel === 'email' || channel === 'text') && !contactValue) {
                 setSnapshotMessage('Enter an email or mobile number first.', 'error');
@@ -349,6 +362,224 @@ window.onclick = function(event) {
                 })
                 .always(function() {
                     setSnapshotControlsDisabled(false);
+                });
+        }
+
+        function setInlineEditMessage(panel, message, type) {
+            if (!panel) {
+                return;
+            }
+
+            const messageEl = panel.querySelector('.inline-edit-message');
+            if (!messageEl) {
+                return;
+            }
+
+            messageEl.classList.remove('error', 'success');
+            if (type === 'error') {
+                messageEl.classList.add('error');
+            } else if (type === 'success') {
+                messageEl.classList.add('success');
+            }
+            messageEl.textContent = message || '';
+        }
+
+        function closeInlineEditPanel(panel) {
+            if (!panel) {
+                return;
+            }
+
+            panel.classList.remove('is-open');
+            panel.setAttribute('aria-hidden', 'true');
+            const card = panel.closest('.resource-card');
+            if (!card) {
+                return;
+            }
+
+            const toggleBtn = card.querySelector('.resource-inline-edit-toggle');
+            if (toggleBtn) {
+                toggleBtn.setAttribute('aria-expanded', 'false');
+            }
+        }
+
+        function openInlineEditPanel(panel) {
+            if (!panel) {
+                return;
+            }
+
+            document.querySelectorAll('.resource-inline-edit-panel.is-open').forEach(function(otherPanel) {
+                if (otherPanel !== panel) {
+                    closeInlineEditPanel(otherPanel);
+                }
+            });
+
+            panel.classList.add('is-open');
+            panel.setAttribute('aria-hidden', 'false');
+
+            const card = panel.closest('.resource-card');
+            if (!card) {
+                return;
+            }
+
+            const toggleBtn = card.querySelector('.resource-inline-edit-toggle');
+            if (toggleBtn) {
+                toggleBtn.setAttribute('aria-expanded', 'true');
+            }
+        }
+
+        function updateCardSummaryAfterInlineSave(panel) {
+            const card = panel ? panel.closest('.resource-card') : null;
+            if (!card) {
+                return;
+            }
+
+            const nameInput = panel.querySelector('.inline-edit-resource-name');
+            const organizationInput = panel.querySelector('.inline-edit-organization');
+            const serviceAreaSelect = panel.querySelector('.inline-edit-service-area');
+            const serviceAreaValue = serviceAreaSelect ? serviceAreaSelect.value : '';
+            const serviceAreaLabel = mondayResources.serviceAreas && mondayResources.serviceAreas[serviceAreaValue]
+                ? mondayResources.serviceAreas[serviceAreaValue]
+                : '';
+
+            const titleEl = card.querySelector('h3');
+            if (titleEl && nameInput) {
+                titleEl.textContent = nameInput.value.trim();
+            }
+
+            const organizationValue = organizationInput ? organizationInput.value.trim() : '';
+            let orgEl = card.querySelector('.resource-organization');
+            if (organizationValue !== '') {
+                if (!orgEl) {
+                    orgEl = document.createElement('div');
+                    orgEl.className = 'resource-organization';
+                    if (titleEl && titleEl.parentNode) {
+                        titleEl.insertAdjacentElement('afterend', orgEl);
+                    }
+                }
+                if (orgEl) {
+                    orgEl.textContent = organizationValue;
+                }
+            } else if (orgEl) {
+                orgEl.remove();
+            }
+
+            if (serviceAreaLabel !== '') {
+                card.querySelectorAll('.resource-field').forEach(function(field) {
+                    const labelEl = field.querySelector('.resource-field-label');
+                    if (!labelEl || labelEl.textContent.trim().toLowerCase() !== 'service area:') {
+                        return;
+                    }
+
+                    const valueEl = field.querySelector('.resource-field-value');
+                    if (valueEl) {
+                        valueEl.textContent = serviceAreaLabel;
+                    }
+                });
+            }
+        }
+
+        function submitInlineEdit(panel, confirmedCloseMatch) {
+            if (!panel) {
+                return;
+            }
+
+            const resourceId = Number(panel.getAttribute('data-resource-id') || 0);
+            if (!resourceId) {
+                setInlineEditMessage(panel, 'Missing resource ID.', 'error');
+                return;
+            }
+
+            const nameInput = panel.querySelector('.inline-edit-resource-name');
+            const organizationInput = panel.querySelector('.inline-edit-organization');
+            const serviceAreaSelect = panel.querySelector('.inline-edit-service-area');
+            const servicesInput = panel.querySelector('.inline-edit-services-offered');
+            const providerSelect = panel.querySelector('.inline-edit-provider-type');
+            const phoneInput = panel.querySelector('.inline-edit-phone');
+            const emailInput = panel.querySelector('.inline-edit-email');
+            const websiteInput = panel.querySelector('.inline-edit-website');
+            const notesInput = panel.querySelector('.inline-edit-notes-and-tips');
+            const saveBtn = panel.querySelector('.inline-edit-save');
+
+            const payload = {
+                action: 'svdp_resource_inline_save',
+                nonce: mondayResources.nonce,
+                resource_id: resourceId,
+                resource_name: nameInput ? nameInput.value.trim() : '',
+                organization: organizationInput ? organizationInput.value.trim() : '',
+                service_area: serviceAreaSelect ? serviceAreaSelect.value : '',
+                provider_type: providerSelect ? providerSelect.value : '',
+                phone: phoneInput ? phoneInput.value.trim() : '',
+                email: emailInput ? emailInput.value.trim() : '',
+                website: websiteInput ? websiteInput.value.trim() : '',
+                notes_and_tips: notesInput ? notesInput.value.trim() : ''
+            };
+
+            const servicesValue = servicesInput ? servicesInput.value.trim() : '';
+            payload.services_offered = servicesValue
+                ? servicesValue.split(',').map(function(part) { return part.trim(); }).filter(Boolean)
+                : [];
+
+            if (confirmedCloseMatch) {
+                payload.confirm_org_close_match = '1';
+            }
+
+            if (!payload.resource_name) {
+                setInlineEditMessage(panel, 'Resource name is required.', 'error');
+                return;
+            }
+
+            if (!payload.service_area) {
+                setInlineEditMessage(panel, 'Service Area is required.', 'error');
+                return;
+            }
+
+            setInlineEditMessage(panel, 'Saving changes...', '');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+            }
+
+            $.ajax({
+                url: mondayResources.ajaxurl,
+                type: 'POST',
+                dataType: 'json',
+                data: payload
+            })
+                .done(function(response) {
+                    if (!response || !response.success) {
+                        setInlineEditMessage(panel, 'Unable to save changes.', 'error');
+                        return;
+                    }
+
+                    updateCardSummaryAfterInlineSave(panel);
+                    setInlineEditMessage(panel, 'Saved.', 'success');
+                })
+                .fail(function(xhr) {
+                    const responseData = xhr && xhr.responseJSON && xhr.responseJSON.data ? xhr.responseJSON.data : null;
+                    if (xhr && xhr.status === 409 && responseData && responseData.code === 'organization_close_match_confirmation_required') {
+                        const matches = Array.isArray(responseData.matches) ? responseData.matches : [];
+                        const matchNames = matches.map(function(match) {
+                            return match && match.name ? String(match.name) : '';
+                        }).filter(Boolean);
+
+                        const confirmMessage = matchNames.length
+                            ? 'Possible duplicate organization found: ' + matchNames.join(', ') + '. Save anyway?'
+                            : 'Possible duplicate organization found. Save anyway?';
+
+                        if (window.confirm(confirmMessage)) {
+                            submitInlineEdit(panel, true);
+                            return;
+                        }
+
+                        setInlineEditMessage(panel, 'Save canceled.', 'error');
+                        return;
+                    }
+
+                    setInlineEditMessage(panel, extractAjaxErrorMessage(xhr, 'Unable to save changes.'), 'error');
+                })
+                .always(function() {
+                    if (saveBtn) {
+                        saveBtn.disabled = false;
+                    }
                 });
         }
 
@@ -565,6 +796,12 @@ window.onclick = function(event) {
             if (!mondayResources.canSnapshot) {
                 snapshotPanel.style.display = 'none';
             } else {
+                if (snapshotTextBtn && !mondayResources.twilioEnabled) {
+                    snapshotTextBtn.disabled = true;
+                    snapshotTextBtn.classList.add('is-disabled');
+                    snapshotTextBtn.title = 'Text sharing is unavailable until Twilio settings are configured.';
+                }
+
                 if (snapshotPrintBtn) {
                     snapshotPrintBtn.addEventListener('click', function() {
                         handleSnapshotAction('print');
@@ -583,6 +820,39 @@ window.onclick = function(event) {
                     });
                 }
             }
+        }
+
+        if (mondayResources.canInlineEdit) {
+            directory.addEventListener('click', function(event) {
+                const toggleBtn = event.target.closest('.resource-inline-edit-toggle');
+                if (toggleBtn) {
+                    const panelId = toggleBtn.getAttribute('data-target-id');
+                    const panel = panelId ? document.getElementById(panelId) : null;
+                    if (!panel) {
+                        return;
+                    }
+
+                    if (panel.classList.contains('is-open')) {
+                        closeInlineEditPanel(panel);
+                    } else {
+                        openInlineEditPanel(panel);
+                    }
+                    return;
+                }
+
+                const cancelBtn = event.target.closest('.inline-edit-cancel');
+                if (cancelBtn) {
+                    const panel = cancelBtn.closest('.resource-inline-edit-panel');
+                    closeInlineEditPanel(panel);
+                    return;
+                }
+
+                const saveBtn = event.target.closest('.inline-edit-save');
+                if (saveBtn) {
+                    const panel = saveBtn.closest('.resource-inline-edit-panel');
+                    submitInlineEdit(panel, false);
+                }
+            });
         }
 
         applyTileSelection();
