@@ -6,6 +6,8 @@
 class Monday_Resources_Shortcode {
 
     const DEFAULT_PER_PAGE = 25;
+    private static $snapshot_actions_rendered = false;
+    private static $resource_modals_rendered = false;
 
     public function __construct() {
         add_shortcode('monday_resources', array($this, 'display_resources'));
@@ -97,6 +99,14 @@ class Monday_Resources_Shortcode {
         $services_offered_terms = Resource_Taxonomy::get_services_offered_terms();
         $provider_type_terms = Resource_Taxonomy::get_provider_type_terms();
         $population_terms = get_option('resource_target_population_options', array());
+        $show_snapshot_actions = !self::$snapshot_actions_rendered;
+        if ($show_snapshot_actions) {
+            self::$snapshot_actions_rendered = true;
+        }
+        $show_resource_modals = !self::$resource_modals_rendered;
+        if ($show_resource_modals) {
+            self::$resource_modals_rendered = true;
+        }
 
         ob_start();
         ?>
@@ -782,26 +792,28 @@ class Monday_Resources_Shortcode {
 
             <button class="submit-resource-btn" onclick="openSubmitResourceModal()">Submit a New Resource</button>
 
-            <div class="snapshot-actions-panel" id="snapshot-actions-panel">
-                <h3>Share This Resource List</h3>
-                <p class="snapshot-actions-help">Create a shareable snapshot of the currently visible resources, then print, email, or text it.</p>
-                <div class="snapshot-actions-grid">
-                    <div>
-                        <label for="snapshot-neighbor-name">Neighbor Name</label>
-                        <input type="text" id="snapshot-neighbor-name" placeholder="Neighbor name">
+            <?php if ($show_snapshot_actions): ?>
+                <div class="snapshot-actions-panel" id="snapshot-actions-panel">
+                    <h3>Share This Resource List</h3>
+                    <p class="snapshot-actions-help">Create a shareable snapshot of the currently visible resources, then print, email, or text it.</p>
+                    <div class="snapshot-actions-grid">
+                        <div>
+                            <label for="snapshot-neighbor-name">Neighbor Name</label>
+                            <input type="text" id="snapshot-neighbor-name" placeholder="Neighbor name">
+                        </div>
+                        <div>
+                            <label for="snapshot-contact-value">Email or Mobile (for Email/Text)</label>
+                            <input type="text" id="snapshot-contact-value" placeholder="name@example.com or (260) 555-1234">
+                        </div>
+                        <div class="snapshot-action-buttons">
+                            <button type="button" class="snapshot-action-btn secondary" id="snapshot-print-btn">Print</button>
+                            <button type="button" class="snapshot-action-btn" id="snapshot-email-btn">Email</button>
+                            <button type="button" class="snapshot-action-btn" id="snapshot-text-btn">Text This List</button>
+                        </div>
                     </div>
-                    <div>
-                        <label for="snapshot-contact-value">Email or Mobile (for Email/Text)</label>
-                        <input type="text" id="snapshot-contact-value" placeholder="name@example.com or (260) 555-1234">
-                    </div>
-                    <div class="snapshot-action-buttons">
-                        <button type="button" class="snapshot-action-btn secondary" id="snapshot-print-btn">Print</button>
-                        <button type="button" class="snapshot-action-btn" id="snapshot-email-btn">Email</button>
-                        <button type="button" class="snapshot-action-btn" id="snapshot-text-btn">Text This List</button>
-                    </div>
+                    <div id="snapshot-action-message" class="snapshot-action-message" aria-live="polite"></div>
                 </div>
-                <div id="snapshot-action-message" class="snapshot-action-message" aria-live="polite"></div>
-            </div>
+            <?php endif; ?>
 
             <div class="service-area-tiles" id="service-area-tiles">
                 <?php foreach ($service_area_terms as $slug => $label): ?>
@@ -899,8 +911,10 @@ class Monday_Resources_Shortcode {
         </div>
 
         <?php
-        include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/report-issue-modal.php';
-        include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/submit-resource-modal.php';
+        if ($show_resource_modals) {
+            include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/report-issue-modal.php';
+            include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/submit-resource-modal.php';
+        }
         ?>
 
         <script>

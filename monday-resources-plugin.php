@@ -124,6 +124,119 @@ function monday_resources_ensure_snapshot_schema() {
 }
 
 /**
+ * Backfill organization_id values from legacy organization text.
+ *
+ * Existing resources may have organization names populated without an
+ * organization_id link. This migration bridges those rows without manual edits.
+ *
+ * @param int $batch_size
+ * @return array<string,int>
+ */
+function monday_resources_backfill_organization_links($batch_size = 250) {
+    global $wpdb;
+
+    if (!class_exists('Resource_Organization_Manager')) {
+        return array('linked' => 0, 'remaining' => 0);
+    }
+
+    $batch_size = max(25, min(1000, (int) $batch_size));
+    $resources_table = $wpdb->prefix . 'resources';
+    $organizations_table = Resource_Organization_Manager::get_table_name();
+
+    $resources_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resources_table));
+    if ($resources_exists !== $resources_table) {
+        return array('linked' => 0, 'remaining' => 0);
+    }
+
+    $org_column_exists = $wpdb->get_var("SHOW COLUMNS FROM $resources_table LIKE 'organization_id'");
+    $org_table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $organizations_table));
+
+    if (!$org_column_exists || $org_table_exists !== $organizations_table) {
+        monday_resources_ensure_snapshot_schema();
+        $org_column_exists = $wpdb->get_var("SHOW COLUMNS FROM $resources_table LIKE 'organization_id'");
+        $org_table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $organizations_table));
+        if (!$org_column_exists || $org_table_exists !== $organizations_table) {
+            return array('linked' => 0, 'remaining' => 0);
+        }
+    }
+
+    $max_batches = (defined('WP_CLI') && WP_CLI) ? 50 : 2;
+    $linked_total = 0;
+
+    for ($batch = 0; $batch < $max_batches; $batch++) {
+        $rows = $wpdb->get_results(
+            $wpdb->prepare(
+                "SELECT id, organization
+                FROM $resources_table
+                WHERE (organization_id IS NULL OR organization_id = 0)
+                    AND organization IS NOT NULL
+                    AND TRIM(organization) <> ''
+                ORDER BY id ASC
+                LIMIT %d",
+                $batch_size
+            ),
+            ARRAY_A
+        );
+
+        if (!is_array($rows) || empty($rows)) {
+            break;
+        }
+
+        foreach ($rows as $row) {
+            $resource_id = isset($row['id']) ? (int) $row['id'] : 0;
+            $organization_name = isset($row['organization']) ? trim((string) $row['organization']) : '';
+            if ($resource_id <= 0 || $organization_name === '') {
+                continue;
+            }
+
+            $organization_id = Resource_Organization_Manager::upsert_organization($organization_name);
+            if ($organization_id <= 0) {
+                continue;
+            }
+
+            $updated = $wpdb->update(
+                $resources_table,
+                array('organization_id' => $organization_id),
+                array('id' => $resource_id),
+                array('%d'),
+                array('%d')
+            );
+
+            if ($updated !== false) {
+                $linked_total++;
+            }
+        }
+    }
+
+    $remaining = (int) $wpdb->get_var(
+        "SELECT COUNT(*)
+        FROM $resources_table
+        WHERE (organization_id IS NULL OR organization_id = 0)
+            AND organization IS NOT NULL
+            AND TRIM(organization) <> ''"
+    );
+
+    update_option('monday_resources_org_backfill_last_run', current_time('mysql'), false);
+    update_option('monday_resources_org_backfill_remaining', $remaining, false);
+    update_option('monday_resources_org_backfill_complete', $remaining === 0 ? 1 : 0, false);
+
+    if ($linked_total > 0) {
+        error_log(
+            sprintf(
+                'Monday Resources: Linked %d existing resources to organization entities (%d remaining).',
+                $linked_total,
+                $remaining
+            )
+        );
+    }
+
+    return array(
+        'linked' => $linked_total,
+        'remaining' => $remaining
+    );
+}
+
+/**
  * Ensure taxonomy-related columns and indexes exist on resources table.
  *
  * @return void
@@ -477,6 +590,8 @@ function monday_resources_maybe_upgrade_db() {
         Resource_Taxonomy::seed_canonical_options();
         update_option('monday_resources_last_schema_self_heal', time());
     }
+
+    monday_resources_backfill_organization_links();
 
     monday_resources_record_schema_health(monday_resources_get_schema_health());
 }
