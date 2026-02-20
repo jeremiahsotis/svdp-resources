@@ -124,44 +124,266 @@ function monday_resources_ensure_snapshot_schema() {
 }
 
 /**
- * Backfill organization_id values from legacy organization text.
+ * Fetch persisted review queue entries from organization backfill runs.
  *
- * Existing resources may have organization names populated without an
- * organization_id link. This migration bridges those rows without manual edits.
- *
- * @param int $batch_size
- * @return array<string,int>
+ * @param int $limit
+ * @return array
  */
-function monday_resources_backfill_organization_links($batch_size = 250) {
-    global $wpdb;
-
-    if (!class_exists('Resource_Organization_Manager')) {
-        return array('linked' => 0, 'remaining' => 0);
+function monday_resources_get_org_backfill_review_queue($limit = 100) {
+    $queue = get_option('monday_resources_org_backfill_review_queue', array());
+    if (!is_array($queue)) {
+        return array();
     }
 
-    $batch_size = max(25, min(1000, (int) $batch_size));
+    $queue = array_values($queue);
+    if ($limit <= 0) {
+        return $queue;
+    }
+
+    return array_slice($queue, 0, (int) $limit);
+}
+
+/**
+ * Clear organization backfill review queue.
+ *
+ * @return void
+ */
+function monday_resources_clear_org_backfill_review_queue() {
+    delete_option('monday_resources_org_backfill_review_queue');
+}
+
+/**
+ * Persist failed rows into backfill review queue.
+ *
+ * @param string $run_id
+ * @param array $entries
+ * @param int $max_items
+ * @return int
+ */
+function monday_resources_append_org_backfill_review_queue($run_id, $entries, $max_items = 400) {
+    if (!is_array($entries) || empty($entries)) {
+        return 0;
+    }
+
+    $queue = monday_resources_get_org_backfill_review_queue(0);
+    $run_id = sanitize_text_field((string) $run_id);
+    $recorded_at = current_time('mysql');
+    $new_entries = array();
+
+    foreach ($entries as $entry) {
+        $resource_id = isset($entry['resource_id']) ? (int) $entry['resource_id'] : 0;
+        $organization = isset($entry['organization']) ? sanitize_text_field((string) $entry['organization']) : '';
+        $reason = isset($entry['reason']) ? sanitize_key((string) $entry['reason']) : 'unknown_error';
+        $db_error = isset($entry['db_error']) ? sanitize_text_field(wp_strip_all_tags((string) $entry['db_error'])) : '';
+
+        $new_entries[] = array(
+            'run_id' => $run_id,
+            'recorded_at' => $recorded_at,
+            'resource_id' => $resource_id,
+            'organization' => $organization,
+            'reason' => $reason,
+            'db_error' => $db_error
+        );
+    }
+
+    $queue = array_merge($new_entries, $queue);
+
+    // De-duplicate by resource + reason + org text to keep queue readable.
+    $seen = array();
+    $deduped = array();
+    foreach ($queue as $row) {
+        $row_resource_id = isset($row['resource_id']) ? (int) $row['resource_id'] : 0;
+        $row_reason = isset($row['reason']) ? (string) $row['reason'] : '';
+        $row_org = isset($row['organization']) ? strtolower((string) $row['organization']) : '';
+        $key = $row_resource_id . '|' . $row_reason . '|' . $row_org;
+
+        if (isset($seen[$key])) {
+            continue;
+        }
+        $seen[$key] = true;
+        $deduped[] = $row;
+    }
+
+    $max_items = max(50, min(1000, (int) $max_items));
+    $deduped = array_slice($deduped, 0, $max_items);
+    update_option('monday_resources_org_backfill_review_queue', $deduped, false);
+
+    return count($new_entries);
+}
+
+/**
+ * Get health/status counters for organization linking backfill.
+ *
+ * @return array
+ */
+function monday_resources_get_organization_backfill_status() {
+    global $wpdb;
+
+    $status = array(
+        'tables_ready' => false,
+        'resources_with_organization' => 0,
+        'resources_linked' => 0,
+        'resources_missing_link' => 0,
+        'organizations_total' => 0,
+        'orphaned_links' => 0,
+        'review_queue_count' => count(monday_resources_get_org_backfill_review_queue(0)),
+        'last_run' => get_option('monday_resources_org_backfill_last_run', ''),
+        'remaining_hint' => (int) get_option('monday_resources_org_backfill_remaining', 0),
+        'complete_flag' => ((int) get_option('monday_resources_org_backfill_complete', 0) === 1),
+        'last_report' => get_option('monday_resources_org_backfill_last_report', array())
+    );
+
+    if (!class_exists('Resource_Organization_Manager')) {
+        return $status;
+    }
+
     $resources_table = $wpdb->prefix . 'resources';
     $organizations_table = Resource_Organization_Manager::get_table_name();
 
     $resources_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resources_table));
     if ($resources_exists !== $resources_table) {
-        return array('linked' => 0, 'remaining' => 0);
+        return $status;
+    }
+
+    $org_column_exists = $wpdb->get_var("SHOW COLUMNS FROM $resources_table LIKE 'organization_id'");
+    if (!$org_column_exists) {
+        return $status;
+    }
+
+    $status['tables_ready'] = true;
+    $status['resources_with_organization'] = (int) $wpdb->get_var(
+        "SELECT COUNT(*)
+        FROM $resources_table
+        WHERE organization IS NOT NULL
+            AND TRIM(organization) <> ''"
+    );
+    $status['resources_linked'] = (int) $wpdb->get_var(
+        "SELECT COUNT(*)
+        FROM $resources_table
+        WHERE organization_id IS NOT NULL
+            AND organization_id > 0
+            AND organization IS NOT NULL
+            AND TRIM(organization) <> ''"
+    );
+    $status['resources_missing_link'] = (int) $wpdb->get_var(
+        "SELECT COUNT(*)
+        FROM $resources_table
+        WHERE (organization_id IS NULL OR organization_id = 0)
+            AND organization IS NOT NULL
+            AND TRIM(organization) <> ''"
+    );
+
+    $org_table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $organizations_table));
+    if ($org_table_exists === $organizations_table) {
+        $status['organizations_total'] = (int) $wpdb->get_var("SELECT COUNT(*) FROM $organizations_table");
+        $status['orphaned_links'] = (int) $wpdb->get_var(
+            "SELECT COUNT(*)
+            FROM $resources_table r
+            LEFT JOIN $organizations_table o ON o.id = r.organization_id
+            WHERE r.organization_id IS NOT NULL
+                AND r.organization_id > 0
+                AND o.id IS NULL"
+        );
+    }
+
+    return $status;
+}
+
+/**
+ * Backfill organization_id values from legacy organization text.
+ *
+ * Existing resources may have organization names populated without an
+ * organization_id link. This migration bridges those rows without manual edits.
+ *
+ * @param array|int $args
+ * @return array
+ */
+function monday_resources_backfill_organization_links($args = array()) {
+    global $wpdb;
+
+    if (!class_exists('Resource_Organization_Manager')) {
+        return array(
+            'run_id' => '',
+            'source' => 'unknown',
+            'dry_run' => false,
+            'processed' => 0,
+            'linked' => 0,
+            'failed' => 0,
+            'remaining' => 0,
+            'failures' => array()
+        );
+    }
+
+    if (!is_array($args)) {
+        $args = array('batch_size' => (int) $args);
+    }
+
+    $defaults = array(
+        'batch_size' => 250,
+        'max_batches' => (defined('WP_CLI') && WP_CLI) ? 50 : 2,
+        'dry_run' => false,
+        'capture_failures' => false,
+        'source' => (defined('WP_CLI') && WP_CLI) ? 'wp_cli' : 'manual'
+    );
+    $args = wp_parse_args($args, $defaults);
+
+    $batch_size = max(25, min(1000, (int) $args['batch_size']));
+    $max_batches = max(1, min(250, (int) $args['max_batches']));
+    $dry_run = !empty($args['dry_run']);
+    $capture_failures = !empty($args['capture_failures']);
+    $source = sanitize_key((string) $args['source']);
+    if ($source === '') {
+        $source = 'manual';
+    }
+
+    $resources_table = $wpdb->prefix . 'resources';
+    $organizations_table = Resource_Organization_Manager::get_table_name();
+    $run_id = 'orgbf_' . wp_generate_password(12, false, false);
+    $started_ts = microtime(true);
+
+    $result = array(
+        'run_id' => $run_id,
+        'source' => $source,
+        'dry_run' => $dry_run,
+        'batch_size' => $batch_size,
+        'max_batches' => $max_batches,
+        'processed' => 0,
+        'linked' => 0,
+        'failed' => 0,
+        'remaining' => 0,
+        'failures' => array(),
+        'started_at' => current_time('mysql')
+    );
+
+    $resources_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resources_table));
+    if ($resources_exists !== $resources_table) {
+        $result['failed'] = 1;
+        $result['failures'][] = array(
+            'resource_id' => 0,
+            'organization' => '',
+            'reason' => 'resources_table_missing',
+            'db_error' => ''
+        );
+        return $result;
     }
 
     $org_column_exists = $wpdb->get_var("SHOW COLUMNS FROM $resources_table LIKE 'organization_id'");
     $org_table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $organizations_table));
-
     if (!$org_column_exists || $org_table_exists !== $organizations_table) {
         monday_resources_ensure_snapshot_schema();
         $org_column_exists = $wpdb->get_var("SHOW COLUMNS FROM $resources_table LIKE 'organization_id'");
         $org_table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $organizations_table));
         if (!$org_column_exists || $org_table_exists !== $organizations_table) {
-            return array('linked' => 0, 'remaining' => 0);
+            $result['failed'] = 1;
+            $result['failures'][] = array(
+                'resource_id' => 0,
+                'organization' => '',
+                'reason' => 'organization_schema_unavailable',
+                'db_error' => $wpdb->last_error
+            );
+            return $result;
         }
     }
-
-    $max_batches = (defined('WP_CLI') && WP_CLI) ? 50 : 2;
-    $linked_total = 0;
 
     for ($batch = 0; $batch < $max_batches; $batch++) {
         $rows = $wpdb->get_results(
@@ -185,12 +407,52 @@ function monday_resources_backfill_organization_links($batch_size = 250) {
         foreach ($rows as $row) {
             $resource_id = isset($row['id']) ? (int) $row['id'] : 0;
             $organization_name = isset($row['organization']) ? trim((string) $row['organization']) : '';
-            if ($resource_id <= 0 || $organization_name === '') {
+            $result['processed']++;
+
+            if ($resource_id <= 0) {
+                $result['failures'][] = array(
+                    'resource_id' => 0,
+                    'organization' => $organization_name,
+                    'reason' => 'missing_resource_id',
+                    'db_error' => ''
+                );
+                continue;
+            }
+
+            if ($organization_name === '') {
+                $result['failures'][] = array(
+                    'resource_id' => $resource_id,
+                    'organization' => '',
+                    'reason' => 'missing_organization_name',
+                    'db_error' => ''
+                );
+                continue;
+            }
+
+            $normalized = Resource_Organization_Manager::normalize_name($organization_name);
+            if ($normalized === '') {
+                $result['failures'][] = array(
+                    'resource_id' => $resource_id,
+                    'organization' => $organization_name,
+                    'reason' => 'organization_normalization_failed',
+                    'db_error' => ''
+                );
+                continue;
+            }
+
+            if ($dry_run) {
+                $result['linked']++;
                 continue;
             }
 
             $organization_id = Resource_Organization_Manager::upsert_organization($organization_name);
             if ($organization_id <= 0) {
+                $result['failures'][] = array(
+                    'resource_id' => $resource_id,
+                    'organization' => $organization_name,
+                    'reason' => 'organization_upsert_failed',
+                    'db_error' => $wpdb->last_error
+                );
                 continue;
             }
 
@@ -202,13 +464,40 @@ function monday_resources_backfill_organization_links($batch_size = 250) {
                 array('%d')
             );
 
-            if ($updated !== false) {
-                $linked_total++;
+            if ($updated === false) {
+                $result['failures'][] = array(
+                    'resource_id' => $resource_id,
+                    'organization' => $organization_name,
+                    'reason' => 'resource_update_failed',
+                    'db_error' => $wpdb->last_error
+                );
+                continue;
             }
+
+            if ((int) $updated === 0) {
+                $current_link = (int) $wpdb->get_var(
+                    $wpdb->prepare(
+                        "SELECT organization_id FROM $resources_table WHERE id = %d",
+                        $resource_id
+                    )
+                );
+
+                if ($current_link <= 0) {
+                    $result['failures'][] = array(
+                        'resource_id' => $resource_id,
+                        'organization' => $organization_name,
+                        'reason' => 'resource_update_no_rows',
+                        'db_error' => $wpdb->last_error
+                    );
+                    continue;
+                }
+            }
+
+            $result['linked']++;
         }
     }
 
-    $remaining = (int) $wpdb->get_var(
+    $result['remaining'] = (int) $wpdb->get_var(
         "SELECT COUNT(*)
         FROM $resources_table
         WHERE (organization_id IS NULL OR organization_id = 0)
@@ -216,24 +505,64 @@ function monday_resources_backfill_organization_links($batch_size = 250) {
             AND TRIM(organization) <> ''"
     );
 
-    update_option('monday_resources_org_backfill_last_run', current_time('mysql'), false);
-    update_option('monday_resources_org_backfill_remaining', $remaining, false);
-    update_option('monday_resources_org_backfill_complete', $remaining === 0 ? 1 : 0, false);
+    $result['failed'] = count($result['failures']);
+    $result['completed_at'] = current_time('mysql');
+    $result['duration_ms'] = (int) round((microtime(true) - $started_ts) * 1000);
 
-    if ($linked_total > 0) {
+    update_option('monday_resources_org_backfill_last_run', current_time('mysql'), false);
+    update_option('monday_resources_org_backfill_remaining', $result['remaining'], false);
+    update_option('monday_resources_org_backfill_complete', $result['remaining'] === 0 ? 1 : 0, false);
+
+    $last_report = $result;
+    $last_report['failure_sample'] = array_slice($result['failures'], 0, 15);
+    unset($last_report['failures']);
+    update_option('monday_resources_org_backfill_last_report', $last_report, false);
+
+    if (!$dry_run && $capture_failures && !empty($result['failures'])) {
+        monday_resources_append_org_backfill_review_queue($run_id, $result['failures']);
+    }
+
+    if (!$dry_run && $result['linked'] > 0) {
         error_log(
             sprintf(
                 'Monday Resources: Linked %d existing resources to organization entities (%d remaining).',
-                $linked_total,
-                $remaining
+                $result['linked'],
+                $result['remaining']
             )
         );
     }
 
-    return array(
-        'linked' => $linked_total,
-        'remaining' => $remaining
+    return $result;
+}
+
+/**
+ * Format backfill failure reason into user-facing label.
+ *
+ * @param string $reason
+ * @return string
+ */
+function monday_resources_get_org_backfill_reason_label($reason) {
+    $map = array(
+        'resources_table_missing' => 'Resources table missing.',
+        'organization_schema_unavailable' => 'Organization schema unavailable.',
+        'missing_resource_id' => 'Missing resource ID.',
+        'missing_organization_name' => 'Missing organization value.',
+        'organization_normalization_failed' => 'Organization name could not be normalized.',
+        'organization_upsert_failed' => 'Organization entity could not be created/loaded.',
+        'resource_update_failed' => 'Failed updating resource organization link.',
+        'resource_update_no_rows' => 'No rows updated and no link was detected.'
     );
+
+    $reason = sanitize_key((string) $reason);
+    if (isset($map[$reason])) {
+        return $map[$reason];
+    }
+
+    if ($reason === '') {
+        return 'Unknown error.';
+    }
+
+    return ucwords(str_replace('_', ' ', $reason)) . '.';
 }
 
 /**
@@ -590,8 +919,6 @@ function monday_resources_maybe_upgrade_db() {
         Resource_Taxonomy::seed_canonical_options();
         update_option('monday_resources_last_schema_self_heal', time());
     }
-
-    monday_resources_backfill_organization_links();
 
     monday_resources_record_schema_health(monday_resources_get_schema_health());
 }

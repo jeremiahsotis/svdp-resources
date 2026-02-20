@@ -895,6 +895,9 @@ class Monday_Resources_Admin {
     public function settings_page() {
         $stats = Resources_Manager::get_verification_stats();
         $migration_count = get_option('monday_resources_migration_count', 0);
+        $org_backfill_result = null;
+        $org_backfill_batch_size = 250;
+        $org_backfill_max_batches = 20;
 
         // Handle add/remove actions
         if (isset($_POST['add_conference']) && check_admin_referer('manage_dropdowns')) {
@@ -1064,6 +1067,76 @@ class Monday_Resources_Admin {
             echo '<div class="notice notice-success is-dismissible"><p>Twilio settings cleared.</p></div>';
         }
 
+        if (isset($_POST['org_backfill_batch_size'])) {
+            $org_backfill_batch_size = max(25, min(1000, (int) wp_unslash($_POST['org_backfill_batch_size'])));
+        }
+        if (isset($_POST['org_backfill_max_batches'])) {
+            $org_backfill_max_batches = max(1, min(250, (int) wp_unslash($_POST['org_backfill_max_batches'])));
+        }
+
+        if (isset($_POST['preview_org_backfill']) && check_admin_referer('manage_org_backfill')) {
+            if (function_exists('monday_resources_backfill_organization_links')) {
+                $org_backfill_result = monday_resources_backfill_organization_links(array(
+                    'batch_size' => $org_backfill_batch_size,
+                    'max_batches' => $org_backfill_max_batches,
+                    'dry_run' => true,
+                    'capture_failures' => false,
+                    'source' => 'admin_dry_run'
+                ));
+
+                echo '<div class="notice notice-info is-dismissible"><p>'
+                    . 'Backfill dry run complete. Processed: <strong>' . esc_html((string) $org_backfill_result['processed']) . '</strong>, '
+                    . 'processable: <strong>' . esc_html((string) $org_backfill_result['linked']) . '</strong>, '
+                    . 'failed validation: <strong>' . esc_html((string) $org_backfill_result['failed']) . '</strong>, '
+                    . 'remaining: <strong>' . esc_html((string) $org_backfill_result['remaining']) . '</strong>.'
+                    . '</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Organization backfill function is unavailable.</p></div>';
+            }
+        }
+
+        if (isset($_POST['run_org_backfill']) && check_admin_referer('manage_org_backfill')) {
+            if (function_exists('monday_resources_backfill_organization_links')) {
+                $org_backfill_result = monday_resources_backfill_organization_links(array(
+                    'batch_size' => $org_backfill_batch_size,
+                    'max_batches' => $org_backfill_max_batches,
+                    'dry_run' => false,
+                    'capture_failures' => true,
+                    'source' => 'admin_manual'
+                ));
+
+                $notice_class = ((int) $org_backfill_result['failed'] > 0) ? 'notice-warning' : 'notice-success';
+                echo '<div class="notice ' . esc_attr($notice_class) . ' is-dismissible"><p>'
+                    . 'Organization backfill run complete. Linked: <strong>' . esc_html((string) $org_backfill_result['linked']) . '</strong>, '
+                    . 'failed: <strong>' . esc_html((string) $org_backfill_result['failed']) . '</strong>, '
+                    . 'remaining: <strong>' . esc_html((string) $org_backfill_result['remaining']) . '</strong>.'
+                    . '</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Organization backfill function is unavailable.</p></div>';
+            }
+        }
+
+        if (isset($_POST['verify_org_backfill']) && check_admin_referer('manage_org_backfill')) {
+            if (function_exists('monday_resources_get_organization_backfill_status')) {
+                $verify_status = monday_resources_get_organization_backfill_status();
+                echo '<div class="notice notice-info is-dismissible"><p>'
+                    . 'Verification complete. Missing organization links: <strong>' . esc_html((string) $verify_status['resources_missing_link']) . '</strong>; '
+                    . 'orphaned links: <strong>' . esc_html((string) $verify_status['orphaned_links']) . '</strong>.'
+                    . '</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Organization backfill verification function is unavailable.</p></div>';
+            }
+        }
+
+        if (isset($_POST['clear_org_backfill_review']) && check_admin_referer('manage_org_backfill')) {
+            if (function_exists('monday_resources_clear_org_backfill_review_queue')) {
+                monday_resources_clear_org_backfill_review_queue();
+                echo '<div class="notice notice-success is-dismissible"><p>Backfill review queue cleared.</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Could not clear review queue because helper function is unavailable.</p></div>';
+            }
+        }
+
         $conferences = get_option('resource_conference_options', array());
         $counties = get_option('resource_counties_options', array());
         $service_types = get_option('resource_service_types', array());
@@ -1075,6 +1148,15 @@ class Monday_Resources_Admin {
         $twilio_from_number = get_option('svdp_twilio_from_number', '');
         $twilio_configured = class_exists('Resource_Snapshot_Manager') ? Resource_Snapshot_Manager::is_twilio_configured() : false;
         $twilio_using_constants = (defined('SVDP_TWILIO_ACCOUNT_SID') || defined('SVDP_TWILIO_AUTH_TOKEN') || defined('SVDP_TWILIO_FROM_NUMBER'));
+        $org_backfill_status = function_exists('monday_resources_get_organization_backfill_status')
+            ? monday_resources_get_organization_backfill_status()
+            : array();
+        $org_backfill_review_queue = function_exists('monday_resources_get_org_backfill_review_queue')
+            ? monday_resources_get_org_backfill_review_queue(100)
+            : array();
+        if (!is_array($org_backfill_result) && !empty($org_backfill_status['last_report']) && is_array($org_backfill_status['last_report'])) {
+            $org_backfill_result = $org_backfill_status['last_report'];
+        }
         ?>
         <div class="wrap">
             <h1>Community Resources Settings</h1>
@@ -1343,6 +1425,215 @@ class Monday_Resources_Admin {
                         <button type="submit" name="clear_twilio_settings" class="button" onclick="return confirm('Clear all saved Twilio options?');">Clear Saved Options</button>
                     </p>
                 </form>
+            </div>
+
+            <!-- Organization Link Backfill -->
+            <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
+                <h2 style="margin-top: 0;">Organization Link Backfill</h2>
+                <p>Run this migration to link legacy <code>organization</code> text values to <code>organization_id</code> entities. Start with Dry Run, then run Apply.</p>
+
+                <?php
+                $status_tables_ready = !empty($org_backfill_status['tables_ready']);
+                $status_resources_with_org = isset($org_backfill_status['resources_with_organization']) ? (int) $org_backfill_status['resources_with_organization'] : 0;
+                $status_resources_linked = isset($org_backfill_status['resources_linked']) ? (int) $org_backfill_status['resources_linked'] : 0;
+                $status_missing_link = isset($org_backfill_status['resources_missing_link']) ? (int) $org_backfill_status['resources_missing_link'] : 0;
+                $status_orphaned = isset($org_backfill_status['orphaned_links']) ? (int) $org_backfill_status['orphaned_links'] : 0;
+                $status_org_total = isset($org_backfill_status['organizations_total']) ? (int) $org_backfill_status['organizations_total'] : 0;
+                $status_review_count = isset($org_backfill_status['review_queue_count']) ? (int) $org_backfill_status['review_queue_count'] : 0;
+                $status_last_run = isset($org_backfill_status['last_run']) ? (string) $org_backfill_status['last_run'] : '';
+                $status_complete = !empty($org_backfill_status['complete_flag']);
+                ?>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Schema Ready</th>
+                        <td>
+                            <?php if ($status_tables_ready): ?>
+                                <strong style="color:#15803d;">Yes</strong>
+                            <?php else: ?>
+                                <strong style="color:#b91c1c;">No</strong>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Resources With Organization Text</th>
+                        <td><strong><?php echo esc_html((string) $status_resources_with_org); ?></strong></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Linked To organization_id</th>
+                        <td><strong><?php echo esc_html((string) $status_resources_linked); ?></strong></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Missing organization_id Links</th>
+                        <td>
+                            <?php if ($status_missing_link > 0): ?>
+                                <strong style="color:#b45309;"><?php echo esc_html((string) $status_missing_link); ?></strong>
+                            <?php else: ?>
+                                <strong style="color:#15803d;">0</strong>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Orphaned organization_id Links</th>
+                        <td>
+                            <?php if ($status_orphaned > 0): ?>
+                                <strong style="color:#b91c1c;"><?php echo esc_html((string) $status_orphaned); ?></strong>
+                            <?php else: ?>
+                                <strong style="color:#15803d;">0</strong>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Organization Entities</th>
+                        <td><strong><?php echo esc_html((string) $status_org_total); ?></strong></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Review Queue</th>
+                        <td><strong><?php echo esc_html((string) $status_review_count); ?></strong> failed rows awaiting review</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Last Run</th>
+                        <td>
+                            <?php if ($status_last_run !== ''): ?>
+                                <?php echo esc_html($status_last_run); ?>
+                                <?php if ($status_complete): ?>
+                                    <span style="color:#15803d;">(complete)</span>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <em>Never run</em>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                </table>
+
+                <form method="post">
+                    <?php wp_nonce_field('manage_org_backfill'); ?>
+                    <p style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;">
+                        <label>
+                            <span style="display:block; margin-bottom:4px;">Batch Size</span>
+                            <input type="number" min="25" max="1000" step="1" name="org_backfill_batch_size" value="<?php echo esc_attr((string) $org_backfill_batch_size); ?>">
+                        </label>
+                        <label>
+                            <span style="display:block; margin-bottom:4px;">Max Batches</span>
+                            <input type="number" min="1" max="250" step="1" name="org_backfill_max_batches" value="<?php echo esc_attr((string) $org_backfill_max_batches); ?>">
+                        </label>
+                    </p>
+                    <p>
+                        <button type="submit" name="preview_org_backfill" class="button">Dry Run (No Writes)</button>
+                        <button type="submit" name="run_org_backfill" class="button button-primary" onclick="return confirm('Run organization link backfill now?');">Run Backfill Now</button>
+                        <button type="submit" name="verify_org_backfill" class="button">Verify Status</button>
+                        <button type="submit" name="clear_org_backfill_review" class="button" onclick="return confirm('Clear all failed-row review entries?');">Clear Review Queue</button>
+                    </p>
+                    <p class="description">Tip: Start with Batch Size 250 and Max Batches 20. Increase Max Batches for larger datasets.</p>
+                </form>
+
+                <?php if (!empty($org_backfill_result) && is_array($org_backfill_result)): ?>
+                    <hr style="margin: 24px 0;">
+                    <h3 style="margin-top: 0;">Latest Run Summary</h3>
+                    <?php
+                    $summary_run_id = isset($org_backfill_result['run_id']) ? (string) $org_backfill_result['run_id'] : '';
+                    $summary_source = isset($org_backfill_result['source']) ? (string) $org_backfill_result['source'] : '';
+                    $summary_dry_run = !empty($org_backfill_result['dry_run']);
+                    $summary_processed = isset($org_backfill_result['processed']) ? (int) $org_backfill_result['processed'] : 0;
+                    $summary_linked = isset($org_backfill_result['linked']) ? (int) $org_backfill_result['linked'] : 0;
+                    $summary_failed = isset($org_backfill_result['failed']) ? (int) $org_backfill_result['failed'] : 0;
+                    $summary_remaining = isset($org_backfill_result['remaining']) ? (int) $org_backfill_result['remaining'] : 0;
+                    $summary_duration = isset($org_backfill_result['duration_ms']) ? (int) $org_backfill_result['duration_ms'] : 0;
+                    $summary_completed_at = isset($org_backfill_result['completed_at']) ? (string) $org_backfill_result['completed_at'] : '';
+                    ?>
+                    <table class="widefat striped" style="max-width: 780px;">
+                        <tbody>
+                            <tr>
+                                <th style="width: 220px;">Run ID</th>
+                                <td><code><?php echo esc_html($summary_run_id); ?></code></td>
+                            </tr>
+                            <tr>
+                                <th>Mode</th>
+                                <td><?php echo $summary_dry_run ? 'Dry Run' : 'Apply'; ?></td>
+                            </tr>
+                            <tr>
+                                <th>Source</th>
+                                <td><?php echo esc_html($summary_source); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Processed</th>
+                                <td><?php echo esc_html((string) $summary_processed); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Linked</th>
+                                <td><?php echo esc_html((string) $summary_linked); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Failed</th>
+                                <td><?php echo esc_html((string) $summary_failed); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Remaining</th>
+                                <td><?php echo esc_html((string) $summary_remaining); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Duration</th>
+                                <td><?php echo esc_html((string) $summary_duration); ?> ms</td>
+                            </tr>
+                            <tr>
+                                <th>Completed At</th>
+                                <td><?php echo $summary_completed_at !== '' ? esc_html($summary_completed_at) : '<em>n/a</em>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+
+                <hr style="margin: 24px 0;">
+                <h3 style="margin-top: 0;">Review Queue (Failed Rows)</h3>
+                <p>Rows listed here could not be fully linked during Apply runs. Review, edit, and rerun backfill as needed.</p>
+
+                <?php if (empty($org_backfill_review_queue)): ?>
+                    <p><em>No failed rows in the review queue.</em></p>
+                <?php else: ?>
+                    <table class="widefat striped">
+                        <thead>
+                            <tr>
+                                <th style="width: 160px;">Recorded</th>
+                                <th style="width: 200px;">Run ID</th>
+                                <th style="width: 100px;">Resource</th>
+                                <th>Organization</th>
+                                <th style="width: 220px;">Reason</th>
+                                <th style="width: 220px;">DB Error</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($org_backfill_review_queue as $review_item): ?>
+                                <?php
+                                $review_resource_id = isset($review_item['resource_id']) ? (int) $review_item['resource_id'] : 0;
+                                $review_run_id = isset($review_item['run_id']) ? (string) $review_item['run_id'] : '';
+                                $review_recorded_at = isset($review_item['recorded_at']) ? (string) $review_item['recorded_at'] : '';
+                                $review_org = isset($review_item['organization']) ? (string) $review_item['organization'] : '';
+                                $review_reason = isset($review_item['reason']) ? (string) $review_item['reason'] : '';
+                                $review_db_error = isset($review_item['db_error']) ? (string) $review_item['db_error'] : '';
+                                $review_reason_label = function_exists('monday_resources_get_org_backfill_reason_label')
+                                    ? monday_resources_get_org_backfill_reason_label($review_reason)
+                                    : ucwords(str_replace('_', ' ', $review_reason));
+                                ?>
+                                <tr>
+                                    <td><?php echo esc_html($review_recorded_at); ?></td>
+                                    <td><code><?php echo esc_html($review_run_id); ?></code></td>
+                                    <td>
+                                        <?php if ($review_resource_id > 0): ?>
+                                            <a href="<?php echo esc_url(admin_url('admin.php?page=monday-resources-edit&resource_id=' . $review_resource_id)); ?>">
+                                                #<?php echo esc_html((string) $review_resource_id); ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <em>n/a</em>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo esc_html($review_org); ?></td>
+                                    <td><?php echo esc_html($review_reason_label); ?></td>
+                                    <td><?php echo esc_html($review_db_error); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
             </div>
 
             <!-- System Information -->
