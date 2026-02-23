@@ -8,6 +8,7 @@ class Monday_Resources_Shortcode {
     const DEFAULT_PER_PAGE = 25;
     private static $snapshot_actions_rendered = false;
     private static $resource_modals_rendered = false;
+    private static $organization_datalist_rendered = false;
 
     public function __construct() {
         add_shortcode('monday_resources', array($this, 'display_resources'));
@@ -106,6 +107,10 @@ class Monday_Resources_Shortcode {
         $show_resource_modals = !self::$resource_modals_rendered;
         if ($show_resource_modals) {
             self::$resource_modals_rendered = true;
+        }
+        $show_inline_org_datalist = $allow_inline_edit && !self::$organization_datalist_rendered;
+        if ($show_inline_org_datalist) {
+            self::$organization_datalist_rendered = true;
         }
 
         ob_start();
@@ -910,6 +915,10 @@ class Monday_Resources_Shortcode {
             </div>
         </div>
 
+        <?php if ($show_inline_org_datalist): ?>
+            <datalist id="resource-inline-org-suggestions"></datalist>
+        <?php endif; ?>
+
         <?php
         if ($show_resource_modals) {
             include MONDAY_RESOURCES_PLUGIN_DIR . 'templates/report-issue-modal.php';
@@ -1181,7 +1190,7 @@ class Monday_Resources_Shortcode {
                             </div>
                             <div class="inline-edit-row">
                                 <label>Organization</label>
-                                <input type="text" class="inline-edit-organization" value="<?php echo esc_attr(isset($item['organization']) ? (string) $item['organization'] : ''); ?>">
+                                <input type="text" class="inline-edit-organization" list="resource-inline-org-suggestions" autocomplete="off" value="<?php echo esc_attr(isset($item['organization']) ? (string) $item['organization'] : ''); ?>">
                             </div>
                             <div class="inline-edit-row">
                                 <label>Service Area</label>

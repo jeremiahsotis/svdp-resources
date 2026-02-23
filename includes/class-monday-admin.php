@@ -27,6 +27,7 @@ class Monday_Resources_Admin {
 
         // Export AJAX endpoint
         add_action('wp_ajax_export_resources', array($this, 'export_resources'));
+        add_action('wp_ajax_svdp_org_lookup', array($this, 'ajax_org_lookup'));
     }
 
     /**
@@ -50,6 +51,23 @@ class Monday_Resources_Admin {
                 array('jquery'),
                 MONDAY_RESOURCES_VERSION,
                 true
+            );
+
+            wp_enqueue_script(
+                'monday-resources-admin-org-lookup',
+                MONDAY_RESOURCES_PLUGIN_URL . 'assets/js/admin-org-lookup.js',
+                array('jquery'),
+                MONDAY_RESOURCES_VERSION,
+                true
+            );
+
+            wp_localize_script(
+                'monday-resources-admin-org-lookup',
+                'mondayResourcesAdmin',
+                array(
+                    'ajaxurl' => admin_url('admin-ajax.php'),
+                    'nonce' => wp_create_nonce('monday_resources_nonce')
+                )
             );
         }
     }
@@ -2382,7 +2400,11 @@ class Monday_Resources_Admin {
                         <th scope="row"><label for="organization">Organization/Agency</label></th>
                         <td>
                             <input type="text" name="organization" id="organization" class="regular-text"
-                                   value="<?php echo $has_data ? esc_attr($resource['organization']) : ''; ?>">
+                                   value="<?php echo $has_data ? esc_attr($resource['organization']) : ''; ?>"
+                                   list="resource-organization-suggestions"
+                                   autocomplete="off">
+                            <datalist id="resource-organization-suggestions"></datalist>
+                            <p class="description">Start typing to find an existing organization, or enter a new one.</p>
                         </td>
                     </tr>
 
@@ -3198,6 +3220,132 @@ class Monday_Resources_Admin {
     }
 
     /**
+     * Render hidden fields recursively for confirmation forms.
+     *
+     * @param string $name
+     * @param mixed $value
+     * @return void
+     */
+    private function render_hidden_field_recursive($name, $value) {
+        if (is_array($value)) {
+            foreach ($value as $child_key => $child_value) {
+                $child_name = $name . '[' . $child_key . ']';
+                $this->render_hidden_field_recursive($child_name, $child_value);
+            }
+            return;
+        }
+
+        if (is_object($value)) {
+            return;
+        }
+
+        echo '<input type="hidden" name="' . esc_attr($name) . '" value="' . esc_attr((string) $value) . '">' . "\n";
+    }
+
+    /**
+     * Render confirmation step when organization is a close match candidate.
+     *
+     * @param string $organization_name
+     * @param array $matches
+     * @return void
+     */
+    private function render_org_close_match_confirmation_page($organization_name, $matches) {
+        if (!current_user_can($this->get_resource_capability()) && !current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        $posted = wp_unslash($_POST);
+        if (!is_array($posted)) {
+            $posted = array();
+        }
+
+        $posted['confirm_org_close_match'] = '1';
+
+        $back_url = isset($posted['_wp_http_referer']) ? esc_url_raw((string) $posted['_wp_http_referer']) : admin_url('admin.php?page=monday-resources-manage');
+        if ($back_url === '') {
+            $back_url = admin_url('admin.php?page=monday-resources-manage');
+        }
+
+        status_header(409);
+        nocache_headers();
+        ?>
+        <div class="wrap" style="max-width: 840px; margin: 32px auto; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 24px;">
+            <h1 style="margin-top: 0;">Possible Duplicate Organization</h1>
+            <p>
+                The organization name <strong><?php echo esc_html($organization_name); ?></strong> is very similar to existing organization records.
+                Please review the close matches before saving.
+            </p>
+
+            <table class="widefat striped" style="margin: 16px 0 20px;">
+                <thead>
+                    <tr>
+                        <th>Existing Organization</th>
+                        <th style="width: 140px;">Similarity Distance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($matches as $match): ?>
+                        <?php
+                        $match_name = isset($match['name']) ? (string) $match['name'] : '';
+                        $distance = isset($match['distance']) ? (int) $match['distance'] : 0;
+                        ?>
+                        <tr>
+                            <td><?php echo esc_html($match_name); ?></td>
+                            <td><?php echo esc_html((string) $distance); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <p style="margin-bottom: 16px;">If this is intentional, continue and the resource will be saved with your entered organization name.</p>
+
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin: 0;">
+                    <?php
+                    foreach ($posted as $key => $value) {
+                        if ($key === 'confirm_org_close_match') {
+                            continue;
+                        }
+                        $this->render_hidden_field_recursive((string) $key, $value);
+                    }
+                    ?>
+                    <input type="hidden" name="confirm_org_close_match" value="1">
+                    <button type="submit" class="button button-primary">Save Anyway</button>
+                </form>
+                <a class="button" href="<?php echo esc_url($back_url); ?>">Go Back and Edit</a>
+            </div>
+        </div>
+        <?php
+        exit;
+    }
+
+    /**
+     * AJAX organization lookup for resource forms and inline edits.
+     *
+     * @return void
+     */
+    public function ajax_org_lookup() {
+        check_ajax_referer('monday_resources_nonce', 'nonce');
+
+        if (!current_user_can($this->get_resource_capability()) && !current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized.'), 403);
+        }
+
+        if (!class_exists('Resource_Organization_Manager')) {
+            wp_send_json_error(array('message' => 'Organization manager unavailable.'), 500);
+        }
+
+        $query = isset($_POST['q']) ? sanitize_text_field(wp_unslash($_POST['q'])) : '';
+        $limit = isset($_POST['limit']) ? (int) $_POST['limit'] : 12;
+        $limit = max(1, min(25, $limit));
+
+        $items = Resource_Organization_Manager::search_organizations($query, $limit);
+        wp_send_json_success(array(
+            'items' => $items
+        ));
+    }
+
+    /**
      * Save resource (create or update)
      */
     public function save_resource() {
@@ -3306,6 +3454,16 @@ class Monday_Resources_Admin {
 
         if (class_exists('Resource_Organization_Manager')) {
             $organization_name = trim((string) $data['organization']);
+            $confirm_close_match = !empty($_POST['confirm_org_close_match']);
+
+            if ($organization_name !== '') {
+                $threshold = (int) apply_filters('svdp_resource_org_match_threshold', 3);
+                $close_matches = Resource_Organization_Manager::find_close_matches($organization_name, $threshold, 5);
+                if (!$confirm_close_match && !empty($close_matches)) {
+                    $this->render_org_close_match_confirmation_page($organization_name, $close_matches);
+                }
+            }
+
             if ($organization_name === '') {
                 $data['organization_id'] = null;
             } else {

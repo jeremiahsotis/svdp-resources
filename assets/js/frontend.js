@@ -201,8 +201,11 @@ window.onclick = function(event) {
         const snapshotEmailBtn = document.getElementById('snapshot-email-btn');
         const snapshotTextBtn = document.getElementById('snapshot-text-btn');
         const snapshotMessage = document.getElementById('snapshot-action-message');
+        const inlineOrgDatalist = document.getElementById('resource-inline-org-suggestions');
 
         let snapshotRequest = null;
+        let orgLookupRequest = null;
+        const orgLookupCache = {};
 
         function setSnapshotMessage(message, type) {
             if (!snapshotMessage) {
@@ -426,6 +429,78 @@ window.onclick = function(event) {
                 toggleBtn.setAttribute('aria-expanded', 'true');
             }
         }
+
+        function renderInlineOrgSuggestions(items) {
+            if (!inlineOrgDatalist) {
+                return;
+            }
+
+            inlineOrgDatalist.innerHTML = '';
+            if (!Array.isArray(items) || items.length === 0) {
+                return;
+            }
+
+            items.forEach(function(item) {
+                if (!item || !item.name) {
+                    return;
+                }
+
+                const option = document.createElement('option');
+                option.value = String(item.name);
+                inlineOrgDatalist.appendChild(option);
+            });
+        }
+
+        function requestInlineOrgSuggestions(query) {
+            if (!inlineOrgDatalist) {
+                return;
+            }
+
+            const normalizedQuery = String(query || '').trim().toLowerCase();
+            if (Object.prototype.hasOwnProperty.call(orgLookupCache, normalizedQuery)) {
+                renderInlineOrgSuggestions(orgLookupCache[normalizedQuery]);
+                return;
+            }
+
+            if (orgLookupRequest && orgLookupRequest.readyState !== 4) {
+                orgLookupRequest.abort();
+            }
+
+            orgLookupRequest = $.ajax({
+                url: mondayResources.ajaxurl,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    action: 'svdp_org_lookup',
+                    nonce: mondayResources.nonce,
+                    q: query,
+                    limit: 15
+                }
+            })
+                .done(function(response) {
+                    const items = response && response.success && response.data && Array.isArray(response.data.items)
+                        ? response.data.items
+                        : [];
+                    orgLookupCache[normalizedQuery] = items;
+                    renderInlineOrgSuggestions(items);
+                })
+                .fail(function() {
+                    renderInlineOrgSuggestions([]);
+                });
+        }
+
+        const debouncedInlineOrgLookup = debounce(function(inputEl) {
+            if (!inlineOrgDatalist || !inputEl) {
+                return;
+            }
+
+            const query = String(inputEl.value || '').trim();
+            if (query.length < 2) {
+                return;
+            }
+
+            requestInlineOrgSuggestions(query);
+        }, 220);
 
         function updateCardSummaryAfterInlineSave(panel) {
             const card = panel ? panel.closest('.resource-card') : null;
@@ -852,6 +927,30 @@ window.onclick = function(event) {
                     const panel = saveBtn.closest('.resource-inline-edit-panel');
                     submitInlineEdit(panel, false);
                 }
+            });
+
+            directory.addEventListener('focusin', function(event) {
+                const orgInput = event.target.closest('.inline-edit-organization');
+                if (!orgInput) {
+                    return;
+                }
+
+                const query = String(orgInput.value || '').trim();
+                if (query.length >= 2) {
+                    requestInlineOrgSuggestions(query);
+                    return;
+                }
+
+                requestInlineOrgSuggestions('');
+            });
+
+            directory.addEventListener('input', function(event) {
+                const orgInput = event.target.closest('.inline-edit-organization');
+                if (!orgInput) {
+                    return;
+                }
+
+                debouncedInlineOrgLookup(orgInput);
             });
         }
 

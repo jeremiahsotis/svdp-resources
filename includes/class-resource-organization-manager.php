@@ -96,6 +96,151 @@ class Resource_Organization_Manager {
     }
 
     /**
+     * Search organizations for autocomplete and lookups.
+     *
+     * Results are sourced from organization entities first, with fallback to
+     * distinct legacy resource.organization values when entities are sparse.
+     *
+     * @param string $query
+     * @param int $limit
+     * @return array<int, array<string,mixed>>
+     */
+    public static function search_organizations($query = '', $limit = 15) {
+        global $wpdb;
+
+        $query = trim((string) $query);
+        $limit = max(1, min(50, (int) $limit));
+        $results = array();
+        $seen = array();
+
+        $org_table = self::get_table_name();
+        $org_table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $org_table));
+        if ($org_table_exists === $org_table) {
+            if ($query === '') {
+                $rows = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT id, name
+                        FROM $org_table
+                        ORDER BY updated_at DESC, name ASC
+                        LIMIT %d",
+                        $limit
+                    ),
+                    ARRAY_A
+                );
+            } else {
+                $like = '%' . $wpdb->esc_like($query) . '%';
+                $prefix_like = $wpdb->esc_like($query) . '%';
+                $normalized_query = self::normalize_name($query);
+                $normalized_like = '%' . $wpdb->esc_like($normalized_query) . '%';
+
+                $rows = $wpdb->get_results(
+                    $wpdb->prepare(
+                        "SELECT id, name
+                        FROM $org_table
+                        WHERE name LIKE %s OR name_normalized LIKE %s
+                        ORDER BY
+                            CASE WHEN name LIKE %s THEN 0 ELSE 1 END,
+                            updated_at DESC,
+                            name ASC
+                        LIMIT %d",
+                        $like,
+                        $normalized_like,
+                        $prefix_like,
+                        $limit
+                    ),
+                    ARRAY_A
+                );
+            }
+
+            if (is_array($rows)) {
+                foreach ($rows as $row) {
+                    $name = isset($row['name']) ? trim((string) $row['name']) : '';
+                    if ($name === '') {
+                        continue;
+                    }
+
+                    $seen_key = strtolower($name);
+                    if (isset($seen[$seen_key])) {
+                        continue;
+                    }
+
+                    $seen[$seen_key] = true;
+                    $results[] = array(
+                        'id' => isset($row['id']) ? (int) $row['id'] : 0,
+                        'name' => $name
+                    );
+                }
+            }
+        }
+
+        if (count($results) >= $limit) {
+            return array_slice($results, 0, $limit);
+        }
+
+        $resources_table = $wpdb->prefix . 'resources';
+        $resources_table_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resources_table));
+        if ($resources_table_exists !== $resources_table) {
+            return $results;
+        }
+
+        $remaining = max(1, $limit - count($results));
+        if ($query === '') {
+            $resource_rows = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT organization
+                    FROM $resources_table
+                    WHERE organization IS NOT NULL
+                        AND TRIM(organization) <> ''
+                    ORDER BY organization ASC
+                    LIMIT %d",
+                    $remaining
+                )
+            );
+        } else {
+            $resource_like = '%' . $wpdb->esc_like($query) . '%';
+            $resource_rows = $wpdb->get_col(
+                $wpdb->prepare(
+                    "SELECT DISTINCT organization
+                    FROM $resources_table
+                    WHERE organization IS NOT NULL
+                        AND TRIM(organization) <> ''
+                        AND organization LIKE %s
+                    ORDER BY organization ASC
+                    LIMIT %d",
+                    $resource_like,
+                    $remaining
+                )
+            );
+        }
+
+        if (is_array($resource_rows)) {
+            foreach ($resource_rows as $resource_name) {
+                $name = trim((string) $resource_name);
+                if ($name === '') {
+                    continue;
+                }
+
+                $seen_key = strtolower($name);
+                if (isset($seen[$seen_key])) {
+                    continue;
+                }
+
+                $seen[$seen_key] = true;
+                $results[] = array(
+                    'id' => 0,
+                    'name' => $name
+                );
+
+                if (count($results) >= $limit) {
+                    break;
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    /**
      * Find close organization matches by Levenshtein distance.
      *
      * @param string $name
