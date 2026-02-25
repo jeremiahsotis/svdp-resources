@@ -10,7 +10,7 @@ class Resource_Taxonomy {
     const OPTION_PROVIDER_TYPES = 'svdp_provider_type_terms';
 
     /**
-     * Canonical service areas (single-select, required).
+     * Canonical service areas (multi-select, at least one required).
      *
      * @return string[]
      */
@@ -160,14 +160,33 @@ class Resource_Taxonomy {
     }
 
     /**
-     * Get service area label from slug.
+     * Get first service area label from a stored value.
      *
-     * @param string $slug
+     * Backward compatible with legacy single-slug values and current pipe sets.
+     *
+     * @param string $value
      * @return string
      */
-    public static function get_service_area_label($slug) {
+    public static function get_service_area_label($value) {
+        $labels = self::get_service_area_labels_from_pipe($value);
+        return isset($labels[0]) ? $labels[0] : '';
+    }
+
+    /**
+     * Convert service-area pipe string (or legacy single slug) to labels.
+     *
+     * @param string $pipe_slugs
+     * @return string[]
+     */
+    public static function get_service_area_labels_from_pipe($pipe_slugs) {
         $terms = self::get_service_area_terms();
-        return isset($terms[$slug]) ? $terms[$slug] : '';
+        $labels = array();
+        foreach (self::normalize_service_area_slugs(self::parse_pipe_slugs($pipe_slugs)) as $slug) {
+            if (isset($terms[$slug])) {
+                $labels[] = $terms[$slug];
+            }
+        }
+        return $labels;
     }
 
     /**
@@ -216,13 +235,57 @@ class Resource_Taxonomy {
     }
 
     /**
-     * Normalize and validate a service area slug.
+     * Normalize and validate a single service area slug.
      *
      * @param string $value
      * @return string
      */
     public static function normalize_service_area_slug($value) {
-        return self::normalize_single_slug($value, self::get_service_area_terms());
+        $slugs = self::normalize_service_area_slugs(array($value));
+        return isset($slugs[0]) ? $slugs[0] : '';
+    }
+
+    /**
+     * Normalize and validate multiple service area slugs.
+     *
+     * @param array|string $values
+     * @return string[]
+     */
+    public static function normalize_service_area_slugs($values) {
+        $allowed_terms = self::get_service_area_terms();
+        $normalized = array();
+        $list = is_array($values) ? $values : array($values);
+
+        foreach ($list as $value) {
+            if (is_array($value)) {
+                continue;
+            }
+
+            $value = trim((string) $value);
+            if ($value === '') {
+                continue;
+            }
+
+            // Accept persisted pipe strings and common delimiters.
+            $parts = strpos($value, '|') !== false
+                ? self::parse_pipe_slugs($value)
+                : preg_split('/\s*,\s*|\s*;\s*/', $value);
+
+            if (!is_array($parts)) {
+                $parts = array($value);
+            }
+
+            foreach ($parts as $part) {
+                $slug = self::normalize_slug($part);
+                if (isset($allowed_terms[$slug])) {
+                    $normalized[$slug] = $slug;
+                }
+            }
+        }
+
+        $result = array_values($normalized);
+        sort($result);
+        return $result;
     }
 
     /**
@@ -287,8 +350,13 @@ class Resource_Taxonomy {
             return array();
         }
 
-        $parts = array_filter(array_map('trim', explode('|', $value)));
-        return array_values(array_unique($parts));
+        if (strpos($value, '|') !== false) {
+            $parts = array_filter(array_map('trim', explode('|', $value)));
+            return array_values(array_unique($parts));
+        }
+
+        // Backward compatibility: treat legacy single values as one slug token.
+        return array($value);
     }
 
     /**

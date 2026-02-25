@@ -25,7 +25,7 @@ class Resource_Exporter {
             $fields = array(
                 'id' => 'ID',
                 'resource_name' => 'Resource Name',
-                'service_area' => 'Service Area',
+                'service_area' => 'Service Areas',
                 'services_offered' => 'Services Offered',
                 'provider_type' => 'Provider Type',
                 'phone' => 'Phone',
@@ -90,7 +90,7 @@ class Resource_Exporter {
             $fields = array(
                 'id' => 'ID',
                 'resource_name' => 'Resource Name',
-                'service_area' => 'Service Area',
+                'service_area' => 'Service Areas',
                 'services_offered' => 'Services Offered',
                 'provider_type' => 'Provider Type',
                 'phone' => 'Phone',
@@ -195,7 +195,7 @@ class Resource_Exporter {
         if ($fields === null) {
             $fields = array(
                 'resource_name' => 'Resource Name',
-                'service_area' => 'Service Area',
+                'service_area' => 'Service Areas',
                 'phone' => 'Phone',
                 'physical_address' => 'Address',
                 'service_hours' => 'Hours'
@@ -279,8 +279,11 @@ class Resource_Exporter {
         }
 
         if ($field === 'service_area' && class_exists('Resource_Taxonomy')) {
-            $label = Resource_Taxonomy::get_service_area_label((string) $value);
-            return $label !== '' ? $label : (string) $value;
+            $labels = Resource_Taxonomy::get_service_area_labels_from_pipe((string) $value);
+            if (!empty($labels)) {
+                return implode(', ', $labels);
+            }
+            return (string) $value;
         }
 
         if ($field === 'provider_type' && class_exists('Resource_Taxonomy')) {

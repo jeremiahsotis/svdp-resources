@@ -588,18 +588,25 @@ class Resource_Snapshot_Manager {
                     $data[$field] = sanitize_textarea_field($raw_value);
                     break;
                 case 'service_area':
-                    $slug = Resource_Taxonomy::normalize_service_area_slug($raw_value);
-                    if ($slug === '') {
-                        wp_send_json_error(array('message' => 'Service Area must be a canonical option.'), 400);
+                    $raw_service_areas = is_array($raw_value) ? $raw_value : Resource_Taxonomy::parse_pipe_slugs((string) $raw_value);
+                    if (!is_array($raw_service_areas) || empty($raw_service_areas)) {
+                        $raw_service_areas = preg_split('/\s*,\s*|\s*;\s*/', (string) $raw_value);
                     }
-                    $data[$field] = $slug;
+                    $slugs = Resource_Taxonomy::normalize_service_area_slugs((array) $raw_service_areas);
+                    if (empty($slugs)) {
+                        wp_send_json_error(array('message' => 'At least one Service Area must be a canonical option.'), 400);
+                    }
+                    $data[$field] = Resource_Taxonomy::to_pipe_slug_string($slugs);
                     $service_area_terms = Resource_Taxonomy::get_service_area_terms();
-                    $data['primary_service_type'] = isset($service_area_terms[$slug]) ? $service_area_terms[$slug] : '';
+                    $first_slug = $slugs[0];
+                    $data['primary_service_type'] = isset($service_area_terms[$first_slug]) ? $service_area_terms[$first_slug] : '';
                     break;
                 case 'services_offered':
                     $raw_services = is_array($raw_value) ? $raw_value : Resource_Taxonomy::parse_pipe_slugs((string) $raw_value);
                     if (!is_array($raw_services) || empty($raw_services)) {
-                        $raw_services = preg_split('/\s*,\s*|\s*;\s*/', (string) $raw_value);
+                        $raw_services = is_array($raw_value)
+                            ? $raw_value
+                            : preg_split('/\s*,\s*|\s*;\s*/', (string) $raw_value);
                     }
                     $slugs = Resource_Taxonomy::normalize_services_offered_slugs((array) $raw_services);
                     $data[$field] = Resource_Taxonomy::to_pipe_slug_string($slugs);
@@ -1016,7 +1023,7 @@ class Resource_Snapshot_Manager {
             $is_unavailable = !empty($item['_snapshot_unavailable']) || (isset($item['status']) && (string) $item['status'] !== 'active');
             $name = isset($item['resource_name']) ? (string) $item['resource_name'] : 'Resource';
             $organization = isset($item['organization']) ? (string) $item['organization'] : '';
-            $service_area = Resource_Taxonomy::get_service_area_label(isset($item['service_area']) ? $item['service_area'] : '');
+            $service_areas = Resource_Taxonomy::get_service_area_labels_from_pipe(isset($item['service_area']) ? $item['service_area'] : '');
             $services = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
             $provider = Resource_Taxonomy::get_provider_type_label(isset($item['provider_type']) ? $item['provider_type'] : '');
             $phone = isset($item['phone']) ? trim((string) $item['phone']) : '';
@@ -1050,8 +1057,8 @@ class Resource_Snapshot_Manager {
             }
 
             $service_lines = '';
-            if ($service_area !== '') {
-                $service_lines .= '<div><strong>Service Area:</strong> ' . esc_html($service_area) . '</div>';
+            if (!empty($service_areas)) {
+                $service_lines .= '<div><strong>Service Areas:</strong> ' . esc_html(implode(', ', $service_areas)) . '</div>';
             }
             if (!empty($services)) {
                 $service_lines .= '<div><strong>Services Offered:</strong> ' . esc_html(implode(', ', $services)) . '</div>';

@@ -201,44 +201,60 @@ class Monday_Resources_Admin {
     }
 
     /**
-     * Get Service Area label from stored slug.
-     *
-     * @param string $service_area_slug
-     * @return string
-     */
-    private function get_service_area_label($service_area_slug) {
-        if (!class_exists('Resource_Taxonomy')) {
-            return '';
-        }
-        return Resource_Taxonomy::get_service_area_label($service_area_slug);
-    }
-
-    /**
-     * Resolve selected Service Area slug for admin form defaults.
+     * Resolve selected Service Area slugs for admin form defaults.
      *
      * @param array $resource
-     * @return string
+     * @return array
      */
-    private function resolve_selected_service_area($resource) {
+    private function resolve_selected_service_areas($resource) {
         if (!class_exists('Resource_Taxonomy') || !is_array($resource)) {
-            return '';
+            return array();
         }
 
         if (!empty($resource['service_area'])) {
-            $slug = Resource_Taxonomy::normalize_service_area_slug($resource['service_area']);
-            if ($slug !== '') {
-                return $slug;
+            $slugs = Resource_Taxonomy::normalize_service_area_slugs(
+                Resource_Taxonomy::parse_pipe_slugs($resource['service_area'])
+            );
+            if (!empty($slugs)) {
+                return $slugs;
             }
         }
 
         if (!empty($resource['primary_service_type'])) {
-            $slug = Resource_Taxonomy::normalize_service_area_slug($resource['primary_service_type']);
-            if ($slug !== '') {
-                return $slug;
+            $slugs = Resource_Taxonomy::normalize_service_area_slugs($resource['primary_service_type']);
+            if (!empty($slugs)) {
+                return $slugs;
             }
         }
 
-        return '';
+        return array();
+    }
+
+    /**
+     * Format stored Service Area value for compact display.
+     *
+     * @param string $stored_value
+     * @param int $max_visible
+     * @return string
+     */
+    private function format_service_area_display($stored_value, $max_visible = 3) {
+        if (!class_exists('Resource_Taxonomy')) {
+            return trim((string) $stored_value);
+        }
+
+        $labels = Resource_Taxonomy::get_service_area_labels_from_pipe($stored_value);
+        if (empty($labels)) {
+            return trim((string) $stored_value);
+        }
+
+        $max_visible = max(1, (int) $max_visible);
+        if (count($labels) <= $max_visible) {
+            return implode(', ', $labels);
+        }
+
+        $visible = array_slice($labels, 0, $max_visible);
+        $remaining = count($labels) - $max_visible;
+        return implode(', ', $visible) . ' +' . $remaining . ' more';
     }
 
     /**
@@ -618,7 +634,7 @@ class Monday_Resources_Admin {
                                 </td>
                                 <th>Resource Name</th>
                                 <th>Organization</th>
-                                <th>Service Area</th>
+                                <th>Service Areas</th>
                                 <th>Conferences</th>
                                 <th>Status</th>
                                 <th>Last Verified</th>
@@ -656,7 +672,7 @@ class Monday_Resources_Admin {
                                     <?php
                                     $service_area_label = '';
                                     if (!empty($resource['service_area'])) {
-                                        $service_area_label = $this->get_service_area_label($resource['service_area']);
+                                        $service_area_label = $this->format_service_area_display($resource['service_area']);
                                     }
                                     if ($service_area_label === '' && !empty($resource['primary_service_type'])) {
                                         $service_area_label = $resource['primary_service_type'];
@@ -729,7 +745,7 @@ class Monday_Resources_Admin {
                             <label><input type="checkbox" name="export_fields[]" value="id" checked> ID</label>
                             <label><input type="checkbox" name="export_fields[]" value="resource_name" checked> Resource Name</label>
                             <label><input type="checkbox" name="export_fields[]" value="organization"> Organization</label>
-                            <label><input type="checkbox" name="export_fields[]" value="service_area" checked> Service Area</label>
+                            <label><input type="checkbox" name="export_fields[]" value="service_area" checked> Service Areas</label>
                             <label><input type="checkbox" name="export_fields[]" value="services_offered" checked> Services Offered</label>
                             <label><input type="checkbox" name="export_fields[]" value="provider_type"> Provider Type</label>
                             <label><input type="checkbox" name="export_fields[]" value="phone" checked> Phone</label>
@@ -2374,7 +2390,7 @@ class Monday_Resources_Admin {
 
             <?php if (isset($_GET['error']) && $_GET['error'] === 'missing_service_area'): ?>
                 <div class="notice notice-error is-dismissible">
-                    <p>Service Area is required. Please choose one Service Area before saving.</p>
+                    <p>Service Areas are required. Please choose at least one Service Area before saving.</p>
                 </div>
             <?php endif; ?>
 
@@ -2421,33 +2437,33 @@ class Monday_Resources_Admin {
                     $service_area_terms = $this->get_service_area_terms();
                     $services_offered_terms = $this->get_services_offered_terms();
                     $provider_type_terms = $this->get_provider_type_terms();
-                    $selected_service_area = $has_data ? $this->resolve_selected_service_area($resource) : '';
+                    $selected_service_areas = $has_data ? $this->resolve_selected_service_areas($resource) : array();
                     $selected_services_offered = $has_data ? $this->resolve_selected_services_offered($resource) : array();
                     $selected_provider_type = $has_data ? $this->resolve_selected_provider_type($resource) : '';
                     ?>
 
                     <tr>
-                        <th scope="row"><label>Service Area *</label></th>
+                        <th scope="row"><label>Service Areas *</label></th>
                         <td>
                             <?php if (empty($service_area_terms)): ?>
                                 <p style="margin: 0; color: #a00;">No Service Area terms are configured.</p>
                             <?php else: ?>
                                 <fieldset id="service-area-fieldset" style="border: 1px solid #ddd; padding: 10px; background: #f9f9f9; max-width: 640px;">
-                                    <?php $service_area_index = 0; ?>
                                     <?php foreach ($service_area_terms as $service_area_slug => $service_area_label): ?>
                                         <label style="display: block; margin: 5px 0;">
                                             <input
-                                                type="radio"
-                                                name="service_area"
+                                                type="checkbox"
+                                                name="service_area[]"
                                                 value="<?php echo esc_attr($service_area_slug); ?>"
-                                                <?php checked($selected_service_area, $service_area_slug); ?>
-                                                <?php echo $service_area_index === 0 ? 'required' : ''; ?>>
+                                                <?php checked(in_array($service_area_slug, $selected_service_areas, true)); ?>>
                                             <?php echo esc_html($service_area_label); ?>
                                         </label>
-                                        <?php $service_area_index++; ?>
                                     <?php endforeach; ?>
                                 </fieldset>
-                                <p class="description">Required to save. Service Area is controlled by admin-defined canonical terms.</p>
+                                <p id="service-area-warning" class="description" style="display: none; color: #b45309; font-weight: 600;">
+                                    Heads up: selecting more than 6 service areas may make categorization less precise.
+                                </p>
+                                <p class="description">Required to save (select at least one). Service Areas are controlled by admin-defined canonical terms.</p>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -2475,9 +2491,6 @@ class Monday_Resources_Admin {
                                         </label>
                                     <?php endforeach; ?>
                                 </div>
-                                <p id="services-offered-warning" class="description" style="display: none; color: #b45309; font-weight: 600;">
-                                    Heads up: selecting more than 5 services may broaden results significantly.
-                                </p>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -3174,17 +3187,9 @@ class Monday_Resources_Admin {
                 (function() {
                     var filterInput = document.getElementById('services_offered_filter');
                     var options = document.querySelectorAll('.services-offered-option');
-                    var warning = document.getElementById('services-offered-warning');
+                    var serviceAreaWarning = document.getElementById('service-area-warning');
                     var providerToggle = document.getElementById('provider_type_toggle');
                     var providerPanel = document.getElementById('provider_type_panel');
-
-                    function updateServicesWarning() {
-                        if (!warning) {
-                            return;
-                        }
-                        var selectedCount = document.querySelectorAll('input[name="services_offered[]"]:checked').length;
-                        warning.style.display = selectedCount > 5 ? 'block' : 'none';
-                    }
 
                     function filterServicesOffered() {
                         if (!filterInput || !options.length) {
@@ -3198,12 +3203,20 @@ class Monday_Resources_Admin {
                         });
                     }
 
+                    function updateServiceAreaWarning() {
+                        if (!serviceAreaWarning) {
+                            return;
+                        }
+                        var selectedCount = document.querySelectorAll('input[name="service_area[]"]:checked').length;
+                        serviceAreaWarning.style.display = selectedCount > 6 ? 'block' : 'none';
+                    }
+
                     if (filterInput) {
                         filterInput.addEventListener('input', filterServicesOffered);
                     }
 
-                    document.querySelectorAll('input[name="services_offered[]"]').forEach(function(input) {
-                        input.addEventListener('change', updateServicesWarning);
+                    document.querySelectorAll('input[name="service_area[]"]').forEach(function(input) {
+                        input.addEventListener('change', updateServiceAreaWarning);
                     });
 
                     if (providerToggle && providerPanel) {
@@ -3212,7 +3225,7 @@ class Monday_Resources_Admin {
                         });
                     }
 
-                    updateServicesWarning();
+                    updateServiceAreaWarning();
                 })();
             </script>
         </div>
@@ -3380,12 +3393,13 @@ class Monday_Resources_Admin {
             $target_population = implode(', ', array_map('sanitize_text_field', wp_unslash($_POST['target_population'])));
         }
 
-        $service_area = '';
+        $service_area_slugs = array();
         if (isset($_POST['service_area']) && class_exists('Resource_Taxonomy')) {
-            $service_area = Resource_Taxonomy::normalize_service_area_slug(wp_unslash($_POST['service_area']));
+            $raw_service_areas = is_array($_POST['service_area']) ? wp_unslash($_POST['service_area']) : array(wp_unslash($_POST['service_area']));
+            $service_area_slugs = Resource_Taxonomy::normalize_service_area_slugs($raw_service_areas);
         }
 
-        if ($service_area === '') {
+        if (empty($service_area_slugs)) {
             $redirect_args = array('page' => $resource_id ? 'monday-resources-edit' : 'monday-resources-add', 'error' => 'missing_service_area');
             if ($resource_id) {
                 $redirect_args['id'] = $resource_id;
@@ -3393,6 +3407,10 @@ class Monday_Resources_Admin {
             wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
             exit;
         }
+
+        $service_area_pipe = class_exists('Resource_Taxonomy')
+            ? Resource_Taxonomy::to_pipe_slug_string($service_area_slugs)
+            : '';
 
         $services_offered_slugs = array();
         if (isset($_POST['services_offered']) && class_exists('Resource_Taxonomy')) {
@@ -3412,7 +3430,11 @@ class Monday_Resources_Admin {
         // Keep legacy columns synchronized during rollback window.
         $service_area_terms = $this->get_service_area_terms();
         $services_offered_terms = $this->get_services_offered_terms();
-        $legacy_primary_service_type = isset($service_area_terms[$service_area]) ? $service_area_terms[$service_area] : '';
+        $legacy_primary_service_type = '';
+        if (!empty($service_area_slugs)) {
+            $first_service_area_slug = $service_area_slugs[0];
+            $legacy_primary_service_type = isset($service_area_terms[$first_service_area_slug]) ? $service_area_terms[$first_service_area_slug] : '';
+        }
 
         $legacy_secondary_labels = array();
         foreach ($services_offered_slugs as $service_slug) {
@@ -3428,7 +3450,7 @@ class Monday_Resources_Admin {
             'is_svdp' => isset($_POST['is_svdp']) ? 1 : 0,
             'primary_service_type' => $legacy_primary_service_type,
             'secondary_service_type' => $legacy_secondary_service_type,
-            'service_area' => $service_area,
+            'service_area' => $service_area_pipe,
             'services_offered' => $services_offered_pipe,
             'provider_type' => $provider_type,
             'phone' => isset($_POST['phone']) ? sanitize_text_field(wp_unslash($_POST['phone'])) : '',
@@ -3658,7 +3680,7 @@ class Monday_Resources_Admin {
             'id' => 'ID',
             'resource_name' => 'Resource Name',
             'organization' => 'Organization',
-            'service_area' => 'Service Area',
+            'service_area' => 'Service Areas',
             'services_offered' => 'Services Offered',
             'provider_type' => 'Provider Type',
             'phone' => 'Phone',
@@ -3740,7 +3762,8 @@ class Monday_Resources_Admin {
                 }
 
                 if ($service_area_slug !== '') {
-                    $where[] = 'service_area = %s';
+                    $where[] = '(service_area LIKE %s OR service_area = %s)';
+                    $query_params[] = '%|' . $wpdb->esc_like($service_area_slug) . '|%';
                     $query_params[] = $service_area_slug;
                 }
             }

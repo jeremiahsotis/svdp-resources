@@ -147,16 +147,6 @@ window.onclick = function(event) {
         });
     }
 
-    function updateServiceWarning() {
-        const warning = document.getElementById('services-warning');
-        if (!warning) {
-            return;
-        }
-
-        const selectedCount = getCheckedValues('.services-offered-input').length;
-        warning.classList.toggle('is-visible', selectedCount > 5);
-    }
-
     function initDirectoryFiltering() {
         const directory = document.getElementById('svdp-resources-directory');
         if (!directory || !window.mondayResources) {
@@ -510,11 +500,22 @@ window.onclick = function(event) {
 
             const nameInput = panel.querySelector('.inline-edit-resource-name');
             const organizationInput = panel.querySelector('.inline-edit-organization');
-            const serviceAreaSelect = panel.querySelector('.inline-edit-service-area');
-            const serviceAreaValue = serviceAreaSelect ? serviceAreaSelect.value : '';
-            const serviceAreaLabel = mondayResources.serviceAreas && mondayResources.serviceAreas[serviceAreaValue]
-                ? mondayResources.serviceAreas[serviceAreaValue]
-                : '';
+            const serviceAreaInputs = panel.querySelectorAll('.inline-edit-service-area:checked');
+            const serviceAreaLabels = Array.from(serviceAreaInputs).map(function(input) {
+                const slug = String(input.value || '');
+                if (mondayResources.serviceAreas && mondayResources.serviceAreas[slug]) {
+                    return String(mondayResources.serviceAreas[slug]);
+                }
+                return slug;
+            }).filter(Boolean);
+
+            let serviceAreaLabel = '';
+            if (serviceAreaLabels.length > 3) {
+                const visible = serviceAreaLabels.slice(0, 3);
+                serviceAreaLabel = visible.join(', ') + ' +' + String(serviceAreaLabels.length - 3) + ' more';
+            } else {
+                serviceAreaLabel = serviceAreaLabels.join(', ');
+            }
 
             const titleEl = card.querySelector('h3');
             if (titleEl && nameInput) {
@@ -541,7 +542,12 @@ window.onclick = function(event) {
             if (serviceAreaLabel !== '') {
                 card.querySelectorAll('.resource-field').forEach(function(field) {
                     const labelEl = field.querySelector('.resource-field-label');
-                    if (!labelEl || labelEl.textContent.trim().toLowerCase() !== 'service area:') {
+                    if (!labelEl) {
+                        return;
+                    }
+
+                    const normalizedLabel = labelEl.textContent.trim().toLowerCase();
+                    if (normalizedLabel !== 'service area:' && normalizedLabel !== 'service areas:') {
                         return;
                     }
 
@@ -566,7 +572,7 @@ window.onclick = function(event) {
 
             const nameInput = panel.querySelector('.inline-edit-resource-name');
             const organizationInput = panel.querySelector('.inline-edit-organization');
-            const serviceAreaSelect = panel.querySelector('.inline-edit-service-area');
+            const serviceAreaInputs = panel.querySelectorAll('.inline-edit-service-area:checked');
             const servicesInput = panel.querySelector('.inline-edit-services-offered');
             const providerSelect = panel.querySelector('.inline-edit-provider-type');
             const phoneInput = panel.querySelector('.inline-edit-phone');
@@ -581,7 +587,7 @@ window.onclick = function(event) {
                 resource_id: resourceId,
                 resource_name: nameInput ? nameInput.value.trim() : '',
                 organization: organizationInput ? organizationInput.value.trim() : '',
-                service_area: serviceAreaSelect ? serviceAreaSelect.value : '',
+                service_area: Array.from(serviceAreaInputs).map(function(input) { return input.value; }),
                 provider_type: providerSelect ? providerSelect.value : '',
                 phone: phoneInput ? phoneInput.value.trim() : '',
                 email: emailInput ? emailInput.value.trim() : '',
@@ -603,8 +609,8 @@ window.onclick = function(event) {
                 return;
             }
 
-            if (!payload.service_area) {
-                setInlineEditMessage(panel, 'Service Area is required.', 'error');
+            if (!Array.isArray(payload.service_area) || payload.service_area.length === 0) {
+                setInlineEditMessage(panel, 'At least one Service Area is required.', 'error');
                 return;
             }
 
@@ -820,11 +826,6 @@ window.onclick = function(event) {
             });
         }
 
-        const servicesInputs = document.querySelectorAll('.services-offered-input');
-        servicesInputs.forEach(function(input) {
-            input.addEventListener('change', updateServiceWarning);
-        });
-
         if (applyBtn) {
             applyBtn.addEventListener('click', function() {
                 state.services_offered = getCheckedValues('.services-offered-input');
@@ -848,8 +849,6 @@ window.onclick = function(event) {
                 if (anyProvider) {
                     anyProvider.checked = true;
                 }
-
-                updateServiceWarning();
 
                 state.services_offered = [];
                 state.population = [];
@@ -955,7 +954,6 @@ window.onclick = function(event) {
         }
 
         applyTileSelection();
-        updateServiceWarning();
     }
 
     // Handle Report Issue Form Submission

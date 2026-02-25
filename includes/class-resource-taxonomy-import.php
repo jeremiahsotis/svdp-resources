@@ -325,8 +325,31 @@ class Resource_Taxonomy_Import {
         $services_offered_raw = self::get_row_value($row, array('services offered', 'services_offered'));
         $provider_type_raw = self::get_row_value($row, array('provider type', 'provider_type'));
 
-        $service_area_slug = Resource_Taxonomy::normalize_service_area_slug($service_area_raw);
-        if ($service_area_slug === '') {
+        $service_area_tokens = self::split_services_tokens($service_area_raw);
+        $service_area_slugs = Resource_Taxonomy::normalize_service_area_slugs($service_area_tokens);
+        $invalid_service_areas = array();
+
+        foreach ($service_area_tokens as $token) {
+            $token_slug = Resource_Taxonomy::normalize_slug($token);
+            if ($token_slug !== '' && !in_array($token_slug, $service_area_slugs, true)) {
+                $invalid_service_areas[] = $token;
+            }
+        }
+
+        if (!empty($invalid_service_areas)) {
+            return array(
+                'valid' => false,
+                'review_item' => array(
+                    'resource_id' => $resource_id,
+                    'row_number' => isset($row['_row_number']) ? (int) $row['_row_number'] : 0,
+                    'reason' => 'invalid_service_area_term',
+                    'message' => 'One or more Service Area terms are not canonical: ' . implode(', ', $invalid_service_areas),
+                    'raw_row' => $row
+                )
+            );
+        }
+
+        if (empty($service_area_slugs)) {
             return array(
                 'valid' => false,
                 'review_item' => array(
@@ -380,7 +403,7 @@ class Resource_Taxonomy_Import {
         return array(
             'valid' => true,
             'normalized' => array(
-                'service_area' => $service_area_slug,
+                'service_area' => Resource_Taxonomy::to_pipe_slug_string($service_area_slugs),
                 'services_offered' => Resource_Taxonomy::to_pipe_slug_string($services_slugs),
                 'provider_type' => $provider_slug
             )

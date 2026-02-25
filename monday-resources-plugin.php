@@ -587,8 +587,19 @@ function monday_resources_ensure_resource_taxonomy_schema() {
         }
     }
 
+    $service_area_column = $wpdb->get_row(
+        $wpdb->prepare("SHOW COLUMNS FROM $resources_table LIKE %s", 'service_area'),
+        ARRAY_A
+    );
+    if (is_array($service_area_column) && isset($service_area_column['Type'])) {
+        $service_area_type = strtolower((string) $service_area_column['Type']);
+        if (strpos($service_area_type, 'text') === false) {
+            $wpdb->query("ALTER TABLE $resources_table MODIFY COLUMN service_area TEXT NULL");
+        }
+    }
+
     $indexes = array(
-        'idx_resources_service_area' => "ALTER TABLE $resources_table ADD INDEX idx_resources_service_area (service_area)",
+        'idx_resources_service_area' => "ALTER TABLE $resources_table ADD INDEX idx_resources_service_area (service_area(100))",
         'idx_resources_provider_type' => "ALTER TABLE $resources_table ADD INDEX idx_resources_provider_type (provider_type)",
         'idx_resources_services_offered_prefix' => "ALTER TABLE $resources_table ADD INDEX idx_resources_services_offered_prefix (services_offered(100))"
     );
@@ -602,6 +613,47 @@ function monday_resources_ensure_resource_taxonomy_schema() {
         );
         if (!$index_exists) {
             $wpdb->query($query);
+        }
+    }
+
+    if (class_exists('Resource_Taxonomy')) {
+        $rows = $wpdb->get_results(
+            "SELECT id, service_area, primary_service_type
+            FROM $resources_table
+            WHERE (service_area IS NOT NULL AND TRIM(service_area) <> '')
+                OR (primary_service_type IS NOT NULL AND TRIM(primary_service_type) <> '')",
+            ARRAY_A
+        );
+
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                $id = isset($row['id']) ? (int) $row['id'] : 0;
+                if ($id <= 0) {
+                    continue;
+                }
+
+                $slugs = Resource_Taxonomy::normalize_service_area_slugs(
+                    Resource_Taxonomy::parse_pipe_slugs((string) $row['service_area'])
+                );
+
+                // Backfill from legacy primary label if stored service_area is invalid.
+                if (empty($slugs) && !empty($row['primary_service_type'])) {
+                    $slugs = Resource_Taxonomy::normalize_service_area_slugs((string) $row['primary_service_type']);
+                }
+
+                $normalized_pipe = Resource_Taxonomy::to_pipe_slug_string($slugs);
+                $current_value = (string) $row['service_area'];
+
+                if ($normalized_pipe !== '' && $normalized_pipe !== $current_value) {
+                    $wpdb->update(
+                        $resources_table,
+                        array('service_area' => $normalized_pipe),
+                        array('id' => $id),
+                        array('%s'),
+                        array('%d')
+                    );
+                }
+            }
         }
     }
 }
@@ -938,7 +990,7 @@ function monday_resources_activate() {
         is_svdp tinyint(1) DEFAULT 0,
         primary_service_type varchar(255) DEFAULT NULL,
         secondary_service_type varchar(255) DEFAULT NULL,
-        service_area varchar(191) NOT NULL DEFAULT '',
+        service_area text DEFAULT NULL,
         services_offered text DEFAULT NULL,
         provider_type varchar(191) DEFAULT NULL,
         phone varchar(50) DEFAULT NULL,
@@ -977,7 +1029,7 @@ function monday_resources_activate() {
         KEY verification_status (verification_status),
         KEY geography (geography),
         KEY primary_service_type (primary_service_type),
-        KEY service_area (service_area),
+        KEY service_area (service_area(100)),
         KEY provider_type (provider_type),
         KEY idx_resources_organization_id (organization_id),
         KEY is_svdp (is_svdp)

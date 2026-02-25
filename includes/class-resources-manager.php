@@ -163,18 +163,14 @@ class Resources_Manager {
 
         if (!empty($filters['service_area'])) {
             $service_area_values = is_array($filters['service_area']) ? $filters['service_area'] : array($filters['service_area']);
-            $service_area_slugs = array();
-            foreach ($service_area_values as $service_area_value) {
-                $service_area_slug = Resource_Taxonomy::normalize_service_area_slug($service_area_value);
-                if ($service_area_slug !== '') {
-                    $service_area_slugs[$service_area_slug] = $service_area_slug;
-                }
-            }
+            $service_area_slugs = Resource_Taxonomy::normalize_service_area_slugs($service_area_values);
 
             if (!empty($service_area_slugs)) {
                 $service_area_conditions = array();
                 foreach (array_values($service_area_slugs) as $service_area_slug) {
-                    $service_area_conditions[] = "service_area = %s";
+                    // Support both new pipe-tag storage and legacy single-slug rows.
+                    $service_area_conditions[] = "(service_area LIKE %s OR service_area = %s)";
+                    $where_values[] = '%|' . $wpdb->esc_like($service_area_slug) . '|%';
                     $where_values[] = $service_area_slug;
                 }
                 $where[] = '(' . implode(' OR ', $service_area_conditions) . ')';
@@ -236,7 +232,8 @@ class Resources_Manager {
                     continue;
                 }
                 $service_slug = Resource_Taxonomy::normalize_slug($service);
-                $service_conditions[] = "(service_area = %s OR services_offered LIKE %s OR primary_service_type LIKE %s OR secondary_service_type LIKE %s)";
+                $service_conditions[] = "((service_area LIKE %s OR service_area = %s) OR services_offered LIKE %s OR primary_service_type LIKE %s OR secondary_service_type LIKE %s)";
+                $where_values[] = '%|' . $wpdb->esc_like($service_slug) . '|%';
                 $where_values[] = $service_slug;
                 $where_values[] = '%|' . $wpdb->esc_like($service_slug) . '|%';
                 $where_values[] = '%' . $wpdb->esc_like($service) . '%';
@@ -270,6 +267,13 @@ class Resources_Manager {
                     $search_conditions[] = "$field LIKE %s";
                     $where_values[] = $like;
                 }
+
+                $q_slug = Resource_Taxonomy::normalize_slug($q);
+                if ($q_slug !== '') {
+                    $search_conditions[] = 'service_area LIKE %s';
+                    $where_values[] = '%|' . $wpdb->esc_like($q_slug) . '|%';
+                }
+
                 $where[] = '(' . implode(' OR ', $search_conditions) . ')';
             }
         }
@@ -754,7 +758,19 @@ class Resources_Manager {
         }
 
         if (array_key_exists('service_area', $data)) {
-            $data['service_area'] = Resource_Taxonomy::normalize_service_area_slug($data['service_area']);
+            if (is_array($data['service_area'])) {
+                $slugs = Resource_Taxonomy::normalize_service_area_slugs($data['service_area']);
+            } else {
+                $value = trim((string) $data['service_area']);
+                if (strpos($value, '|') !== false) {
+                    $slugs = Resource_Taxonomy::normalize_service_area_slugs(Resource_Taxonomy::parse_pipe_slugs($value));
+                } else {
+                    $parts = preg_split('/\s*,\s*|\s*;\s*/', $value);
+                    $slugs = Resource_Taxonomy::normalize_service_area_slugs(is_array($parts) ? $parts : array($value));
+                }
+            }
+
+            $data['service_area'] = Resource_Taxonomy::to_pipe_slug_string($slugs);
         }
 
         if (array_key_exists('provider_type', $data)) {

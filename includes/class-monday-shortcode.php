@@ -529,7 +529,10 @@ class Monday_Resources_Shortcode {
                 margin-bottom: 4px;
                 color: #1f2933;
             }
-            .inline-edit-row input,
+            .inline-edit-row input[type="text"],
+            .inline-edit-row input[type="url"],
+            .inline-edit-row input[type="email"],
+            .inline-edit-row input[type="tel"],
             .inline-edit-row select,
             .inline-edit-row textarea {
                 width: 100%;
@@ -542,6 +545,27 @@ class Monday_Resources_Shortcode {
             .inline-edit-row textarea {
                 min-height: 88px;
                 resize: vertical;
+            }
+            .inline-service-area-list {
+                max-height: 180px;
+                overflow-y: auto;
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                background: #fff;
+                padding: 8px;
+            }
+            .inline-service-area-option {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin: 4px 0;
+                font-size: 14px;
+            }
+            .inline-service-area-option input[type="checkbox"] {
+                width: auto;
+                min-height: 0;
+                margin: 0;
+                padding: 0;
             }
             .inline-edit-actions {
                 display: flex;
@@ -873,7 +897,6 @@ class Monday_Resources_Shortcode {
                                 </label>
                             <?php endforeach; ?>
                         </div>
-                        <div class="selection-warning" id="services-warning">Heads up: selecting more than 5 services may broaden results significantly.</div>
                     </div>
 
                     <div class="sheet-section">
@@ -997,13 +1020,15 @@ class Monday_Resources_Shortcode {
                 }
             }
 
-            $service_area_label = Resource_Taxonomy::get_service_area_label(isset($item['service_area']) ? $item['service_area'] : '');
+            $service_area_labels = Resource_Taxonomy::get_service_area_labels_from_pipe(isset($item['service_area']) ? $item['service_area'] : '');
             $services_offered_labels = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
             $services_offered_input = implode(', ', $services_offered_labels);
-            $combined_services = trim(strtolower($service_area_label . ' ' . implode(' ', $services_offered_labels)));
+            $combined_services = trim(strtolower(implode(' ', $service_area_labels) . ' ' . implode(' ', $services_offered_labels)));
             $target_population = !empty($item['target_population']) ? strtolower((string) $item['target_population']) : '';
             $resource_id = isset($item['id']) ? (int) $item['id'] : 0;
-            $service_area_slug = isset($item['service_area']) ? Resource_Taxonomy::normalize_service_area_slug($item['service_area']) : '';
+            $service_area_slugs = isset($item['service_area'])
+                ? Resource_Taxonomy::normalize_service_area_slugs(Resource_Taxonomy::parse_pipe_slugs($item['service_area']))
+                : array();
             $provider_type_slug = isset($item['provider_type']) ? Resource_Taxonomy::normalize_provider_type_slug($item['provider_type']) : '';
             $is_unavailable = $is_shared_snapshot && (
                 !empty($item['_snapshot_unavailable']) ||
@@ -1193,13 +1218,19 @@ class Monday_Resources_Shortcode {
                                 <input type="text" class="inline-edit-organization" list="resource-inline-org-suggestions" autocomplete="off" value="<?php echo esc_attr(isset($item['organization']) ? (string) $item['organization'] : ''); ?>">
                             </div>
                             <div class="inline-edit-row">
-                                <label>Service Area</label>
-                                <select class="inline-edit-service-area">
-                                    <option value="">Select service area</option>
+                                <label>Service Areas</label>
+                                <div class="inline-service-area-list">
                                     <?php foreach ($inline_service_area_terms as $slug => $label): ?>
-                                        <option value="<?php echo esc_attr($slug); ?>" <?php selected($slug, $service_area_slug); ?>><?php echo esc_html($label); ?></option>
+                                        <label class="inline-service-area-option">
+                                            <input
+                                                type="checkbox"
+                                                class="inline-edit-service-area"
+                                                value="<?php echo esc_attr($slug); ?>"
+                                                <?php checked(in_array($slug, $service_area_slugs, true)); ?>>
+                                            <span><?php echo esc_html($label); ?></span>
+                                        </label>
                                     <?php endforeach; ?>
-                                </select>
+                                </div>
                             </div>
                             <div class="inline-edit-row">
                                 <label>Services Offered (comma-separated labels)</label>
@@ -1258,7 +1289,12 @@ class Monday_Resources_Shortcode {
     public function filter_resources_ajax() {
         check_ajax_referer('monday_resources_nonce', 'nonce');
 
-        $service_area = isset($_POST['service_area']) ? sanitize_text_field(wp_unslash($_POST['service_area'])) : '';
+        $service_area = array();
+        if (isset($_POST['service_area'])) {
+            $raw_service_area = wp_unslash($_POST['service_area']);
+            $service_area = is_array($raw_service_area) ? $raw_service_area : array($raw_service_area);
+            $service_area = array_values(array_filter(array_map('sanitize_text_field', $service_area)));
+        }
         $provider_type = isset($_POST['provider_type']) ? sanitize_text_field(wp_unslash($_POST['provider_type'])) : '';
         $q = isset($_POST['q']) ? sanitize_text_field(wp_unslash($_POST['q'])) : '';
 
@@ -1373,7 +1409,7 @@ class Monday_Resources_Shortcode {
      */
     private static function get_always_visible_fields() {
         return array(
-            'service_area' => 'Service Area',
+            'service_area' => 'Service Areas',
             'phone' => 'Phone',
             'target_population' => 'Target Population'
         );
@@ -1423,6 +1459,7 @@ class Monday_Resources_Shortcode {
                 'label' => 'Additional Information',
                 'fields' => array(
                     'organization' => 'Organization/Agency',
+                    'service_area_full' => 'Service Areas',
                     'services_offered' => 'Services Offered',
                     'provider_type' => 'Provider Type',
                     'what_they_provide' => 'What They Provide',
@@ -1458,7 +1495,11 @@ class Monday_Resources_Shortcode {
     private static function get_field_value_for_display($item, $field_name) {
         switch ($field_name) {
             case 'service_area':
-                return Resource_Taxonomy::get_service_area_label(isset($item['service_area']) ? $item['service_area'] : '');
+                $labels = Resource_Taxonomy::get_service_area_labels_from_pipe(isset($item['service_area']) ? $item['service_area'] : '');
+                return self::summarize_labels($labels, 3);
+            case 'service_area_full':
+                $labels = Resource_Taxonomy::get_service_area_labels_from_pipe(isset($item['service_area']) ? $item['service_area'] : '');
+                return implode(', ', $labels);
             case 'services_offered':
                 $labels = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
                 return implode(', ', $labels);
@@ -1467,5 +1508,27 @@ class Monday_Resources_Shortcode {
             default:
                 return isset($item[$field_name]) ? trim((string) $item[$field_name]) : '';
         }
+    }
+
+    /**
+     * Summarize labels as "a, b, c +N more".
+     *
+     * @param array $labels
+     * @param int $max_visible
+     * @return string
+     */
+    private static function summarize_labels($labels, $max_visible = 3) {
+        if (!is_array($labels) || empty($labels)) {
+            return '';
+        }
+
+        $max_visible = max(1, (int) $max_visible);
+        if (count($labels) <= $max_visible) {
+            return implode(', ', $labels);
+        }
+
+        $visible = array_slice($labels, 0, $max_visible);
+        $remaining = count($labels) - $max_visible;
+        return implode(', ', $visible) . ' +' . $remaining . ' more';
     }
 }
