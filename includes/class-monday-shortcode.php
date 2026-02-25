@@ -1020,8 +1020,8 @@ class Monday_Resources_Shortcode {
                 }
             }
 
-            $service_area_labels = Resource_Taxonomy::get_service_area_labels_from_pipe(isset($item['service_area']) ? $item['service_area'] : '');
-            $services_offered_labels = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
+            $service_area_labels = self::get_service_area_labels_for_display($item);
+            $services_offered_labels = self::get_services_offered_labels_for_display($item);
             $services_offered_input = implode(', ', $services_offered_labels);
             $combined_services = trim(strtolower(implode(' ', $service_area_labels) . ' ' . implode(' ', $services_offered_labels)));
             $target_population = !empty($item['target_population']) ? strtolower((string) $item['target_population']) : '';
@@ -1495,19 +1495,122 @@ class Monday_Resources_Shortcode {
     private static function get_field_value_for_display($item, $field_name) {
         switch ($field_name) {
             case 'service_area':
-                $labels = Resource_Taxonomy::get_service_area_labels_from_pipe(isset($item['service_area']) ? $item['service_area'] : '');
+                $labels = self::get_service_area_labels_for_display($item);
                 return self::summarize_labels($labels, 3);
             case 'service_area_full':
-                $labels = Resource_Taxonomy::get_service_area_labels_from_pipe(isset($item['service_area']) ? $item['service_area'] : '');
+                $labels = self::get_service_area_labels_for_display($item);
                 return implode(', ', $labels);
             case 'services_offered':
-                $labels = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
+                $labels = self::get_services_offered_labels_for_display($item);
                 return implode(', ', $labels);
             case 'provider_type':
                 return Resource_Taxonomy::get_provider_type_label(isset($item['provider_type']) ? $item['provider_type'] : '');
             default:
                 return isset($item[$field_name]) ? trim((string) $item[$field_name]) : '';
         }
+    }
+
+    /**
+     * Resolve Service Area labels for card display (new schema first, legacy fallback).
+     *
+     * @param array $item
+     * @return string[]
+     */
+    private static function get_service_area_labels_for_display($item) {
+        $labels = Resource_Taxonomy::get_service_area_labels_from_pipe(isset($item['service_area']) ? $item['service_area'] : '');
+        if (!empty($labels)) {
+            return $labels;
+        }
+
+        $legacy = isset($item['primary_service_type']) ? trim((string) $item['primary_service_type']) : '';
+        if ($legacy === '') {
+            return array();
+        }
+
+        return self::map_legacy_taxonomy_labels($legacy, Resource_Taxonomy::get_service_area_terms());
+    }
+
+    /**
+     * Resolve Services Offered labels for card display (new schema first, legacy fallback).
+     *
+     * @param array $item
+     * @return string[]
+     */
+    private static function get_services_offered_labels_for_display($item) {
+        $labels = Resource_Taxonomy::get_services_offered_labels_from_pipe(isset($item['services_offered']) ? $item['services_offered'] : '');
+        if (!empty($labels)) {
+            return $labels;
+        }
+
+        $legacy = isset($item['secondary_service_type']) ? trim((string) $item['secondary_service_type']) : '';
+        if ($legacy === '') {
+            return array();
+        }
+
+        return self::map_legacy_taxonomy_labels($legacy, Resource_Taxonomy::get_services_offered_terms());
+    }
+
+    /**
+     * Map legacy comma/semicolon/pipe values to canonical labels with readable fallback.
+     *
+     * @param string $value
+     * @param array $term_map
+     * @return string[]
+     */
+    private static function map_legacy_taxonomy_labels($value, $term_map) {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return array();
+        }
+
+        $tokens = Resource_Taxonomy::parse_pipe_slugs($value);
+        if (count($tokens) === 1) {
+            $parts = preg_split('/\s*,\s*|\s*;\s*/', $value);
+            if (is_array($parts) && !empty($parts)) {
+                $tokens = $parts;
+            }
+        }
+
+        $labels = array();
+        foreach ((array) $tokens as $token) {
+            $token = trim((string) $token);
+            if ($token === '') {
+                continue;
+            }
+
+            $slug = Resource_Taxonomy::normalize_slug($token);
+            if (isset($term_map[$slug])) {
+                $labels[$term_map[$slug]] = $term_map[$slug];
+                continue;
+            }
+
+            $labels[self::humanize_label_token($token)] = self::humanize_label_token($token);
+        }
+
+        return array_values($labels);
+    }
+
+    /**
+     * Convert unknown slug-like token to readable label.
+     *
+     * @param string $token
+     * @return string
+     */
+    private static function humanize_label_token($token) {
+        $token = trim((string) $token);
+        if ($token === '') {
+            return '';
+        }
+
+        $is_slug_like = preg_match('/[-_]/', $token) === 1;
+        $clean = preg_replace('/\s+/', ' ', str_replace(array('-', '_'), ' ', $token));
+        $clean = is_string($clean) ? trim($clean) : $token;
+
+        if ($is_slug_like || strtolower($clean) === $clean) {
+            return ucwords($clean);
+        }
+
+        return $clean;
     }
 
     /**
