@@ -266,6 +266,20 @@ Edit the `synonymMap` object in `includes/class-monday-shortcode.php` (starting 
 2. Try deactivating and reactivating the plugin
 3. Check WordPress debug log for errors
 
+### Questionnaire Resource Loader Smoke Test
+
+Run this from the plugin root to validate the admin lazy-loading endpoint, nonce handling, and DB indexes:
+
+```bash
+./scripts/questionnaire-resource-loader-smoke.sh
+```
+
+If your WordPress root is non-standard, pass it explicitly:
+
+```bash
+./scripts/questionnaire-resource-loader-smoke.sh /absolute/path/to/wp-root
+```
+
 ## Support
 
 For issues or questions:
