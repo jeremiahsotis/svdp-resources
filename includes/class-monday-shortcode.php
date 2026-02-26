@@ -54,6 +54,9 @@ class Monday_Resources_Shortcode {
         $can_snapshot = current_user_can($snapshot_cap) || current_user_can($manage_cap) || !empty($share_cap);
         $can_inline_edit = self::current_user_can_inline_edit();
         $twilio_enabled = class_exists('Resource_Snapshot_Manager') && Resource_Snapshot_Manager::is_twilio_configured();
+        $analytics_enabled = function_exists('monday_resources_is_analytics_capture_enabled')
+            ? monday_resources_is_analytics_capture_enabled()
+            : false;
 
         wp_localize_script('monday-resources-frontend', 'mondayResources', array(
             'ajaxurl' => admin_url('admin-ajax.php'),
@@ -67,7 +70,8 @@ class Monday_Resources_Shortcode {
             'sharedRouteBase' => home_url('/resources/shared/'),
             'canSnapshot' => $can_snapshot,
             'canInlineEdit' => $can_inline_edit,
-            'twilioEnabled' => $twilio_enabled
+            'twilioEnabled' => $twilio_enabled,
+            'analyticsEnabled' => $analytics_enabled
         ));
     }
 
@@ -1314,6 +1318,7 @@ class Monday_Resources_Shortcode {
 
         $page = isset($_POST['page']) ? max(1, (int) $_POST['page']) : 1;
         $per_page = isset($_POST['per_page']) ? max(1, min(100, (int) $_POST['per_page'])) : self::DEFAULT_PER_PAGE;
+        $source_url = isset($_POST['source_url']) ? esc_url_raw(wp_unslash($_POST['source_url'])) : '';
 
         $filters = array(
             'service_area' => $service_area,
@@ -1350,6 +1355,22 @@ class Monday_Resources_Shortcode {
         $has_more = $visible_count < $total_count;
         $render_offset = ($page - 1) * $per_page;
         $allow_inline_edit = self::current_user_can_inline_edit();
+
+        if (class_exists('Resource_Analytics') && function_exists('monday_resources_is_analytics_capture_enabled') && monday_resources_is_analytics_capture_enabled()) {
+            Resource_Analytics::track_search_request(array(
+                'q' => $q,
+                'service_area' => $service_area,
+                'services_offered' => $services_offered,
+                'provider_type' => $provider_type,
+                'population' => $population,
+                'geography_prefilter' => isset($filters['geography']) ? (array) $filters['geography'] : array(),
+                'service_type_prefilter' => isset($filters['service_type']) ? (array) $filters['service_type'] : array(),
+                'page' => $page,
+                'per_page' => $per_page,
+                'result_count' => $total_count,
+                'source_url' => $source_url
+            ));
+        }
 
         wp_send_json_success(array(
             'html' => self::render_resources_grid_html($items, $render_offset, array('allow_inline_edit' => $allow_inline_edit)),

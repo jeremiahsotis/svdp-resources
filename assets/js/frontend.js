@@ -250,6 +250,53 @@ window.onclick = function(event) {
             return fallback;
         }
 
+        function getResourceIdFromElement(element) {
+            if (!element) {
+                return 0;
+            }
+
+            const card = element.closest('.resource-card[data-resource-id]');
+            if (!card) {
+                return 0;
+            }
+
+            return Number(card.getAttribute('data-resource-id') || 0);
+        }
+
+        function trackAnalyticsEvent(eventName, payload) {
+            if (!mondayResources.analyticsEnabled) {
+                return;
+            }
+
+            const data = {
+                action: 'svdp_resource_analytics_event',
+                nonce: mondayResources.nonce,
+                event_name: eventName,
+                source_url: window.location.href,
+                meta: JSON.stringify(payload && payload.meta ? payload.meta : {})
+            };
+
+            const resourceId = payload && payload.resource_id ? Number(payload.resource_id) : 0;
+            if (resourceId > 0) {
+                data.resource_id = resourceId;
+            }
+
+            if (payload && payload.channel) {
+                data.channel = payload.channel;
+            }
+
+            if (Array.isArray(state.geography_prefilter) && state.geography_prefilter.length) {
+                data.geography_prefilter = state.geography_prefilter;
+            }
+
+            $.ajax({
+                url: mondayResources.ajaxurl,
+                type: 'POST',
+                dataType: 'json',
+                data: data
+            });
+        }
+
         function createSnapshot(channel, contactValue) {
             const resourceIds = getVisibleResourceIds();
             if (!resourceIds.length) {
@@ -737,7 +784,8 @@ window.onclick = function(event) {
                 page: state.page,
                 per_page: state.per_page,
                 geography_prefilter: state.geography_prefilter,
-                service_type_prefilter: state.service_type_prefilter
+                service_type_prefilter: state.service_type_prefilter,
+                source_url: window.location.href
             };
 
             currentRequest = $.ajax({
@@ -776,6 +824,16 @@ window.onclick = function(event) {
 
         const debouncedSearch = debounce(function() {
             state.q = (searchInput ? searchInput.value : '').trim();
+            trackAnalyticsEvent('filter_applied', {
+                meta: {
+                    trigger: 'search_input',
+                    free_text_query: state.q,
+                    service_area: state.service_area,
+                    services_offered: state.services_offered,
+                    population: state.population,
+                    provider_type: state.provider_type
+                }
+            });
             refreshFirstPage();
         }, 350);
 
@@ -784,6 +842,13 @@ window.onclick = function(event) {
                 const selected = this.getAttribute('data-service-area') || '';
                 state.service_area = state.service_area === selected ? '' : selected;
                 applyTileSelection();
+                trackAnalyticsEvent('filter_applied', {
+                    meta: {
+                        trigger: 'service_area_tile',
+                        service_area: state.service_area,
+                        free_text_query: state.q
+                    }
+                });
                 refreshFirstPage();
             });
         });
@@ -793,7 +858,10 @@ window.onclick = function(event) {
         }
 
         if (narrowBtn) {
-            narrowBtn.addEventListener('click', openSheet);
+            narrowBtn.addEventListener('click', function() {
+                trackAnalyticsEvent('filter_sheet_opened', { meta: { trigger: 'narrow_results' } });
+                openSheet();
+            });
         }
 
         if (sheetCloseBtn) {
@@ -835,6 +903,16 @@ window.onclick = function(event) {
                 state.provider_type = providerInput ? providerInput.value : '';
 
                 closeSheet();
+                trackAnalyticsEvent('filter_applied', {
+                    meta: {
+                        trigger: 'sheet_apply',
+                        service_area: state.service_area,
+                        services_offered: state.services_offered,
+                        population: state.population,
+                        provider_type: state.provider_type,
+                        free_text_query: state.q
+                    }
+                });
                 refreshFirstPage();
             });
         }
@@ -855,12 +933,28 @@ window.onclick = function(event) {
                 state.provider_type = '';
 
                 closeSheet();
+                trackAnalyticsEvent('filter_applied', {
+                    meta: {
+                        trigger: 'sheet_clear',
+                        service_area: '',
+                        services_offered: [],
+                        population: [],
+                        provider_type: '',
+                        free_text_query: state.q
+                    }
+                });
                 refreshFirstPage();
             });
         }
 
         if (loadMoreBtn) {
             loadMoreBtn.addEventListener('click', function() {
+                trackAnalyticsEvent('load_more_clicked', {
+                    meta: {
+                        current_page: state.page,
+                        free_text_query: state.q
+                    }
+                });
                 state.page += 1;
                 performRequest({ append: true });
             });
@@ -895,6 +989,45 @@ window.onclick = function(event) {
                 }
             }
         }
+
+        directory.addEventListener('click', function(event) {
+            const contactLink = event.target.closest('.resource-card a[href]');
+            if (contactLink) {
+                const href = (contactLink.getAttribute('href') || '').toLowerCase();
+                let contactType = '';
+                if (href.indexOf('tel:') === 0) {
+                    contactType = 'phone';
+                } else if (href.indexOf('mailto:') === 0) {
+                    contactType = 'email';
+                } else if (href.indexOf('http://') === 0 || href.indexOf('https://') === 0 || href.indexOf('www.') === 0) {
+                    contactType = 'website';
+                }
+
+                if (contactType !== '') {
+                    trackAnalyticsEvent('resource_contact_clicked', {
+                        resource_id: getResourceIdFromElement(contactLink),
+                        meta: {
+                            contact_type: contactType
+                        }
+                    });
+                }
+            }
+
+            const detailsButton = event.target.closest('.resource-toggle-button');
+            if (detailsButton) {
+                const resourceId = getResourceIdFromElement(detailsButton);
+                setTimeout(function() {
+                    if (detailsButton.getAttribute('aria-expanded') === 'true') {
+                        trackAnalyticsEvent('resource_detail_opened', {
+                            resource_id: resourceId,
+                            meta: {
+                                trigger: 'details_toggle'
+                            }
+                        });
+                    }
+                }, 0);
+            }
+        });
 
         if (mondayResources.canInlineEdit) {
             directory.addEventListener('click', function(event) {

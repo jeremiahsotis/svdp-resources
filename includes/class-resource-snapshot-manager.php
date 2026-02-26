@@ -266,6 +266,11 @@ class Resource_Snapshot_Manager {
 
         $is_print = isset($_GET['print']) && sanitize_text_field(wp_unslash($_GET['print'])) === '1';
         $shared_url = self::get_shared_snapshot_url($token);
+        self::log_event('snapshot_viewed', array(
+            'snapshot_id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+            'snapshot_token' => isset($snapshot['token']) ? (string) $snapshot['token'] : '',
+            'source_url' => isset($snapshot['created_from_url']) ? (string) $snapshot['created_from_url'] : ''
+        ));
 
         $items = self::load_snapshot_resources($snapshot);
         $grid_html = Monday_Resources_Shortcode::render_resources_grid_html(
@@ -403,6 +408,13 @@ class Resource_Snapshot_Manager {
         }
 
         $shared_url = self::get_shared_snapshot_url($snapshot['token']);
+        self::log_event('snapshot_created', array(
+            'snapshot_id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+            'snapshot_token' => isset($snapshot['token']) ? (string) $snapshot['token'] : '',
+            'resource_ids' => $resource_ids,
+            'channel' => $contact_type,
+            'source_url' => $source_url
+        ));
 
         wp_send_json_success(array(
             'token' => $snapshot['token'],
@@ -442,6 +454,13 @@ class Resource_Snapshot_Manager {
             $channel = 'print';
         }
 
+        self::log_event('snapshot_send_attempted', array(
+            'snapshot_id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+            'snapshot_token' => isset($snapshot['token']) ? (string) $snapshot['token'] : '',
+            'channel' => $channel,
+            'source_url' => $source_url
+        ));
+
         $limit_error = self::enforce_rate_limit($channel);
         if (is_wp_error($limit_error)) {
             wp_send_json_error(
@@ -455,6 +474,12 @@ class Resource_Snapshot_Manager {
 
         $shared_url = self::get_shared_snapshot_url($snapshot['token']);
         if ($channel === 'print') {
+            self::log_event('snapshot_sent', array(
+                'snapshot_id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+                'snapshot_token' => isset($snapshot['token']) ? (string) $snapshot['token'] : '',
+                'channel' => 'print',
+                'source_url' => $source_url
+            ));
             wp_send_json_success(array(
                 'message' => 'Print view ready.',
                 'print_url' => add_query_arg('print', '1', $shared_url),
@@ -476,9 +501,22 @@ class Resource_Snapshot_Manager {
 
             $sent = self::send_snapshot_email($email, $neighbor_name, $shared_url, $snapshot);
             if (!$sent) {
+                self::log_event('snapshot_send_failed', array(
+                    'snapshot_id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+                    'snapshot_token' => isset($snapshot['token']) ? (string) $snapshot['token'] : '',
+                    'channel' => 'email',
+                    'source_url' => $source_url,
+                    'error_code' => 'email_send_failed'
+                ));
                 wp_send_json_error(array('message' => 'Unable to send email right now.'), 500);
             }
 
+            self::log_event('snapshot_sent', array(
+                'snapshot_id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+                'snapshot_token' => isset($snapshot['token']) ? (string) $snapshot['token'] : '',
+                'channel' => 'email',
+                'source_url' => $source_url
+            ));
             wp_send_json_success(array(
                 'message' => 'Email sent.',
                 'shared_url' => $shared_url
@@ -498,9 +536,22 @@ class Resource_Snapshot_Manager {
             $message = self::build_sms_copy($neighbor_name, $shared_url);
             $sent = self::send_snapshot_text($to, $message);
             if (is_wp_error($sent)) {
+                self::log_event('snapshot_send_failed', array(
+                    'snapshot_id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+                    'snapshot_token' => isset($snapshot['token']) ? (string) $snapshot['token'] : '',
+                    'channel' => 'text',
+                    'source_url' => $source_url,
+                    'error_code' => sanitize_key((string) $sent->get_error_code())
+                ));
                 wp_send_json_error(array('message' => $sent->get_error_message()), 500);
             }
 
+            self::log_event('snapshot_sent', array(
+                'snapshot_id' => isset($snapshot['id']) ? (int) $snapshot['id'] : 0,
+                'snapshot_token' => isset($snapshot['token']) ? (string) $snapshot['token'] : '',
+                'channel' => 'text',
+                'source_url' => $source_url
+            ));
             wp_send_json_success(array(
                 'message' => 'Text message sent.',
                 'shared_url' => $shared_url

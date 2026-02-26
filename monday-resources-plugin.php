@@ -3,7 +3,7 @@
  * Plugin Name: Monday.com Resources Integration
  * Plugin URI: https://example.com
  * Description: Integrates Monday.com board data as searchable resource cards with filtering, issue reporting, and submission features
- * Version: 1.2.0
+ * Version: 1.3.0
  * Author: Your Name
  * Author URI: https://example.com
  * License: GPL v2 or later
@@ -17,8 +17,8 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('MONDAY_RESOURCES_VERSION', '1.2.0');
-define('MONDAY_RESOURCES_DB_SCHEMA_VERSION', '1.2.0');
+define('MONDAY_RESOURCES_VERSION', '1.3.0');
+define('MONDAY_RESOURCES_DB_SCHEMA_VERSION', '1.3.0');
 define('MONDAY_RESOURCES_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('MONDAY_RESOURCES_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -35,6 +35,10 @@ require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-admin.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-monday-submissions.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-exporter.php';
 require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-taxonomy-import.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-geography-registry.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-analytics.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-analytics-dashboard.php';
+require_once MONDAY_RESOURCES_PLUGIN_DIR . 'includes/class-resource-analytics-exporter.php';
 
 // Include Composer autoloader if available (for Excel/PDF export)
 if (file_exists(MONDAY_RESOURCES_PLUGIN_DIR . 'vendor/autoload.php')) {
@@ -78,6 +82,54 @@ function monday_resources_get_snapshot_capability() {
 }
 
 /**
+ * Capability used to view analytics.
+ *
+ * @return string
+ */
+function monday_resources_get_analytics_view_capability() {
+    return monday_resources_get_manage_capability();
+}
+
+/**
+ * Capability used to export analytics.
+ *
+ * @return string
+ */
+function monday_resources_get_analytics_export_capability() {
+    return monday_resources_get_manage_capability();
+}
+
+/**
+ * Capture feature flag.
+ *
+ * @return bool
+ */
+function monday_resources_is_analytics_capture_enabled() {
+    $enabled = (int) get_option('monday_resources_analytics_capture_enabled', 1) === 1;
+    return (bool) apply_filters('monday_resources_analytics_capture_enabled', $enabled);
+}
+
+/**
+ * Dashboard feature flag.
+ *
+ * @return bool
+ */
+function monday_resources_is_analytics_dashboard_enabled() {
+    $enabled = (int) get_option('monday_resources_analytics_dashboard_enabled', 1) === 1;
+    return (bool) apply_filters('monday_resources_analytics_dashboard_enabled', $enabled);
+}
+
+/**
+ * Export feature flag.
+ *
+ * @return bool
+ */
+function monday_resources_is_analytics_exports_enabled() {
+    $enabled = (int) get_option('monday_resources_analytics_exports_enabled', 1) === 1;
+    return (bool) apply_filters('monday_resources_analytics_exports_enabled', $enabled);
+}
+
+/**
  * Ensure role and capability assignments exist for resource managers.
  *
  * @return void
@@ -85,9 +137,13 @@ function monday_resources_get_snapshot_capability() {
 function monday_resources_register_resource_manager_role() {
     $capability = monday_resources_get_manage_capability();
     $snapshot_capability = monday_resources_get_snapshot_capability();
+    $analytics_view_capability = monday_resources_get_analytics_view_capability();
+    $analytics_export_capability = monday_resources_get_analytics_export_capability();
     $resource_caps = array(
         $capability => true,
         $snapshot_capability => true,
+        $analytics_view_capability => true,
+        $analytics_export_capability => true,
         'read' => true,
         'upload_files' => true
     );
@@ -109,6 +165,8 @@ function monday_resources_register_resource_manager_role() {
     if ($admin_role) {
         $admin_role->add_cap($capability, true);
         $admin_role->add_cap($snapshot_capability, true);
+        $admin_role->add_cap($analytics_view_capability, true);
+        $admin_role->add_cap($analytics_export_capability, true);
     }
 }
 
@@ -120,6 +178,17 @@ function monday_resources_register_resource_manager_role() {
 function monday_resources_ensure_snapshot_schema() {
     if (class_exists('Resource_Snapshot_Manager')) {
         Resource_Snapshot_Manager::ensure_snapshot_schema();
+    }
+}
+
+/**
+ * Ensure analytics schema exists.
+ *
+ * @return void
+ */
+function monday_resources_ensure_analytics_schema() {
+    if (class_exists('Resource_Analytics')) {
+        Resource_Analytics::ensure_schema();
     }
 }
 
@@ -708,6 +777,12 @@ function monday_resources_get_schema_health() {
     $audit_table = $wpdb->prefix . 'resources_taxonomy_import_audit';
     $snapshot_table = $wpdb->prefix . 'svdpr_snapshots';
     $organizations_table = $wpdb->prefix . 'svdpr_organizations';
+    $analytics_events_table = $wpdb->prefix . 'svdpr_analytics_events';
+    $analytics_event_geo_table = $wpdb->prefix . 'svdpr_analytics_event_geographies';
+    $analytics_snapshot_resource_table = $wpdb->prefix . 'svdpr_analytics_snapshot_resources';
+    $analytics_rollup_table = $wpdb->prefix . 'svdpr_analytics_rollup_daily';
+    $analytics_geo_registry_table = $wpdb->prefix . 'svdpr_geography_registry';
+    $analytics_shortcode_map_table = $wpdb->prefix . 'svdpr_shortcode_geography_map';
 
     $resources_exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $resources_table));
     if ($resources_exists !== $resources_table) {
@@ -766,6 +841,22 @@ function monday_resources_get_schema_health() {
     if (!$organization_column_exists) {
         $health['ok'] = false;
         $health['details'][] = 'missing_column:organization_id';
+    }
+
+    $analytics_tables = array(
+        $analytics_events_table,
+        $analytics_event_geo_table,
+        $analytics_snapshot_resource_table,
+        $analytics_rollup_table,
+        $analytics_geo_registry_table,
+        $analytics_shortcode_map_table
+    );
+    foreach ($analytics_tables as $table_name) {
+        $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table_name));
+        if ($exists !== $table_name) {
+            $health['ok'] = false;
+            $health['details'][] = 'missing_table:' . $table_name;
+        }
     }
 
     return $health;
@@ -972,13 +1063,35 @@ function monday_resources_maybe_upgrade_db() {
         monday_resources_ensure_resource_taxonomy_schema();
         monday_resources_ensure_taxonomy_import_audit_table();
         monday_resources_ensure_snapshot_schema();
+        monday_resources_ensure_analytics_schema();
         monday_resources_register_resource_manager_role();
         Resource_Taxonomy::seed_canonical_options();
         update_option('monday_resources_flush_rewrite_needed', 1, false);
+        if (get_option('monday_resources_analytics_capture_enabled', null) === null) {
+            update_option('monday_resources_analytics_capture_enabled', 1, false);
+        }
+        if (get_option('monday_resources_analytics_dashboard_enabled', null) === null) {
+            update_option('monday_resources_analytics_dashboard_enabled', 1, false);
+        }
+        if (get_option('monday_resources_analytics_exports_enabled', null) === null) {
+            update_option('monday_resources_analytics_exports_enabled', 1, false);
+        }
+        if (get_option('monday_resources_analytics_raw_retention_months', null) === null) {
+            update_option('monday_resources_analytics_raw_retention_months', 13, false);
+        }
+        if (get_option('monday_resources_analytics_low_result_threshold', null) === null) {
+            update_option('monday_resources_analytics_low_result_threshold', 3, false);
+        }
+        if (get_option('monday_resources_partner_path_prefix', null) === null) {
+            update_option('monday_resources_partner_path_prefix', '/partner-resources/', false);
+        }
+        if (get_option('monday_resources_analytics_auto_discovery_enabled', null) === null) {
+            update_option('monday_resources_analytics_auto_discovery_enabled', 0, false);
+        }
 
         update_option('monday_resources_db_version', MONDAY_RESOURCES_DB_SCHEMA_VERSION);
         $db_version = MONDAY_RESOURCES_DB_SCHEMA_VERSION;
-        error_log('Monday Resources: Database upgraded to version ' . MONDAY_RESOURCES_DB_SCHEMA_VERSION . ' - snapshots + sharing + inline save support');
+        error_log('Monday Resources: Database upgraded to version ' . MONDAY_RESOURCES_DB_SCHEMA_VERSION . ' - analytics + snapshots + sharing + inline save support');
     }
 
     // Periodic self-heal (every 6 hours) to catch drift or interrupted deploys.
@@ -990,6 +1103,7 @@ function monday_resources_maybe_upgrade_db() {
         monday_resources_ensure_resource_taxonomy_schema();
         monday_resources_ensure_taxonomy_import_audit_table();
         monday_resources_ensure_snapshot_schema();
+        monday_resources_ensure_analytics_schema();
         monday_resources_register_resource_manager_role();
         Resource_Taxonomy::seed_canonical_options();
         update_option('monday_resources_last_schema_self_heal', time());
@@ -1298,10 +1412,18 @@ function monday_resources_activate() {
     monday_resources_ensure_resource_taxonomy_schema();
     monday_resources_ensure_taxonomy_import_audit_table();
     monday_resources_ensure_snapshot_schema();
+    monday_resources_ensure_analytics_schema();
     monday_resources_register_resource_manager_role();
     Resource_Taxonomy::seed_canonical_options();
     update_option('monday_resources_db_version', MONDAY_RESOURCES_DB_SCHEMA_VERSION);
     update_option('monday_resources_flush_rewrite_needed', 1, false);
+    update_option('monday_resources_analytics_capture_enabled', 1, false);
+    update_option('monday_resources_analytics_dashboard_enabled', 1, false);
+    update_option('monday_resources_analytics_exports_enabled', 1, false);
+    update_option('monday_resources_analytics_raw_retention_months', 13, false);
+    update_option('monday_resources_analytics_low_result_threshold', 3, false);
+    update_option('monday_resources_partner_path_prefix', '/partner-resources/', false);
+    update_option('monday_resources_analytics_auto_discovery_enabled', 0, false);
 
     if (class_exists('Resource_Snapshot_Manager')) {
         Resource_Snapshot_Manager::register_rewrite_rules();
@@ -1432,6 +1554,19 @@ function monday_resources_deactivate() {
 
     // Clear verification cron jobs
     Verification_Cron::clear_scheduled_jobs();
+
+    // Clear analytics cron jobs
+    $analytics_hooks = array(
+        Resource_Analytics::ROLLUP_CRON_HOOK,
+        Resource_Analytics::RETENTION_CRON_HOOK,
+        Resource_Geography_Registry::DISCOVERY_CRON_HOOK
+    );
+    foreach ($analytics_hooks as $hook) {
+        $ts = wp_next_scheduled($hook);
+        if ($ts) {
+            wp_unschedule_event($ts, $hook);
+        }
+    }
 }
 
 /**
@@ -1508,6 +1643,10 @@ if (defined('WP_CLI') && WP_CLI && class_exists('WP_CLI')) {
 add_action('plugins_loaded', 'monday_resources_init');
 
 function monday_resources_init() {
+    new Resource_Geography_Registry();
+    new Resource_Analytics();
+    new Resource_Analytics_Dashboard();
+    new Resource_Analytics_Exporter();
     new Resource_Snapshot_Manager();
     new Monday_Resources_Shortcode();
     new Monday_Resources_Admin();
