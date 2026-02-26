@@ -860,6 +860,10 @@
                 $serviceTypeDiv.show();
             } else if (type === 'specific_resources') {
                 $specificResourcesDiv.show();
+                var $resourceContainer = $specificResourcesDiv.find('.resource-selection-container');
+                if ($resourceContainer.length && !$resourceContainer.data('initialized')) {
+                    loadResourcesForOutcome($specificResourcesDiv, '', 1, false);
+                }
             }
             // 'none' type - both stay hidden
         });
@@ -911,8 +915,11 @@
             } else if (filterType === 'specific_resources') {
                 // Collect selected resource IDs
                 var resourceIds = [];
-                $form.find('select[name="specific_resource_ids[]"] option:selected').each(function() {
-                    resourceIds.push(parseInt($(this).val()));
+                $form.find('input[name="specific_resource_ids[]"]:checked').each(function() {
+                    var resourceId = parseInt($(this).val(), 10);
+                    if (!isNaN(resourceId) && resourceId > 0) {
+                        resourceIds.push(resourceId);
+                    }
                 });
                 if (resourceIds.length > 0) {
                     filterData.specific_ids = resourceIds;
@@ -1041,6 +1048,210 @@
             if ($form.hasClass('outcome-edit-form')) {
                 sessionStorage.setItem('questionnaire_active_tab', 'outcomes');
             }
+        });
+
+        // ========================================
+        // LAZY RESOURCE LOADING FOR OUTCOMES
+        // ========================================
+
+        function getSelectedResourceIds($resourceContainer) {
+            var raw = $resourceContainer.attr('data-selected-ids') || '[]';
+
+            try {
+                var parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed)) {
+                    return [];
+                }
+
+                return parsed
+                    .map(function(id) {
+                        return parseInt(id, 10);
+                    })
+                    .filter(function(id) {
+                        return !isNaN(id) && id > 0;
+                    });
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function renderResourceOptions($list, resources, selectedIds, append) {
+            if (!append) {
+                $list.empty();
+            }
+
+            if (!Array.isArray(resources) || resources.length === 0) {
+                if (!append) {
+                    $list.html('<p style="margin:0;">No resources found.</p>');
+                }
+                return;
+            }
+
+            var html = '';
+            resources.forEach(function(resource) {
+                var id = parseInt(resource.id, 10);
+                if (isNaN(id) || id <= 0) {
+                    return;
+                }
+
+                var isChecked = selectedIds.indexOf(id) !== -1 ? ' checked' : '';
+                var resourceName = escapeHtml(String(resource.resource_name || ('Resource ' + id)));
+                var organization = resource.organization
+                    ? '<div style="font-size:0.9em;color:#555;margin-top:3px;">Organization: ' + escapeHtml(String(resource.organization)) + '</div>'
+                    : '';
+                var serviceArea = resource.service_area
+                    ? '<div style="font-size:0.85em;color:#666;margin-top:2px;">Service Area: ' + escapeHtml(String(resource.service_area)) + '</div>'
+                    : '';
+
+                html += '<label class="resource-checkbox-item" style="display:block;margin:8px 0;padding:10px;border:1px solid #e0e0e0;border-radius:3px;cursor:pointer;background:#fff;">';
+                html += '<input type="checkbox" name="specific_resource_ids[]" value="' + id + '"' + isChecked + ' style="margin-right:8px;vertical-align:top;margin-top:3px;">';
+                html += '<span style="display:inline-block;width:calc(100% - 30px);">';
+                html += '<span style="font-weight:600;color:#0073aa;">' + resourceName + '</span>';
+                html += organization;
+                html += serviceArea;
+                html += '</span>';
+                html += '</label>';
+            });
+
+            if (append) {
+                $list.append(html);
+            } else {
+                $list.html(html);
+            }
+        }
+
+        function showResourceError($container, message) {
+            var $loadingState = $container.find('.resource-loading-state');
+            var $listContainer = $container.find('.resource-list-container');
+            var $errorState = $container.find('.resource-error-state');
+            var $loadMoreBtn = $container.find('.load-more-resources-btn');
+
+            $loadingState.hide();
+            $listContainer.hide();
+            $errorState.show();
+            $loadMoreBtn.hide();
+
+            if (message) {
+                $errorState.find('p').text(message);
+            }
+        }
+
+        function loadResourcesForOutcome($specificResourcesDiv, search, page, append) {
+            var $container = $specificResourcesDiv.find('.resource-selection-container');
+            var $loadingState = $container.find('.resource-loading-state');
+            var $listContainer = $container.find('.resource-list-container');
+            var $errorState = $container.find('.resource-error-state');
+            var $list = $container.find('.resource-checkbox-list');
+            var $count = $container.find('.resource-count');
+            var $loadMoreBtn = $container.find('.load-more-resources-btn');
+            var selectedIds = getSelectedResourceIds($container);
+
+            if (!append) {
+                $list.empty();
+                $loadMoreBtn.hide();
+            }
+
+            $errorState.hide();
+            if (!append) {
+                $loadingState.show();
+                $listContainer.hide();
+            } else {
+                $loadMoreBtn.prop('disabled', true).text('Loading...');
+            }
+
+            $.ajax({
+                url: questionnaireAdmin.ajaxUrl,
+                type: 'POST',
+                dataType: 'json',
+                data: {
+                    action: 'get_resources_for_selection',
+                    nonce: questionnaireAdmin.nonce,
+                    search: search || '',
+                    page: page || 1
+                }
+            })
+                .done(function(response) {
+                    if (!response || !response.success || !response.data) {
+                        showResourceError($container, 'Failed to load resources. Please refresh and try again.');
+                        return;
+                    }
+
+                    var resources = Array.isArray(response.data.resources) ? response.data.resources : [];
+                    var pagination = response.data.pagination || {};
+
+                    renderResourceOptions($list, resources, selectedIds, append);
+
+                    $loadingState.hide();
+                    $listContainer.show();
+                    $container.data('initialized', true);
+
+                    var totalItems = parseInt(pagination.total_items || resources.length, 10);
+                    if (!isNaN(totalItems) && totalItems >= 0) {
+                        $count.text(String(totalItems));
+                    }
+
+                    if (pagination.has_more) {
+                        $loadMoreBtn
+                            .data('next-page', (page || 1) + 1)
+                            .data('search-term', search || '')
+                            .prop('disabled', false)
+                            .text('Load More Resources')
+                            .show();
+                    } else {
+                        $loadMoreBtn.hide();
+                    }
+                })
+                .fail(function() {
+                    showResourceError($container, 'Failed to load resources. Please refresh and try again.');
+                })
+                .always(function() {
+                    if (append) {
+                        $loadMoreBtn.prop('disabled', false).text('Load More Resources');
+                    }
+                });
+        }
+
+        var resourceSearchTimers = {};
+
+        $(document).on('input', '.resource-search-input', function() {
+            var $input = $(this);
+            var $specificResourcesDiv = $input.closest('.specific-resources-selection');
+            var key = String($specificResourcesDiv.data('outcome-id') || 'default');
+            var searchTerm = $input.val().trim();
+
+            if (resourceSearchTimers[key]) {
+                clearTimeout(resourceSearchTimers[key]);
+            }
+
+            resourceSearchTimers[key] = setTimeout(function() {
+                loadResourcesForOutcome($specificResourcesDiv, searchTerm, 1, false);
+            }, 300);
+        });
+
+        $(document).on('click', '.edit-outcome-btn', function() {
+            var $outcome = $(this).closest('.outcome-item');
+            var $specificResourcesDiv = $outcome.find('.specific-resources-selection');
+
+            if ($specificResourcesDiv.length && $specificResourcesDiv.is(':visible')) {
+                var $resourceContainer = $specificResourcesDiv.find('.resource-selection-container');
+                if ($resourceContainer.length && !$resourceContainer.data('initialized')) {
+                    loadResourcesForOutcome($specificResourcesDiv, '', 1, false);
+                }
+            }
+        });
+
+        $(document).on('click', '.load-more-resources-btn', function() {
+            var $button = $(this);
+            var $container = $button.closest('.resource-selection-container');
+            var $specificResourcesDiv = $container.closest('.specific-resources-selection');
+            var nextPage = parseInt($button.data('next-page') || 2, 10);
+            var searchTerm = String($button.data('search-term') || '');
+
+            if (isNaN(nextPage) || nextPage < 2) {
+                nextPage = 2;
+            }
+
+            loadResourcesForOutcome($specificResourcesDiv, searchTerm, nextPage, true);
         });
     });
 

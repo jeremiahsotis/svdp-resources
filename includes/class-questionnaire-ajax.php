@@ -24,6 +24,9 @@ class Questionnaire_Ajax {
 
         add_action('wp_ajax_questionnaire_track_resource_view', array($this, 'ajax_track_resource_view'));
         add_action('wp_ajax_nopriv_questionnaire_track_resource_view', array($this, 'ajax_track_resource_view'));
+
+        // Admin-only AJAX handlers
+        add_action('wp_ajax_get_resources_for_selection', array($this, 'ajax_get_resources_for_selection'));
     }
 
     /**
@@ -216,6 +219,88 @@ class Questionnaire_Ajax {
         } else {
             wp_send_json_error(array('message' => 'Failed to track resource view.'));
         }
+    }
+
+    /**
+     * AJAX: Get resources for admin selection (lazy loading with search and pagination).
+     */
+    public function ajax_get_resources_for_selection() {
+        check_ajax_referer('questionnaire_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized access.'));
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'resources';
+
+        $search = isset($_POST['search']) ? sanitize_text_field(wp_unslash($_POST['search'])) : '';
+        $page = isset($_POST['page']) ? max(1, absint(wp_unslash($_POST['page']))) : 1;
+        $per_page = 20;
+        $offset = ($page - 1) * $per_page;
+
+        $where_parts = array("status = 'active'");
+        $query_args = array();
+
+        if ($search !== '') {
+            $like = '%' . $wpdb->esc_like($search) . '%';
+            $search_conditions = array(
+                'resource_name LIKE %s',
+                'organization LIKE %s',
+                'service_area LIKE %s',
+                'target_population LIKE %s',
+                'primary_service_type LIKE %s'
+            );
+            $where_parts[] = '(' . implode(' OR ', $search_conditions) . ')';
+
+            for ($i = 0; $i < count($search_conditions); $i++) {
+                $query_args[] = $like;
+            }
+        }
+
+        $where_sql = 'WHERE ' . implode(' AND ', $where_parts);
+
+        $count_sql = "SELECT COUNT(*) FROM $table_name $where_sql";
+        if (empty($query_args)) {
+            $total_items = (int) $wpdb->get_var($count_sql);
+        } else {
+            $total_items = (int) $wpdb->get_var($wpdb->prepare($count_sql, $query_args));
+        }
+
+        $resources_sql = "SELECT id, resource_name, organization, service_area
+            FROM $table_name
+            $where_sql
+            ORDER BY resource_name ASC
+            LIMIT %d OFFSET %d";
+
+        $resource_query_args = $query_args;
+        $resource_query_args[] = $per_page;
+        $resource_query_args[] = $offset;
+        $resources = $wpdb->get_results($wpdb->prepare($resources_sql, $resource_query_args), ARRAY_A);
+
+        if (class_exists('Resource_Taxonomy') && !empty($resources)) {
+            foreach ($resources as &$resource) {
+                if (empty($resource['service_area'])) {
+                    continue;
+                }
+
+                $service_area_labels = Resource_Taxonomy::get_service_area_labels_from_pipe((string) $resource['service_area']);
+                if (!empty($service_area_labels)) {
+                    $resource['service_area'] = implode(', ', $service_area_labels);
+                }
+            }
+            unset($resource);
+        }
+
+        wp_send_json_success(array(
+            'resources' => $resources,
+            'pagination' => array(
+                'current_page' => $page,
+                'total_pages' => (int) ceil($total_items / $per_page),
+                'total_items' => $total_items,
+                'has_more' => ($page * $per_page) < $total_items
+            )
+        ));
     }
 }
 

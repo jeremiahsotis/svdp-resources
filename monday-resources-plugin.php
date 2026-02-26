@@ -932,6 +932,29 @@ function monday_resources_maybe_upgrade_db() {
         $db_version = '1.0.7';
     }
 
+    // Upgrade to 1.0.8 - add supporting indexes for questionnaire/admin resource lookups.
+    if (version_compare($db_version, '1.0.8', '<')) {
+        $resources_table = $wpdb->prefix . 'resources';
+
+        $status_index_exists = $wpdb->get_var(
+            $wpdb->prepare("SHOW INDEX FROM $resources_table WHERE Key_name = %s", 'status')
+        );
+        if (!$status_index_exists) {
+            $wpdb->query("ALTER TABLE $resources_table ADD INDEX status (status)");
+        }
+
+        $status_primary_index_exists = $wpdb->get_var(
+            $wpdb->prepare("SHOW INDEX FROM $resources_table WHERE Key_name = %s", 'idx_status_primary_type')
+        );
+        if (!$status_primary_index_exists) {
+            $wpdb->query("ALTER TABLE $resources_table ADD INDEX idx_status_primary_type (status, primary_service_type)");
+        }
+
+        update_option('monday_resources_db_version', '1.0.8');
+        $db_version = '1.0.8';
+        error_log('Monday Resources: Database upgraded to version 1.0.8 - added resource query indexes');
+    }
+
     // Upgrade to 1.1.0 - taxonomy schema + canonical vocab + import audit + role capabilities
     if (version_compare($db_version, '1.1.0', '<')) {
         monday_resources_ensure_resource_taxonomy_schema();
