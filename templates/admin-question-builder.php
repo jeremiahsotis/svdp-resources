@@ -501,38 +501,33 @@ if (!defined('ABSPATH')) {
                                                 </p>
 
                                                 <!-- Specific Resources Selection -->
-                                                <div class="specific-resources-selection" style="margin-left: 25px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; <?php echo $outcome['resource_filter_type'] === 'specific_resources' ? '' : 'display:none;'; ?>">
+                                                <div class="specific-resources-selection" data-outcome-id="<?php echo esc_attr($outcome['id']); ?>" style="margin-left: 25px; margin-bottom: 15px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 4px; <?php echo $outcome['resource_filter_type'] === 'specific_resources' ? '' : 'display:none;'; ?>">
                                                     <?php
-                                                    // Get all active resources
-                                                    if (class_exists('Resources_Manager')) {
-                                                        $all_resources = Resources_Manager::get_all_resources();
-                                                        $selected_resource_ids = isset($filter_data['specific_ids']) ? $filter_data['specific_ids'] : array();
-
-                                                        if (!empty($all_resources)):
-                                                        ?>
-                                                            <p style="margin: 0 0 10px 0; font-weight: 600;">Select Specific Resources:</p>
-                                                            <select name="specific_resource_ids[]" multiple size="10" style="width: 100%; max-width: 500px;">
-                                                                <?php foreach ($all_resources as $resource): ?>
-                                                                    <option value="<?php echo esc_attr($resource['id']); ?>" <?php selected(in_array($resource['id'], $selected_resource_ids)); ?>>
-                                                                        <?php
-                                                                        $resource_service_area_label = '';
-                                                                        if (!empty($resource['service_area']) && class_exists('Resource_Taxonomy')) {
-                                                                            $resource_service_area_label = Resource_Taxonomy::get_service_area_label($resource['service_area']);
-                                                                        }
-                                                                        if ($resource_service_area_label === '' && !empty($resource['primary_service_type'])) {
-                                                                            $resource_service_area_label = $resource['primary_service_type'];
-                                                                        }
-                                                                        echo esc_html($resource['resource_name']) . ' - ' . esc_html($resource_service_area_label);
-                                                                        ?>
-                                                                    </option>
-                                                                <?php endforeach; ?>
-                                                            </select>
-                                                            <p class="description">Hold Ctrl (Cmd on Mac) to select multiple resources.</p>
-                                                        <?php else: ?>
-                                                            <p style="margin: 0; color: #666;">No active resources found.</p>
-                                                        <?php endif;
-                                                    }
+                                                    $selected_resource_ids = isset($filter_data['specific_ids']) ? $filter_data['specific_ids'] : array();
                                                     ?>
+                                                    <div class="resource-selection-container" data-selected-ids="<?php echo esc_attr(wp_json_encode($selected_resource_ids)); ?>">
+                                                        <div class="resource-loading-state" style="display: none; text-align: center; padding: 20px 10px;">
+                                                            <p style="margin: 0 0 8px 0; font-weight: 600; color: #666;">Loading resources...</p>
+                                                            <span class="spinner is-active" style="float: none;"></span>
+                                                        </div>
+                                                        <div class="resource-list-container" style="display: none;">
+                                                            <p style="margin: 0 0 10px 0; font-weight: 600;">Select Specific Resources:</p>
+                                                            <div style="margin-bottom: 10px;">
+                                                                <input type="text" class="resource-search-input" placeholder="Search resources by name, organization, service area, or target population..." style="width: 100%; max-width: 500px; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 3px;">
+                                                                <p class="description" style="margin: 5px 0 0 0; font-size: 12px;">Showing <span class="resource-count">0</span> resources</p>
+                                                            </div>
+                                                            <div class="resource-checkbox-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #ccc; background: #fff; padding: 10px; border-radius: 3px;">
+                                                                <!-- Populated via AJAX -->
+                                                            </div>
+                                                            <div style="margin-top: 10px; text-align: center;">
+                                                                <button type="button" class="button load-more-resources-btn" style="display: none;">Load More Resources</button>
+                                                            </div>
+                                                            <p class="description" style="margin-top: 10px;">Check resources to include in this outcome.</p>
+                                                        </div>
+                                                        <div class="resource-error-state" style="display: none; text-align: center; padding: 20px; color: #d63638;">
+                                                            <p style="margin: 0; font-weight: 600;">Failed to load resources. Please refresh and try again.</p>
+                                                        </div>
+                                                    </div>
                                                 </div>
 
                                                 <p>
