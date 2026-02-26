@@ -17,6 +17,18 @@ class Monday_Resources_Submissions {
     }
 
     /**
+     * Capability for resource-management actions.
+     *
+     * @return string
+     */
+    private function get_resource_capability() {
+        if (function_exists('monday_resources_get_manage_capability')) {
+            return monday_resources_get_manage_capability();
+        }
+        return 'manage_options';
+    }
+
+    /**
      * Handle issue report submission
      */
     public function handle_issue_submission() {
@@ -117,7 +129,7 @@ class Monday_Resources_Submissions {
      */
     public function approve_and_publish_submission() {
         // Check permissions
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -142,11 +154,43 @@ class Monday_Resources_Submissions {
             wp_die('Submission not found');
         }
 
-        // Create the resource in the main database
+        $service_area_pipe = '';
+        $services_offered_pipe = '';
+        $legacy_primary_service_type = sanitize_text_field((string) $submission->service_type);
+        $legacy_secondary_service_type = '';
+
+        if (class_exists('Resource_Taxonomy')) {
+            $service_area_slugs = Resource_Taxonomy::normalize_service_area_slugs(array($submission->service_type));
+            $service_area_pipe = Resource_Taxonomy::to_pipe_slug_string($service_area_slugs);
+            $services_offered_slugs = Resource_Taxonomy::normalize_services_offered_slugs(array($submission->service_type));
+            $services_offered_pipe = Resource_Taxonomy::to_pipe_slug_string($services_offered_slugs);
+
+            $service_area_terms = Resource_Taxonomy::get_service_area_terms();
+            if (!empty($service_area_slugs)) {
+                $first_service_area_slug = $service_area_slugs[0];
+                if (isset($service_area_terms[$first_service_area_slug])) {
+                    $legacy_primary_service_type = $service_area_terms[$first_service_area_slug];
+                }
+            }
+
+            $services_terms = Resource_Taxonomy::get_services_offered_terms();
+            $legacy_services = array();
+            foreach ($services_offered_slugs as $service_slug) {
+                if (isset($services_terms[$service_slug])) {
+                    $legacy_services[] = $services_terms[$service_slug];
+                }
+            }
+            $legacy_secondary_service_type = implode(', ', $legacy_services);
+        }
+
+        // Create the resource in the main database.
         // Resources are marked as verified at the moment of entry
         $resource_id = Resources_Manager::create_resource(array(
             'resource_name' => $submission->organization_name,
-            'primary_service_type' => $submission->service_type,
+            'primary_service_type' => $legacy_primary_service_type,
+            'secondary_service_type' => $legacy_secondary_service_type,
+            'service_area' => $service_area_pipe,
+            'services_offered' => $services_offered_pipe,
             'website' => $submission->website,
             'phone' => $submission->contact_phone,
             'email' => $submission->contact_email,

@@ -5,6 +5,9 @@
 
 class Monday_Resources_Admin {
 
+    const IMPORT_NONCE_ACTION = 'svdp_resource_taxonomy_import';
+    const ROLLBACK_NONCE_ACTION = 'svdp_resource_taxonomy_rollback';
+
     public function __construct() {
         add_action('admin_menu', array($this, 'add_admin_menu'));
         add_action('admin_init', array($this, 'register_settings'));
@@ -14,12 +17,17 @@ class Monday_Resources_Admin {
         add_action('admin_post_delete_resource', array($this, 'delete_resource'));
         add_action('admin_post_save_resource', array($this, 'save_resource'));
         add_action('admin_post_bulk_action_resources', array($this, 'bulk_action_resources'));
+        add_action('admin_post_rollback_taxonomy_import', array($this, 'rollback_taxonomy_import'));
 
         // Issue and submission actions
         add_action('admin_post_delete_issue', array($this, 'delete_issue'));
         add_action('admin_post_delete_submission', array($this, 'delete_submission'));
         add_action('admin_post_update_issue_status', array($this, 'update_issue_status'));
         add_action('admin_post_update_submission_status', array($this, 'update_submission_status'));
+
+        // Export AJAX endpoint
+        add_action('wp_ajax_export_resources', array($this, 'export_resources'));
+        add_action('wp_ajax_svdp_org_lookup', array($this, 'ajax_org_lookup'));
     }
 
     /**
@@ -44,6 +52,23 @@ class Monday_Resources_Admin {
                 MONDAY_RESOURCES_VERSION,
                 true
             );
+
+            wp_enqueue_script(
+                'monday-resources-admin-org-lookup',
+                MONDAY_RESOURCES_PLUGIN_URL . 'assets/js/admin-org-lookup.js',
+                array('jquery'),
+                MONDAY_RESOURCES_VERSION,
+                true
+            );
+
+            wp_localize_script(
+                'monday-resources-admin-org-lookup',
+                'mondayResourcesAdmin',
+                array(
+                    'ajaxurl' => admin_url('admin-ajax.php'),
+                    'nonce' => wp_create_nonce('monday_resources_nonce')
+                )
+            );
         }
     }
 
@@ -51,10 +76,12 @@ class Monday_Resources_Admin {
      * Add admin menu pages
      */
     public function add_admin_menu() {
+        $resource_capability = $this->get_resource_capability();
+
         add_menu_page(
             'Community Resources',
             'Resources',
-            'manage_options',
+            $resource_capability,
             'monday-resources-manage',
             array($this, 'manage_resources_page'),
             'dashicons-list-view',
@@ -65,7 +92,7 @@ class Monday_Resources_Admin {
             'monday-resources-manage',
             'All Resources',
             'All Resources',
-            'manage_options',
+            $resource_capability,
             'monday-resources-manage',
             array($this, 'manage_resources_page')
         );
@@ -74,7 +101,7 @@ class Monday_Resources_Admin {
             'monday-resources-manage',
             'Add New Resource',
             'Add New',
-            'manage_options',
+            $resource_capability,
             'monday-resources-add',
             array($this, 'add_resource_page')
         );
@@ -83,7 +110,7 @@ class Monday_Resources_Admin {
             null, // Hidden from menu
             'Edit Resource',
             'Edit Resource',
-            'manage_options',
+            $resource_capability,
             'monday-resources-edit',
             array($this, 'edit_resource_page')
         );
@@ -92,7 +119,7 @@ class Monday_Resources_Admin {
             'monday-resources-manage',
             'Issue Reports',
             'Issue Reports',
-            'manage_options',
+            $resource_capability,
             'monday-resources-issues',
             array($this, 'issues_page')
         );
@@ -101,9 +128,18 @@ class Monday_Resources_Admin {
             'monday-resources-manage',
             'Resource Submissions',
             'Submissions',
-            'manage_options',
+            $resource_capability,
             'monday-resources-submissions',
             array($this, 'submissions_page')
+        );
+
+        add_submenu_page(
+            'monday-resources-manage',
+            'Taxonomy Import',
+            'Taxonomy Import',
+            'manage_options',
+            'monday-resources-taxonomy-import',
+            array($this, 'taxonomy_import_page')
         );
 
         add_submenu_page(
@@ -117,6 +153,153 @@ class Monday_Resources_Admin {
     }
 
     /**
+     * Resolve capability required to manage resources.
+     *
+     * @return string
+     */
+    private function get_resource_capability() {
+        if (function_exists('monday_resources_get_manage_capability')) {
+            return monday_resources_get_manage_capability();
+        }
+        return 'manage_options';
+    }
+
+    /**
+     * Canonical Service Area terms.
+     *
+     * @return array
+     */
+    private function get_service_area_terms() {
+        if (!class_exists('Resource_Taxonomy')) {
+            return array();
+        }
+        return Resource_Taxonomy::get_service_area_terms();
+    }
+
+    /**
+     * Canonical Services Offered terms.
+     *
+     * @return array
+     */
+    private function get_services_offered_terms() {
+        if (!class_exists('Resource_Taxonomy')) {
+            return array();
+        }
+        return Resource_Taxonomy::get_services_offered_terms();
+    }
+
+    /**
+     * Canonical Provider Type terms.
+     *
+     * @return array
+     */
+    private function get_provider_type_terms() {
+        if (!class_exists('Resource_Taxonomy')) {
+            return array();
+        }
+        return Resource_Taxonomy::get_provider_type_terms();
+    }
+
+    /**
+     * Resolve selected Service Area slugs for admin form defaults.
+     *
+     * @param array $resource
+     * @return array
+     */
+    private function resolve_selected_service_areas($resource) {
+        if (!class_exists('Resource_Taxonomy') || !is_array($resource)) {
+            return array();
+        }
+
+        if (!empty($resource['service_area'])) {
+            $slugs = Resource_Taxonomy::normalize_service_area_slugs(
+                Resource_Taxonomy::parse_pipe_slugs($resource['service_area'])
+            );
+            if (!empty($slugs)) {
+                return $slugs;
+            }
+        }
+
+        if (!empty($resource['primary_service_type'])) {
+            $slugs = Resource_Taxonomy::normalize_service_area_slugs($resource['primary_service_type']);
+            if (!empty($slugs)) {
+                return $slugs;
+            }
+        }
+
+        return array();
+    }
+
+    /**
+     * Format stored Service Area value for compact display.
+     *
+     * @param string $stored_value
+     * @param int $max_visible
+     * @return string
+     */
+    private function format_service_area_display($stored_value, $max_visible = 3) {
+        if (!class_exists('Resource_Taxonomy')) {
+            return trim((string) $stored_value);
+        }
+
+        $labels = Resource_Taxonomy::get_service_area_labels_from_pipe($stored_value);
+        if (empty($labels)) {
+            return trim((string) $stored_value);
+        }
+
+        $max_visible = max(1, (int) $max_visible);
+        if (count($labels) <= $max_visible) {
+            return implode(', ', $labels);
+        }
+
+        $visible = array_slice($labels, 0, $max_visible);
+        $remaining = count($labels) - $max_visible;
+        return implode(', ', $visible) . ' +' . $remaining . ' more';
+    }
+
+    /**
+     * Resolve selected Services Offered slugs for admin form defaults.
+     *
+     * @param array $resource
+     * @return array
+     */
+    private function resolve_selected_services_offered($resource) {
+        if (!class_exists('Resource_Taxonomy') || !is_array($resource)) {
+            return array();
+        }
+
+        if (!empty($resource['services_offered'])) {
+            $parsed = Resource_Taxonomy::parse_pipe_slugs($resource['services_offered']);
+            return Resource_Taxonomy::normalize_services_offered_slugs($parsed);
+        }
+
+        if (!empty($resource['secondary_service_type'])) {
+            $legacy_tokens = array_filter(array_map('trim', explode(',', $resource['secondary_service_type'])));
+            return Resource_Taxonomy::normalize_services_offered_slugs($legacy_tokens);
+        }
+
+        return array();
+    }
+
+    /**
+     * Resolve selected Provider Type slug for admin form defaults.
+     *
+     * @param array $resource
+     * @return string
+     */
+    private function resolve_selected_provider_type($resource) {
+        if (!class_exists('Resource_Taxonomy') || !is_array($resource)) {
+            return '';
+        }
+
+        if (!empty($resource['provider_type'])) {
+            return Resource_Taxonomy::normalize_provider_type_slug($resource['provider_type']);
+        }
+
+        return '';
+    }
+
+    /**
      * Register plugin settings
      */
     public function register_settings() {
@@ -126,6 +309,9 @@ class Monday_Resources_Admin {
         register_setting('monday_resources_settings', 'resource_target_population_options');
         register_setting('monday_resources_settings', 'resource_income_requirements_options');
         register_setting('monday_resources_settings', 'resource_wait_time_options');
+        register_setting('monday_resources_settings', 'svdp_twilio_account_sid');
+        register_setting('monday_resources_settings', 'svdp_twilio_auth_token');
+        register_setting('monday_resources_settings', 'svdp_twilio_from_number');
 
         // Initialize default options if not set
         if (!get_option('resource_conference_options')) {
@@ -323,15 +509,18 @@ class Monday_Resources_Admin {
         // Handle search and filters
         $search = isset($_GET['s']) ? sanitize_text_field($_GET['s']) : '';
         $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
-        $service_filter = isset($_GET['service']) ? sanitize_text_field($_GET['service']) : '';
+        $service_area_filter = isset($_GET['service_area']) ? sanitize_text_field($_GET['service_area']) : '';
+        if ($service_area_filter === '' && isset($_GET['service'])) {
+            $service_area_filter = sanitize_text_field($_GET['service']);
+        }
 
         // Get all resources
         $filters = array();
         if ($status_filter) {
             $filters['verification_status'] = $status_filter;
         }
-        if ($service_filter) {
-            $filters['service_type'] = $service_filter;
+        if ($service_area_filter) {
+            $filters['service_area'] = $service_area_filter;
         }
 
         $resources = Resources_Manager::get_all_resources($filters);
@@ -344,8 +533,8 @@ class Monday_Resources_Admin {
             });
         }
 
-        // Get service types from centralized options
-        $service_types = get_option('resource_service_types', array());
+        // Get canonical Service Area terms.
+        $service_area_terms = $this->get_service_area_terms();
 
         // Get verification stats
         $stats = Resources_Manager::get_verification_stats();
@@ -353,6 +542,7 @@ class Monday_Resources_Admin {
         <div class="wrap">
             <h1 class="wp-heading-inline">Community Resources</h1>
             <a href="<?php echo admin_url('admin.php?page=monday-resources-add'); ?>" class="page-title-action">Add New</a>
+            <button type="button" class="page-title-action" id="export-resources-btn" style="margin-left: 5px;">Export Resources</button>
             <hr class="wp-header-end">
 
             <?php if (isset($_GET['deleted']) && $_GET['deleted'] == '1'): ?>
@@ -397,18 +587,18 @@ class Monday_Resources_Admin {
                         <option value="unverified" <?php selected($status_filter, 'unverified'); ?>>Unverified</option>
                     </select>
 
-                    <label style="margin-left: 15px;">Service Type: </label>
-                    <select name="service" style="width: 350px; font-size: 14px;">
-                        <option value="">All Service Types</option>
-                        <?php foreach ($service_types as $type): ?>
-                            <option value="<?php echo esc_attr($type); ?>" <?php selected($service_filter, $type); ?>>
-                                <?php echo esc_html($type); ?>
+                    <label style="margin-left: 15px;">Service Area: </label>
+                    <select name="service_area" style="width: 350px; font-size: 14px;">
+                        <option value="">All Service Areas</option>
+                        <?php foreach ($service_area_terms as $service_area_slug => $service_area_label): ?>
+                            <option value="<?php echo esc_attr($service_area_slug); ?>" <?php selected($service_area_filter, $service_area_slug); ?>>
+                                <?php echo esc_html($service_area_label); ?>
                             </option>
                         <?php endforeach; ?>
                     </select>
 
                     <input type="submit" class="button" value="Filter">
-                    <?php if ($search || $status_filter || $service_filter): ?>
+                    <?php if ($search || $status_filter || $service_area_filter): ?>
                         <a href="<?php echo admin_url('admin.php?page=monday-resources-manage'); ?>" class="button">Clear</a>
                     <?php endif; ?>
                 </p>
@@ -444,7 +634,7 @@ class Monday_Resources_Admin {
                                 </td>
                                 <th>Resource Name</th>
                                 <th>Organization</th>
-                                <th>Service Type</th>
+                                <th>Service Areas</th>
                                 <th>Conferences</th>
                                 <th>Status</th>
                                 <th>Last Verified</th>
@@ -479,6 +669,15 @@ class Monday_Resources_Admin {
                                 }
                                 ?>
                                 <tr>
+                                    <?php
+                                    $service_area_label = '';
+                                    if (!empty($resource['service_area'])) {
+                                        $service_area_label = $this->format_service_area_display($resource['service_area']);
+                                    }
+                                    if ($service_area_label === '' && !empty($resource['primary_service_type'])) {
+                                        $service_area_label = $resource['primary_service_type'];
+                                    }
+                                    ?>
                                     <th scope="row" class="check-column">
                                         <input type="checkbox" name="resource_ids[]" value="<?php echo $resource['id']; ?>">
                                     </th>
@@ -493,7 +692,7 @@ class Monday_Resources_Admin {
                                         <?php endif; ?>
                                     </td>
                                     <td><?php echo esc_html($resource['organization']); ?></td>
-                                    <td><?php echo esc_html($resource['primary_service_type']); ?></td>
+                                    <td><?php echo esc_html($service_area_label); ?></td>
                                     <td><?php echo esc_html($resource['geography']); ?></td>
                                     <td><span style="<?php echo $status_class; ?>"><?php echo $status_label; ?></span></td>
                                     <td><?php echo $verified_time; ?></td>
@@ -511,6 +710,91 @@ class Monday_Resources_Admin {
                 <?php endif; ?>
             </form>
 
+            <!-- Export Modal -->
+            <div id="export-modal" style="display: none; position: fixed; z-index: 100000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); overflow-y: auto;">
+                <div style="background-color: #fff; margin: 5% auto; padding: 30px; border: 1px solid #888; width: 700px; border-radius: 5px; max-height: 90vh; overflow-y: auto;">
+                    <span class="close-export-modal" style="float: right; font-size: 28px; font-weight: bold; cursor: pointer;">&times;</span>
+                    <h2>Export Resources</h2>
+
+                    <!-- Step 1: Choose What to Export -->
+                    <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 3px solid #0073aa;">
+                        <h3 style="margin-top: 0;">1. Choose Resources to Export</h3>
+                        <label style="display: block; margin: 10px 0;">
+                            <input type="radio" name="export_scope" value="all" checked>
+                            <strong>Export All Resources</strong> (<?php echo count($resources); ?> total)
+                        </label>
+                        <label style="display: block; margin: 10px 0;">
+                            <input type="radio" name="export_scope" value="selected">
+                            <strong>Export Selected Only</strong> <span class="selected-count">(0 selected)</span>
+                        </label>
+                        <label style="display: block; margin: 10px 0;">
+                            <input type="radio" name="export_scope" value="filtered">
+                            <strong>Export Current Filter Results</strong>
+                            <?php if ($search || $status_filter || $service_area_filter): ?>
+                                (Active filters applied)
+                            <?php else: ?>
+                                (No filters active - same as Export All)
+                            <?php endif; ?>
+                        </label>
+                    </div>
+
+                    <!-- Step 2: Choose Fields -->
+                    <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 3px solid #00a32a;">
+                        <h3 style="margin-top: 0;">2. Choose Fields to Include</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
+                            <label><input type="checkbox" name="export_fields[]" value="id" checked> ID</label>
+                            <label><input type="checkbox" name="export_fields[]" value="resource_name" checked> Resource Name</label>
+                            <label><input type="checkbox" name="export_fields[]" value="organization"> Organization</label>
+                            <label><input type="checkbox" name="export_fields[]" value="service_area" checked> Service Areas</label>
+                            <label><input type="checkbox" name="export_fields[]" value="services_offered" checked> Services Offered</label>
+                            <label><input type="checkbox" name="export_fields[]" value="provider_type"> Provider Type</label>
+                            <label><input type="checkbox" name="export_fields[]" value="phone" checked> Phone</label>
+                            <label><input type="checkbox" name="export_fields[]" value="email"> Email</label>
+                            <label><input type="checkbox" name="export_fields[]" value="website"> Website</label>
+                            <label><input type="checkbox" name="export_fields[]" value="physical_address" checked> Physical Address</label>
+                            <label><input type="checkbox" name="export_fields[]" value="what_they_provide"> What They Provide</label>
+                            <label><input type="checkbox" name="export_fields[]" value="how_to_apply"> How to Apply</label>
+                            <label><input type="checkbox" name="export_fields[]" value="documents_required"> Documents Required</label>
+                            <label><input type="checkbox" name="export_fields[]" value="target_population"> Target Population</label>
+                            <label><input type="checkbox" name="export_fields[]" value="income_requirements"> Income Requirements</label>
+                            <label><input type="checkbox" name="export_fields[]" value="geography"> Geography</label>
+                            <label><input type="checkbox" name="export_fields[]" value="office_hours" checked> Office Hours</label>
+                            <label><input type="checkbox" name="export_fields[]" value="service_hours" checked> Service Hours</label>
+                            <label><input type="checkbox" name="export_fields[]" value="last_verified_date"> Last Verified</label>
+                            <label><input type="checkbox" name="export_fields[]" value="verification_status"> Verification Status</label>
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <button type="button" class="button" id="select-all-fields">Select All</button>
+                            <button type="button" class="button" id="select-none-fields">Select None</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Choose Format -->
+                    <div style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 3px solid #d63638;">
+                        <h3 style="margin-top: 0;">3. Choose Export Format</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <button type="button" class="button button-primary button-large export-format-btn" data-format="csv" style="padding: 15px;">
+                                <span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> CSV
+                            </button>
+                            <button type="button" class="button button-primary button-large export-format-btn" data-format="excel" style="padding: 15px;">
+                                <span class="dashicons dashicons-media-spreadsheet" style="margin-top: 3px;"></span> Excel (XLSX)
+                            </button>
+                            <button type="button" class="button button-primary button-large export-format-btn" data-format="json" style="padding: 15px;">
+                                <span class="dashicons dashicons-media-code" style="margin-top: 3px;"></span> JSON
+                            </button>
+                            <button type="button" class="button button-primary button-large export-format-btn" data-format="pdf" style="padding: 15px;">
+                                <span class="dashicons dashicons-media-document" style="margin-top: 3px;"></span> PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <p class="description" style="margin-top: 20px;">
+                        <strong>Note:</strong> Excel and PDF formats require Composer dependencies.
+                        Run <code>composer install</code> in the plugin directory if not installed.
+                    </p>
+                </div>
+            </div>
+
             <script>
                 // Select all checkbox functionality
                 document.getElementById('cb-select-all').addEventListener('change', function() {
@@ -518,6 +802,121 @@ class Monday_Resources_Admin {
                     checkboxes.forEach(function(checkbox) {
                         checkbox.checked = this.checked;
                     }, this);
+                });
+
+                // Export modal functionality
+                jQuery(document).ready(function($) {
+                    // Update selected count when checkboxes change
+                    function updateSelectedCount() {
+                        var count = $('input[name="resource_ids[]"]:checked').length;
+                        $('.selected-count').text('(' + count + ' selected)');
+                    }
+
+                    $('input[name="resource_ids[]"]').on('change', updateSelectedCount);
+
+                    // Open export modal
+                    $('#export-resources-btn').on('click', function() {
+                        updateSelectedCount();
+                        $('#export-modal').fadeIn();
+                    });
+
+                    // Close modal
+                    $('.close-export-modal').on('click', function() {
+                        $('#export-modal').fadeOut();
+                    });
+
+                    $(window).on('click', function(e) {
+                        if (e.target.id === 'export-modal') {
+                            $('#export-modal').fadeOut();
+                        }
+                    });
+
+                    // Field selection helpers
+                    $('#select-all-fields').on('click', function() {
+                        $('input[name="export_fields[]"]').prop('checked', true);
+                    });
+
+                    $('#select-none-fields').on('click', function() {
+                        $('input[name="export_fields[]"]').prop('checked', false);
+                    });
+
+                    // Export button click
+                    $('.export-format-btn').on('click', function() {
+                        var format = $(this).data('format');
+                        var $btn = $(this);
+                        var originalText = $btn.html();
+
+                        // Get export scope
+                        var scope = $('input[name="export_scope"]:checked').val();
+
+                        // Get selected resource IDs (if scope is 'selected')
+                        var resourceIds = [];
+                        if (scope === 'selected') {
+                            $('input[name="resource_ids[]"]:checked').each(function() {
+                                resourceIds.push($(this).val());
+                            });
+
+                            if (resourceIds.length === 0) {
+                                alert('Please select at least one resource to export.');
+                                return;
+                            }
+                        }
+
+                        // Get selected fields
+                        var fields = [];
+                        $('input[name="export_fields[]"]:checked').each(function() {
+                            fields.push($(this).val());
+                        });
+
+                        if (fields.length === 0) {
+                            alert('Please select at least one field to export.');
+                            return;
+                        }
+
+                        // Build URL with parameters
+                        var params = new URLSearchParams({
+                            action: 'export_resources',
+                            format: format,
+                            scope: scope,
+                            _wpnonce: '<?php echo wp_create_nonce('export_resources'); ?>'
+                        });
+
+                        // Add fields
+                        fields.forEach(function(field) {
+                            params.append('fields[]', field);
+                        });
+
+                        // Add resource IDs if selected scope
+                        if (scope === 'selected') {
+                            resourceIds.forEach(function(id) {
+                                params.append('ids[]', id);
+                            });
+                        }
+
+                        // Add current filters if filtered scope
+                        if (scope === 'filtered') {
+                            <?php if ($search): ?>
+                            params.append('search', '<?php echo esc_js($search); ?>');
+                            <?php endif; ?>
+                            <?php if ($status_filter): ?>
+                            params.append('status', '<?php echo esc_js($status_filter); ?>');
+                            <?php endif; ?>
+                            <?php if ($service_area_filter): ?>
+                            params.append('service_area', '<?php echo esc_js($service_area_filter); ?>');
+                            <?php endif; ?>
+                        }
+
+                        $btn.prop('disabled', true).html('Exporting...');
+
+                        // Trigger download
+                        window.location.href = ajaxurl + '?' + params.toString();
+
+                        // Re-enable button after delay
+                        setTimeout(function() {
+                            $btn.prop('disabled', false).html(originalText);
+                            $('#export-modal').fadeOut();
+                        }, 2000);
+                    });
                 });
             </script>
         </div>
@@ -530,6 +929,9 @@ class Monday_Resources_Admin {
     public function settings_page() {
         $stats = Resources_Manager::get_verification_stats();
         $migration_count = get_option('monday_resources_migration_count', 0);
+        $org_backfill_result = null;
+        $org_backfill_batch_size = 250;
+        $org_backfill_max_batches = 20;
 
         // Handle add/remove actions
         if (isset($_POST['add_conference']) && check_admin_referer('manage_dropdowns')) {
@@ -680,12 +1082,115 @@ class Monday_Resources_Admin {
             }
         }
 
+        if (isset($_POST['save_twilio_settings']) && check_admin_referer('manage_twilio_settings')) {
+            $twilio_account_sid = isset($_POST['svdp_twilio_account_sid']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_account_sid'])) : '';
+            $twilio_auth_token = isset($_POST['svdp_twilio_auth_token']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_auth_token'])) : '';
+            $twilio_from_number = isset($_POST['svdp_twilio_from_number']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_from_number'])) : '';
+
+            update_option('svdp_twilio_account_sid', $twilio_account_sid);
+            update_option('svdp_twilio_auth_token', $twilio_auth_token);
+            update_option('svdp_twilio_from_number', $twilio_from_number);
+
+            echo '<div class="notice notice-success is-dismissible"><p>Twilio settings saved.</p></div>';
+        }
+
+        if (isset($_POST['clear_twilio_settings']) && check_admin_referer('manage_twilio_settings')) {
+            update_option('svdp_twilio_account_sid', '');
+            update_option('svdp_twilio_auth_token', '');
+            update_option('svdp_twilio_from_number', '');
+            echo '<div class="notice notice-success is-dismissible"><p>Twilio settings cleared.</p></div>';
+        }
+
+        if (isset($_POST['org_backfill_batch_size'])) {
+            $org_backfill_batch_size = max(25, min(1000, (int) wp_unslash($_POST['org_backfill_batch_size'])));
+        }
+        if (isset($_POST['org_backfill_max_batches'])) {
+            $org_backfill_max_batches = max(1, min(250, (int) wp_unslash($_POST['org_backfill_max_batches'])));
+        }
+
+        if (isset($_POST['preview_org_backfill']) && check_admin_referer('manage_org_backfill')) {
+            if (function_exists('monday_resources_backfill_organization_links')) {
+                $org_backfill_result = monday_resources_backfill_organization_links(array(
+                    'batch_size' => $org_backfill_batch_size,
+                    'max_batches' => $org_backfill_max_batches,
+                    'dry_run' => true,
+                    'capture_failures' => false,
+                    'source' => 'admin_dry_run'
+                ));
+
+                echo '<div class="notice notice-info is-dismissible"><p>'
+                    . 'Backfill dry run complete. Processed: <strong>' . esc_html((string) $org_backfill_result['processed']) . '</strong>, '
+                    . 'processable: <strong>' . esc_html((string) $org_backfill_result['linked']) . '</strong>, '
+                    . 'failed validation: <strong>' . esc_html((string) $org_backfill_result['failed']) . '</strong>, '
+                    . 'remaining: <strong>' . esc_html((string) $org_backfill_result['remaining']) . '</strong>.'
+                    . '</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Organization backfill function is unavailable.</p></div>';
+            }
+        }
+
+        if (isset($_POST['run_org_backfill']) && check_admin_referer('manage_org_backfill')) {
+            if (function_exists('monday_resources_backfill_organization_links')) {
+                $org_backfill_result = monday_resources_backfill_organization_links(array(
+                    'batch_size' => $org_backfill_batch_size,
+                    'max_batches' => $org_backfill_max_batches,
+                    'dry_run' => false,
+                    'capture_failures' => true,
+                    'source' => 'admin_manual'
+                ));
+
+                $notice_class = ((int) $org_backfill_result['failed'] > 0) ? 'notice-warning' : 'notice-success';
+                echo '<div class="notice ' . esc_attr($notice_class) . ' is-dismissible"><p>'
+                    . 'Organization backfill run complete. Linked: <strong>' . esc_html((string) $org_backfill_result['linked']) . '</strong>, '
+                    . 'failed: <strong>' . esc_html((string) $org_backfill_result['failed']) . '</strong>, '
+                    . 'remaining: <strong>' . esc_html((string) $org_backfill_result['remaining']) . '</strong>.'
+                    . '</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Organization backfill function is unavailable.</p></div>';
+            }
+        }
+
+        if (isset($_POST['verify_org_backfill']) && check_admin_referer('manage_org_backfill')) {
+            if (function_exists('monday_resources_get_organization_backfill_status')) {
+                $verify_status = monday_resources_get_organization_backfill_status();
+                echo '<div class="notice notice-info is-dismissible"><p>'
+                    . 'Verification complete. Missing organization links: <strong>' . esc_html((string) $verify_status['resources_missing_link']) . '</strong>; '
+                    . 'orphaned links: <strong>' . esc_html((string) $verify_status['orphaned_links']) . '</strong>.'
+                    . '</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Organization backfill verification function is unavailable.</p></div>';
+            }
+        }
+
+        if (isset($_POST['clear_org_backfill_review']) && check_admin_referer('manage_org_backfill')) {
+            if (function_exists('monday_resources_clear_org_backfill_review_queue')) {
+                monday_resources_clear_org_backfill_review_queue();
+                echo '<div class="notice notice-success is-dismissible"><p>Backfill review queue cleared.</p></div>';
+            } else {
+                echo '<div class="notice notice-error is-dismissible"><p>Could not clear review queue because helper function is unavailable.</p></div>';
+            }
+        }
+
         $conferences = get_option('resource_conference_options', array());
         $counties = get_option('resource_counties_options', array());
         $service_types = get_option('resource_service_types', array());
         $target_populations = get_option('resource_target_population_options', array());
         $income_requirements = get_option('resource_income_requirements_options', array());
         $wait_times = get_option('resource_wait_time_options', array());
+        $twilio_account_sid = get_option('svdp_twilio_account_sid', '');
+        $twilio_auth_token = get_option('svdp_twilio_auth_token', '');
+        $twilio_from_number = get_option('svdp_twilio_from_number', '');
+        $twilio_configured = class_exists('Resource_Snapshot_Manager') ? Resource_Snapshot_Manager::is_twilio_configured() : false;
+        $twilio_using_constants = (defined('SVDP_TWILIO_ACCOUNT_SID') || defined('SVDP_TWILIO_AUTH_TOKEN') || defined('SVDP_TWILIO_FROM_NUMBER'));
+        $org_backfill_status = function_exists('monday_resources_get_organization_backfill_status')
+            ? monday_resources_get_organization_backfill_status()
+            : array();
+        $org_backfill_review_queue = function_exists('monday_resources_get_org_backfill_review_queue')
+            ? monday_resources_get_org_backfill_review_queue(100)
+            : array();
+        if (!is_array($org_backfill_result) && !empty($org_backfill_status['last_report']) && is_array($org_backfill_status['last_report'])) {
+            $org_backfill_result = $org_backfill_status['last_report'];
+        }
         ?>
         <div class="wrap">
             <h1>Community Resources Settings</h1>
@@ -910,6 +1415,261 @@ class Monday_Resources_Admin {
                 </table>
             </div>
 
+            <!-- Snapshot Messaging Settings -->
+            <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
+                <h2 style="margin-top: 0;">Snapshot Messaging (Twilio SMS)</h2>
+                <p>Configure Twilio credentials used by the <strong>Text This List</strong> action in the public resource directory.</p>
+                <p>
+                    Status:
+                    <?php if ($twilio_configured): ?>
+                        <strong style="color:#15803d;">Configured</strong>
+                    <?php else: ?>
+                        <strong style="color:#b91c1c;">Not configured</strong>
+                    <?php endif; ?>
+                </p>
+                <?php if ($twilio_using_constants): ?>
+                    <p class="description">Twilio constants are defined in PHP configuration. These values are used when corresponding options are empty.</p>
+                <?php endif; ?>
+
+                <form method="post">
+                    <?php wp_nonce_field('manage_twilio_settings'); ?>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="svdp_twilio_account_sid">Account SID</label></th>
+                            <td>
+                                <input type="text" id="svdp_twilio_account_sid" name="svdp_twilio_account_sid" value="<?php echo esc_attr($twilio_account_sid); ?>" class="regular-text">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="svdp_twilio_auth_token">Auth Token</label></th>
+                            <td>
+                                <input type="text" id="svdp_twilio_auth_token" name="svdp_twilio_auth_token" value="<?php echo esc_attr($twilio_auth_token); ?>" class="regular-text">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="svdp_twilio_from_number">From Number</label></th>
+                            <td>
+                                <input type="text" id="svdp_twilio_from_number" name="svdp_twilio_from_number" value="<?php echo esc_attr($twilio_from_number); ?>" class="regular-text" placeholder="+12605551234">
+                                <p class="description">Use E.164 format (example: +12605551234).</p>
+                            </td>
+                        </tr>
+                    </table>
+                    <p>
+                        <button type="submit" name="save_twilio_settings" class="button button-primary">Save Twilio Settings</button>
+                        <button type="submit" name="clear_twilio_settings" class="button" onclick="return confirm('Clear all saved Twilio options?');">Clear Saved Options</button>
+                    </p>
+                </form>
+            </div>
+
+            <!-- Organization Link Backfill -->
+            <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
+                <h2 style="margin-top: 0;">Organization Link Backfill</h2>
+                <p>Run this migration to link legacy <code>organization</code> text values to <code>organization_id</code> entities. Start with Dry Run, then run Apply.</p>
+
+                <?php
+                $status_tables_ready = !empty($org_backfill_status['tables_ready']);
+                $status_resources_with_org = isset($org_backfill_status['resources_with_organization']) ? (int) $org_backfill_status['resources_with_organization'] : 0;
+                $status_resources_linked = isset($org_backfill_status['resources_linked']) ? (int) $org_backfill_status['resources_linked'] : 0;
+                $status_missing_link = isset($org_backfill_status['resources_missing_link']) ? (int) $org_backfill_status['resources_missing_link'] : 0;
+                $status_orphaned = isset($org_backfill_status['orphaned_links']) ? (int) $org_backfill_status['orphaned_links'] : 0;
+                $status_org_total = isset($org_backfill_status['organizations_total']) ? (int) $org_backfill_status['organizations_total'] : 0;
+                $status_review_count = isset($org_backfill_status['review_queue_count']) ? (int) $org_backfill_status['review_queue_count'] : 0;
+                $status_last_run = isset($org_backfill_status['last_run']) ? (string) $org_backfill_status['last_run'] : '';
+                $status_complete = !empty($org_backfill_status['complete_flag']);
+                ?>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Schema Ready</th>
+                        <td>
+                            <?php if ($status_tables_ready): ?>
+                                <strong style="color:#15803d;">Yes</strong>
+                            <?php else: ?>
+                                <strong style="color:#b91c1c;">No</strong>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Resources With Organization Text</th>
+                        <td><strong><?php echo esc_html((string) $status_resources_with_org); ?></strong></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Linked To organization_id</th>
+                        <td><strong><?php echo esc_html((string) $status_resources_linked); ?></strong></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Missing organization_id Links</th>
+                        <td>
+                            <?php if ($status_missing_link > 0): ?>
+                                <strong style="color:#b45309;"><?php echo esc_html((string) $status_missing_link); ?></strong>
+                            <?php else: ?>
+                                <strong style="color:#15803d;">0</strong>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Orphaned organization_id Links</th>
+                        <td>
+                            <?php if ($status_orphaned > 0): ?>
+                                <strong style="color:#b91c1c;"><?php echo esc_html((string) $status_orphaned); ?></strong>
+                            <?php else: ?>
+                                <strong style="color:#15803d;">0</strong>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Organization Entities</th>
+                        <td><strong><?php echo esc_html((string) $status_org_total); ?></strong></td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Review Queue</th>
+                        <td><strong><?php echo esc_html((string) $status_review_count); ?></strong> failed rows awaiting review</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Last Run</th>
+                        <td>
+                            <?php if ($status_last_run !== ''): ?>
+                                <?php echo esc_html($status_last_run); ?>
+                                <?php if ($status_complete): ?>
+                                    <span style="color:#15803d;">(complete)</span>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <em>Never run</em>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                </table>
+
+                <form method="post">
+                    <?php wp_nonce_field('manage_org_backfill'); ?>
+                    <p style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;">
+                        <label>
+                            <span style="display:block; margin-bottom:4px;">Batch Size</span>
+                            <input type="number" min="25" max="1000" step="1" name="org_backfill_batch_size" value="<?php echo esc_attr((string) $org_backfill_batch_size); ?>">
+                        </label>
+                        <label>
+                            <span style="display:block; margin-bottom:4px;">Max Batches</span>
+                            <input type="number" min="1" max="250" step="1" name="org_backfill_max_batches" value="<?php echo esc_attr((string) $org_backfill_max_batches); ?>">
+                        </label>
+                    </p>
+                    <p>
+                        <button type="submit" name="preview_org_backfill" class="button">Dry Run (No Writes)</button>
+                        <button type="submit" name="run_org_backfill" class="button button-primary" onclick="return confirm('Run organization link backfill now?');">Run Backfill Now</button>
+                        <button type="submit" name="verify_org_backfill" class="button">Verify Status</button>
+                        <button type="submit" name="clear_org_backfill_review" class="button" onclick="return confirm('Clear all failed-row review entries?');">Clear Review Queue</button>
+                    </p>
+                    <p class="description">Tip: Start with Batch Size 250 and Max Batches 20. Increase Max Batches for larger datasets.</p>
+                </form>
+
+                <?php if (!empty($org_backfill_result) && is_array($org_backfill_result)): ?>
+                    <hr style="margin: 24px 0;">
+                    <h3 style="margin-top: 0;">Latest Run Summary</h3>
+                    <?php
+                    $summary_run_id = isset($org_backfill_result['run_id']) ? (string) $org_backfill_result['run_id'] : '';
+                    $summary_source = isset($org_backfill_result['source']) ? (string) $org_backfill_result['source'] : '';
+                    $summary_dry_run = !empty($org_backfill_result['dry_run']);
+                    $summary_processed = isset($org_backfill_result['processed']) ? (int) $org_backfill_result['processed'] : 0;
+                    $summary_linked = isset($org_backfill_result['linked']) ? (int) $org_backfill_result['linked'] : 0;
+                    $summary_failed = isset($org_backfill_result['failed']) ? (int) $org_backfill_result['failed'] : 0;
+                    $summary_remaining = isset($org_backfill_result['remaining']) ? (int) $org_backfill_result['remaining'] : 0;
+                    $summary_duration = isset($org_backfill_result['duration_ms']) ? (int) $org_backfill_result['duration_ms'] : 0;
+                    $summary_completed_at = isset($org_backfill_result['completed_at']) ? (string) $org_backfill_result['completed_at'] : '';
+                    ?>
+                    <table class="widefat striped" style="max-width: 780px;">
+                        <tbody>
+                            <tr>
+                                <th style="width: 220px;">Run ID</th>
+                                <td><code><?php echo esc_html($summary_run_id); ?></code></td>
+                            </tr>
+                            <tr>
+                                <th>Mode</th>
+                                <td><?php echo $summary_dry_run ? 'Dry Run' : 'Apply'; ?></td>
+                            </tr>
+                            <tr>
+                                <th>Source</th>
+                                <td><?php echo esc_html($summary_source); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Processed</th>
+                                <td><?php echo esc_html((string) $summary_processed); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Linked</th>
+                                <td><?php echo esc_html((string) $summary_linked); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Failed</th>
+                                <td><?php echo esc_html((string) $summary_failed); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Remaining</th>
+                                <td><?php echo esc_html((string) $summary_remaining); ?></td>
+                            </tr>
+                            <tr>
+                                <th>Duration</th>
+                                <td><?php echo esc_html((string) $summary_duration); ?> ms</td>
+                            </tr>
+                            <tr>
+                                <th>Completed At</th>
+                                <td><?php echo $summary_completed_at !== '' ? esc_html($summary_completed_at) : '<em>n/a</em>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+
+                <hr style="margin: 24px 0;">
+                <h3 style="margin-top: 0;">Review Queue (Failed Rows)</h3>
+                <p>Rows listed here could not be fully linked during Apply runs. Review, edit, and rerun backfill as needed.</p>
+
+                <?php if (empty($org_backfill_review_queue)): ?>
+                    <p><em>No failed rows in the review queue.</em></p>
+                <?php else: ?>
+                    <table class="widefat striped">
+                        <thead>
+                            <tr>
+                                <th style="width: 160px;">Recorded</th>
+                                <th style="width: 200px;">Run ID</th>
+                                <th style="width: 100px;">Resource</th>
+                                <th>Organization</th>
+                                <th style="width: 220px;">Reason</th>
+                                <th style="width: 220px;">DB Error</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($org_backfill_review_queue as $review_item): ?>
+                                <?php
+                                $review_resource_id = isset($review_item['resource_id']) ? (int) $review_item['resource_id'] : 0;
+                                $review_run_id = isset($review_item['run_id']) ? (string) $review_item['run_id'] : '';
+                                $review_recorded_at = isset($review_item['recorded_at']) ? (string) $review_item['recorded_at'] : '';
+                                $review_org = isset($review_item['organization']) ? (string) $review_item['organization'] : '';
+                                $review_reason = isset($review_item['reason']) ? (string) $review_item['reason'] : '';
+                                $review_db_error = isset($review_item['db_error']) ? (string) $review_item['db_error'] : '';
+                                $review_reason_label = function_exists('monday_resources_get_org_backfill_reason_label')
+                                    ? monday_resources_get_org_backfill_reason_label($review_reason)
+                                    : ucwords(str_replace('_', ' ', $review_reason));
+                                ?>
+                                <tr>
+                                    <td><?php echo esc_html($review_recorded_at); ?></td>
+                                    <td><code><?php echo esc_html($review_run_id); ?></code></td>
+                                    <td>
+                                        <?php if ($review_resource_id > 0): ?>
+                                            <a href="<?php echo esc_url(admin_url('admin.php?page=monday-resources-edit&resource_id=' . $review_resource_id)); ?>">
+                                                #<?php echo esc_html((string) $review_resource_id); ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <em>n/a</em>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo esc_html($review_org); ?></td>
+                                    <td><?php echo esc_html($review_reason_label); ?></td>
+                                    <td><?php echo esc_html($review_db_error); ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </div>
+
             <!-- System Information -->
             <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
                 <h2 style="margin-top: 0;">System Information</h2>
@@ -949,6 +1709,286 @@ class Monday_Resources_Admin {
             </div>
         </div>
         <?php
+    }
+
+    /**
+     * Taxonomy import page (dry run + apply).
+     *
+     * @return void
+     */
+    public function taxonomy_import_page() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        $import_result = null;
+        $errors = array();
+        $rollback_status = isset($_GET['rollback_status']) ? sanitize_key(wp_unslash($_GET['rollback_status'])) : '';
+        $rollback_message = isset($_GET['rollback_message']) ? sanitize_text_field(wp_unslash($_GET['rollback_message'])) : '';
+        $recent_runs = class_exists('Resource_Taxonomy_Import') ? Resource_Taxonomy_Import::get_recent_apply_runs(10) : array();
+
+        if (isset($_POST['run_taxonomy_import'])) {
+            check_admin_referer(self::IMPORT_NONCE_ACTION);
+
+            if (empty($_FILES['taxonomy_file']) || empty($_FILES['taxonomy_file']['tmp_name'])) {
+                $errors[] = 'Please select a CSV/XLSX/XLS file before running import.';
+            } else {
+                require_once ABSPATH . 'wp-admin/includes/file.php';
+
+                $upload = wp_handle_upload(
+                    $_FILES['taxonomy_file'],
+                    array(
+                        'test_form' => false,
+                        'test_type' => false,
+                        'mimes' => array(
+                            'csv' => 'text/csv',
+                            'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            'xls' => 'application/vnd.ms-excel'
+                        )
+                    )
+                );
+
+                if (!empty($upload['error'])) {
+                    $errors[] = $upload['error'];
+                } else {
+                    $apply_changes = isset($_POST['import_mode']) && $_POST['import_mode'] === 'apply';
+                    $original_name = isset($_FILES['taxonomy_file']['name']) ? sanitize_file_name($_FILES['taxonomy_file']['name']) : basename($upload['file']);
+
+                    $import_result = Resource_Taxonomy_Import::process_file(
+                        $upload['file'],
+                        $original_name,
+                        $apply_changes
+                    );
+
+                    if (isset($upload['file']) && file_exists($upload['file'])) {
+                        @unlink($upload['file']);
+                    }
+
+                    if (empty($import_result['success'])) {
+                        $errors[] = !empty($import_result['message']) ? $import_result['message'] : 'Import failed.';
+                    }
+                }
+            }
+        }
+
+        ?>
+        <div class="wrap">
+            <h1>Taxonomy Import</h1>
+            <p>Import taxonomy-only mappings for existing resources: <code>Service Area</code>, <code>Services Offered</code>, and <code>Provider Type</code>.</p>
+            <p><strong>Mode guidance:</strong> Run Dry Run first. Use Apply only after reviewing duplicates and review queue items.</p>
+
+            <?php foreach ($errors as $error): ?>
+                <div class="notice notice-error is-dismissible">
+                    <p><?php echo esc_html($error); ?></p>
+                </div>
+            <?php endforeach; ?>
+
+            <?php if (is_array($import_result) && !empty($import_result['success'])): ?>
+                <div class="notice notice-success is-dismissible">
+                    <p><?php echo esc_html($import_result['message']); ?></p>
+                </div>
+            <?php endif; ?>
+
+            <?php if ($rollback_status === 'success' && $rollback_message !== ''): ?>
+                <div class="notice notice-success is-dismissible">
+                    <p><?php echo esc_html($rollback_message); ?></p>
+                </div>
+            <?php elseif ($rollback_status === 'error' && $rollback_message !== ''): ?>
+                <div class="notice notice-error is-dismissible">
+                    <p><?php echo esc_html($rollback_message); ?></p>
+                </div>
+            <?php endif; ?>
+
+            <form method="post" enctype="multipart/form-data" style="background:#fff; border:1px solid #ccd0d4; padding:20px; max-width:920px;">
+                <?php wp_nonce_field(self::IMPORT_NONCE_ACTION); ?>
+
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="taxonomy_file">Spreadsheet File</label></th>
+                        <td>
+                            <input type="file" id="taxonomy_file" name="taxonomy_file" accept=".csv,.xlsx,.xls" required>
+                            <p class="description">Accepted formats: CSV, XLSX, XLS.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Import Mode</th>
+                        <td>
+                            <label style="display:block; margin-bottom:6px;">
+                                <input type="radio" name="import_mode" value="dry_run" checked>
+                                Dry Run (no DB writes)
+                            </label>
+                            <label style="display:block;">
+                                <input type="radio" name="import_mode" value="apply">
+                                Apply Changes (writes taxonomy fields + audit records)
+                            </label>
+                        </td>
+                    </tr>
+                </table>
+
+                <p class="submit" style="margin-top:10px;">
+                    <button type="submit" name="run_taxonomy_import" class="button button-primary">Run Import</button>
+                </p>
+            </form>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="background:#fff; border:1px solid #ccd0d4; padding:20px; margin-top:20px; max-width:920px;">
+                <h2 style="margin-top:0;">Rollback Import Run</h2>
+                <p>Revert taxonomy fields for a prior <strong>Apply</strong> run using its <code>import_run_id</code>. This updates <code>service_area</code>, <code>services_offered</code>, and <code>provider_type</code> only.</p>
+                <input type="hidden" name="action" value="rollback_taxonomy_import">
+                <?php wp_nonce_field(self::ROLLBACK_NONCE_ACTION); ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="rollback_import_run_id">Import Run ID</label></th>
+                        <td>
+                            <input type="text" id="rollback_import_run_id" name="import_run_id" class="regular-text" required placeholder="e.g. 96b8fbe0-62f5-4e8c-8d8a-3c78f8e95ec7">
+                        </td>
+                    </tr>
+                </table>
+                <p class="submit" style="margin-top:10px;">
+                    <button type="submit" class="button">Run Rollback</button>
+                </p>
+            </form>
+
+            <?php if (!empty($recent_runs)): ?>
+                <div style="background:#fff; border:1px solid #ccd0d4; padding:20px; margin-top:20px; max-width:920px;">
+                    <h2 style="margin-top:0;">Recent Apply Runs</h2>
+                    <table class="widefat striped" style="max-width:920px;">
+                        <thead>
+                            <tr>
+                                <th>Import Run ID</th>
+                                <th>Last Activity</th>
+                                <th>Update Rows</th>
+                                <th>Resources Touched</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($recent_runs as $run): ?>
+                                <tr>
+                                    <td><code><?php echo esc_html(isset($run['import_run_id']) ? $run['import_run_id'] : ''); ?></code></td>
+                                    <td><?php echo esc_html(isset($run['last_activity_at']) ? $run['last_activity_at'] : ''); ?></td>
+                                    <td><?php echo isset($run['update_rows']) ? intval($run['update_rows']) : 0; ?></td>
+                                    <td><?php echo isset($run['resources_touched']) ? intval($run['resources_touched']) : 0; ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+
+            <?php if (is_array($import_result) && !empty($import_result['success'])): ?>
+                <?php $stats = isset($import_result['stats']) && is_array($import_result['stats']) ? $import_result['stats'] : array(); ?>
+                <div style="background:#fff; border:1px solid #ccd0d4; padding:20px; margin-top:20px; max-width:920px;">
+                    <h2 style="margin-top:0;">Import Summary</h2>
+                    <p><strong>Run ID:</strong> <?php echo esc_html(isset($import_result['import_run_id']) ? $import_result['import_run_id'] : ''); ?></p>
+                    <table class="widefat striped" style="max-width:720px;">
+                        <tbody>
+                            <tr><td>Rows total</td><td><?php echo isset($stats['rows_total']) ? intval($stats['rows_total']) : 0; ?></td></tr>
+                            <tr><td>Rows with ID</td><td><?php echo isset($stats['rows_with_id']) ? intval($stats['rows_with_id']) : 0; ?></td></tr>
+                            <tr><td>Rows valid</td><td><?php echo isset($stats['rows_valid']) ? intval($stats['rows_valid']) : 0; ?></td></tr>
+                            <tr><td>Rows updated</td><td><?php echo isset($stats['rows_updated']) ? intval($stats['rows_updated']) : 0; ?></td></tr>
+                            <tr><td>Rows unchanged</td><td><?php echo isset($stats['rows_unchanged']) ? intval($stats['rows_unchanged']) : 0; ?></td></tr>
+                            <tr><td>Duplicates ignored</td><td><?php echo isset($stats['duplicates_ignored']) ? intval($stats['duplicates_ignored']) : 0; ?></td></tr>
+                            <tr><td>Rows failed validation</td><td><?php echo isset($stats['rows_failed_validation']) ? intval($stats['rows_failed_validation']) : 0; ?></td></tr>
+                            <tr><td>Rows not found</td><td><?php echo isset($stats['rows_not_found']) ? intval($stats['rows_not_found']) : 0; ?></td></tr>
+                            <tr><td>Review queue count</td><td><?php echo isset($stats['review_queue_count']) ? intval($stats['review_queue_count']) : 0; ?></td></tr>
+                        </tbody>
+                    </table>
+
+                    <?php $duplicates_ignored = isset($import_result['duplicates_ignored']) && is_array($import_result['duplicates_ignored']) ? $import_result['duplicates_ignored'] : array(); ?>
+                    <?php if (!empty($duplicates_ignored)): ?>
+                        <h3>Duplicates Ignored</h3>
+                        <table class="widefat striped" style="max-width:920px;">
+                            <thead>
+                                <tr>
+                                    <th>Resource ID</th>
+                                    <th>Row Number</th>
+                                    <th>Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($duplicates_ignored as $duplicate_item): ?>
+                                    <tr>
+                                        <td><?php echo isset($duplicate_item['resource_id']) ? intval($duplicate_item['resource_id']) : 0; ?></td>
+                                        <td><?php echo isset($duplicate_item['row_number']) ? intval($duplicate_item['row_number']) : 0; ?></td>
+                                        <td><?php echo esc_html(isset($duplicate_item['reason']) ? $duplicate_item['reason'] : 'duplicate'); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+
+                    <?php $review_queue = isset($import_result['review_queue']) && is_array($import_result['review_queue']) ? $import_result['review_queue'] : array(); ?>
+                    <?php if (!empty($review_queue)): ?>
+                        <h3>Review Queue</h3>
+                        <table class="widefat striped" style="max-width:920px;">
+                            <thead>
+                                <tr>
+                                    <th>Resource ID</th>
+                                    <th>Row</th>
+                                    <th>Reason</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($review_queue as $review_item): ?>
+                                    <tr>
+                                        <td><?php echo isset($review_item['resource_id']) ? intval($review_item['resource_id']) : 0; ?></td>
+                                        <td><?php echo isset($review_item['row_number']) ? intval($review_item['row_number']) : 0; ?></td>
+                                        <td><?php echo esc_html(isset($review_item['reason']) ? $review_item['reason'] : 'review'); ?></td>
+                                        <td><?php echo esc_html(isset($review_item['message']) ? $review_item['message'] : ''); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    /**
+     * Roll back taxonomy changes for a specific import run ID.
+     *
+     * @return void
+     */
+    public function rollback_taxonomy_import() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer(self::ROLLBACK_NONCE_ACTION);
+
+        $import_run_id = isset($_POST['import_run_id']) ? sanitize_text_field(wp_unslash($_POST['import_run_id'])) : '';
+        $redirect_base = admin_url('admin.php');
+
+        if ($import_run_id === '') {
+            wp_safe_redirect(add_query_arg(array(
+                'page' => 'monday-resources-taxonomy-import',
+                'rollback_status' => 'error',
+                'rollback_message' => 'Import Run ID is required.'
+            ), $redirect_base));
+            exit;
+        }
+
+        if (!class_exists('Resource_Taxonomy_Import')) {
+            wp_safe_redirect(add_query_arg(array(
+                'page' => 'monday-resources-taxonomy-import',
+                'rollback_status' => 'error',
+                'rollback_message' => 'Rollback service is unavailable.'
+            ), $redirect_base));
+            exit;
+        }
+
+        $rollback = Resource_Taxonomy_Import::rollback_import_run($import_run_id, get_current_user_id());
+        $status = !empty($rollback['success']) ? 'success' : 'error';
+        $message = !empty($rollback['message']) ? $rollback['message'] : 'Rollback finished.';
+
+        wp_safe_redirect(add_query_arg(array(
+            'page' => 'monday-resources-taxonomy-import',
+            'rollback_status' => $status,
+            'rollback_message' => $message
+        ), $redirect_base));
+        exit;
     }
 
     /**
@@ -1130,7 +2170,7 @@ class Monday_Resources_Admin {
      * Delete issue
      */
     public function delete_issue() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1149,7 +2189,7 @@ class Monday_Resources_Admin {
      * Delete submission
      */
     public function delete_submission() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1168,7 +2208,7 @@ class Monday_Resources_Admin {
      * Update issue status
      */
     public function update_issue_status() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1195,7 +2235,7 @@ class Monday_Resources_Admin {
      * Update submission status
      */
     public function update_submission_status() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1222,7 +2262,7 @@ class Monday_Resources_Admin {
      * Delete a resource
      */
     public function delete_resource() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1239,7 +2279,7 @@ class Monday_Resources_Admin {
      * Bulk action handler
      */
     public function bulk_action_resources() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1348,6 +2388,12 @@ class Monday_Resources_Admin {
                 </div>
             <?php endif; ?>
 
+            <?php if (isset($_GET['error']) && $_GET['error'] === 'missing_service_area'): ?>
+                <div class="notice notice-error is-dismissible">
+                    <p>Service Areas are required. Please choose at least one Service Area before saving.</p>
+                </div>
+            <?php endif; ?>
+
             <form method="post" action="<?php echo admin_url('admin-post.php'); ?>" style="max-width: 800px;">
                 <input type="hidden" name="action" value="save_resource">
                 <?php if ($is_edit): ?>
@@ -1370,7 +2416,11 @@ class Monday_Resources_Admin {
                         <th scope="row"><label for="organization">Organization/Agency</label></th>
                         <td>
                             <input type="text" name="organization" id="organization" class="regular-text"
-                                   value="<?php echo $has_data ? esc_attr($resource['organization']) : ''; ?>">
+                                   value="<?php echo $has_data ? esc_attr($resource['organization']) : ''; ?>"
+                                   list="resource-organization-suggestions"
+                                   autocomplete="off">
+                            <datalist id="resource-organization-suggestions"></datalist>
+                            <p class="description">Start typing to find an existing organization, or enter a new one.</p>
                         </td>
                     </tr>
 
@@ -1383,50 +2433,89 @@ class Monday_Resources_Admin {
                         </td>
                     </tr>
 
+                    <?php
+                    $service_area_terms = $this->get_service_area_terms();
+                    $services_offered_terms = $this->get_services_offered_terms();
+                    $provider_type_terms = $this->get_provider_type_terms();
+                    $selected_service_areas = $has_data ? $this->resolve_selected_service_areas($resource) : array();
+                    $selected_services_offered = $has_data ? $this->resolve_selected_services_offered($resource) : array();
+                    $selected_provider_type = $has_data ? $this->resolve_selected_provider_type($resource) : '';
+                    ?>
+
                     <tr>
-                        <th scope="row"><label for="primary_service_type">Primary Service Type *</label></th>
+                        <th scope="row"><label>Service Areas *</label></th>
                         <td>
-                            <?php
-                            $service_types = get_option('resource_service_types', array());
-                            $selected_primary = $has_data ? $resource['primary_service_type'] : '';
-                            ?>
-                            <select name="primary_service_type" id="primary_service_type" style="width: 500px; font-size: 15px;" required>
-                                <option value="">Select a service type...</option>
-                                <?php foreach ($service_types as $service_type): ?>
-                                    <option value="<?php echo esc_attr($service_type); ?>"
-                                            <?php selected($selected_primary, $service_type); ?>>
-                                        <?php echo esc_html($service_type); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">Select the main category for this resource (single selection)</p>
+                            <?php if (empty($service_area_terms)): ?>
+                                <p style="margin: 0; color: #a00;">No Service Area terms are configured.</p>
+                            <?php else: ?>
+                                <fieldset id="service-area-fieldset" style="border: 1px solid #ddd; padding: 10px; background: #f9f9f9; max-width: 640px;">
+                                    <?php foreach ($service_area_terms as $service_area_slug => $service_area_label): ?>
+                                        <label style="display: block; margin: 5px 0;">
+                                            <input
+                                                type="checkbox"
+                                                name="service_area[]"
+                                                value="<?php echo esc_attr($service_area_slug); ?>"
+                                                <?php checked(in_array($service_area_slug, $selected_service_areas, true)); ?>>
+                                            <?php echo esc_html($service_area_label); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </fieldset>
+                                <p id="service-area-warning" class="description" style="display: none; color: #b45309; font-weight: 600;">
+                                    Heads up: selecting more than 6 service areas may make categorization less precise.
+                                </p>
+                                <p class="description">Required to save (select at least one). Service Areas are controlled by admin-defined canonical terms.</p>
+                            <?php endif; ?>
                         </td>
                     </tr>
 
                     <tr>
-                        <th scope="row"><label>Secondary Service Types</label></th>
+                        <th scope="row"><label for="services_offered_filter">Services Offered</label></th>
                         <td>
-                            <?php
-                            $selected_secondary = array();
-                            if ($has_data && !empty($resource['secondary_service_type'])) {
-                                $selected_secondary = array_map('trim', explode(',', $resource['secondary_service_type']));
-                            }
-                            ?>
-                            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f9f9f9;">
-                                <?php if (empty($service_types)): ?>
-                                    <p>No service types available. Please add service types in Settings.</p>
-                                <?php else: ?>
-                                    <?php foreach ($service_types as $service_type): ?>
-                                        <label style="display: block; margin: 5px 0; font-size: 15px;">
-                                            <input type="checkbox" name="secondary_service_type[]"
-                                                   value="<?php echo esc_attr($service_type); ?>"
-                                                   <?php checked(in_array($service_type, $selected_secondary)); ?>>
-                                            <?php echo esc_html($service_type); ?>
+                            <?php if (empty($services_offered_terms)): ?>
+                                <p style="margin: 0; color: #a00;">No Services Offered terms are configured.</p>
+                            <?php else: ?>
+                                <input
+                                    type="text"
+                                    id="services_offered_filter"
+                                    placeholder="Filter services offered..."
+                                    style="width: 100%; max-width: 520px; margin-bottom: 8px;">
+                                <div id="services_offered_list" style="max-height: 260px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f9f9f9; max-width: 640px;">
+                                    <?php foreach ($services_offered_terms as $service_offered_slug => $service_offered_label): ?>
+                                        <label class="services-offered-option" data-filter-text="<?php echo esc_attr(strtolower($service_offered_label)); ?>" style="display: block; margin: 5px 0;">
+                                            <input
+                                                type="checkbox"
+                                                name="services_offered[]"
+                                                value="<?php echo esc_attr($service_offered_slug); ?>"
+                                                <?php checked(in_array($service_offered_slug, $selected_services_offered, true)); ?>>
+                                            <?php echo esc_html($service_offered_label); ?>
                                         </label>
                                     <?php endforeach; ?>
-                                <?php endif; ?>
-                            </div>
-                            <p class="description">Select additional service categories (multiple selection allowed)</p>
+                                </div>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th scope="row"><label for="provider_type_toggle">System Type (rare)</label></th>
+                        <td>
+                            <?php if (empty($provider_type_terms)): ?>
+                                <p style="margin: 0; color: #a00;">No Provider Type terms are configured.</p>
+                            <?php else: ?>
+                                <button type="button" id="provider_type_toggle" class="button">System Type (rare)</button>
+                                <div id="provider_type_panel" style="display: none; margin-top: 10px; border: 1px solid #ddd; padding: 10px; background: #f9f9f9; max-width: 640px;">
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="radio" name="provider_type" value="" <?php checked($selected_provider_type, ''); ?>>
+                                        Not Set
+                                    </label>
+                                    <?php foreach ($provider_type_terms as $provider_type_slug => $provider_type_label): ?>
+                                        <label style="display: block; margin: 5px 0;">
+                                            <input type="radio" name="provider_type" value="<?php echo esc_attr($provider_type_slug); ?>" <?php checked($selected_provider_type, $provider_type_slug); ?>>
+                                            <?php echo esc_html($provider_type_label); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
+                                <p class="description">Optional. Intended for infrequent system-level classification.</p>
+                            <?php endif; ?>
                         </td>
                     </tr>
 
@@ -1532,139 +2621,397 @@ class Monday_Resources_Admin {
                             }
                             ?>
 
+                            <?php
+                            // Ensure we have separate flags for office and service
+                            if (!isset($hours_data['office_flags'])) {
+                                $hours_data['office_flags'] = isset($hours_data['flags']) ? $hours_data['flags'] : array(
+                                    'is_24_7' => false,
+                                    'is_by_appointment' => false,
+                                    'is_call_for_availability' => false,
+                                    'is_currently_closed' => false,
+                                    'special_notes' => ''
+                                );
+                            }
+                            if (!isset($hours_data['service_flags'])) {
+                                $hours_data['service_flags'] = array(
+                                    'is_24_7' => false,
+                                    'is_by_appointment' => false,
+                                    'is_call_for_availability' => false,
+                                    'is_currently_closed' => false,
+                                    'special_notes' => ''
+                                );
+                            }
+                            ?>
+
                             <div class="hours-of-operation-section" style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9;">
-                                <!-- Special Situations -->
-                                <div style="margin-bottom: 20px;">
-                                    <h4 style="margin-top: 0;">Special Situations:</h4>
+
+                                <!-- Office Hours Special Situations -->
+                                <div style="margin-bottom: 20px; padding: 10px; background: #fff; border-left: 3px solid #0073aa;">
+                                    <h4 style="margin-top: 0;">Office Hours Special Situations</h4>
+                                    <p class="description">These apply to when your office is reachable by phone/email</p>
                                     <label style="display: block; margin: 5px 0;">
-                                        <input type="checkbox" name="hours_24_7" id="hours_24_7" value="1"
-                                               <?php checked($hours_data['flags']['is_24_7']); ?>>
-                                        Open 24/7
+                                        <input type="checkbox" name="office_flags[is_24_7]" value="1"
+                                               <?php checked(!empty($hours_data['office_flags']['is_24_7'])); ?>>
+                                        Office Open 24/7
                                     </label>
                                     <label style="display: block; margin: 5px 0;">
-                                        <input type="checkbox" name="hours_by_appointment" id="hours_by_appointment" value="1"
-                                               <?php checked($hours_data['flags']['is_by_appointment']); ?>>
-                                        By Appointment Only
+                                        <input type="checkbox" name="office_flags[is_by_appointment]" value="1"
+                                               <?php checked(!empty($hours_data['office_flags']['is_by_appointment'])); ?>>
+                                        Office By Appointment Only
                                     </label>
                                     <label style="display: block; margin: 5px 0;">
-                                        <input type="checkbox" name="hours_call_for_availability" id="hours_call_for_availability" value="1"
-                                               <?php checked($hours_data['flags']['is_call_for_availability']); ?>>
-                                        Call for Availability
+                                        <input type="checkbox" name="office_flags[is_call_for_availability]" value="1"
+                                               <?php checked(!empty($hours_data['office_flags']['is_call_for_availability'])); ?>>
+                                        Call for Office Availability
                                     </label>
                                     <label style="display: block; margin: 5px 0;">
-                                        <input type="checkbox" name="hours_currently_closed" id="hours_currently_closed" value="1"
-                                               <?php checked($hours_data['flags']['is_currently_closed']); ?>>
-                                        Currently Closed
+                                        <input type="checkbox" name="office_flags[is_currently_closed]" value="1"
+                                               <?php checked(!empty($hours_data['office_flags']['is_currently_closed'])); ?>>
+                                        Office Currently Closed
                                     </label>
+                                    <div style="margin-top: 10px;">
+                                        <label><strong>Office Special Notes:</strong></label>
+                                        <textarea name="office_flags[special_notes]" class="large-text" rows="2"
+                                                  placeholder="Holiday closures, special office hours, etc."><?php
+                                            echo esc_textarea(!empty($hours_data['office_flags']['special_notes']) ? $hours_data['office_flags']['special_notes'] : '');
+                                        ?></textarea>
+                                    </div>
                                 </div>
 
-                                <!-- Office Hours -->
+                                <!-- Office Hours (Full Implementation) -->
                                 <div id="office_hours_section" style="margin-bottom: 20px;">
                                     <h4 style="margin-bottom: 10px;">Office Hours</h4>
                                     <p class="description" style="margin-bottom: 10px;">When the admin office is open for calls/inquiries</p>
 
-                                    <table class="widefat" style="max-width: 600px;">
-                                        <thead>
-                                            <tr>
-                                                <th style="width: 25%;">Day</th>
-                                                <th style="width: 15%;">Closed</th>
-                                                <th style="width: 30%;">Opens</th>
-                                                <th style="width: 30%;">Closes</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php
-                                            $days = Resource_Hours_Manager::DAY_NAMES;
-                                            for ($day = 0; $day <= 6; $day++):
-                                                $day_hours = isset($hours_data['office_hours'][$day]) ? $hours_data['office_hours'][$day] : null;
-                                                $is_closed = $day_hours ? $day_hours['is_closed'] : ($day == 0 || $day == 6); // Default Sat/Sun closed
-                                                $open_time = $day_hours && !$is_closed ? substr($day_hours['open_time'], 0, 5) : '09:00';
-                                                $close_time = $day_hours && !$is_closed ? substr($day_hours['close_time'], 0, 5) : '17:00';
-                                            ?>
-                                            <tr>
-                                                <td><strong><?php echo $days[$day]; ?></strong></td>
-                                                <td>
-                                                    <input type="checkbox" name="office_hours[<?php echo $day; ?>][is_closed]"
-                                                           class="office-closed-checkbox" data-day="<?php echo $day; ?>"
-                                                           value="1" <?php checked($is_closed); ?>>
-                                                </td>
-                                                <td>
-                                                    <input type="time" name="office_hours[<?php echo $day; ?>][open_time]"
-                                                           class="office-time-input" data-day="<?php echo $day; ?>"
-                                                           value="<?php echo esc_attr($open_time); ?>"
-                                                           <?php if ($is_closed) echo 'disabled'; ?>>
-                                                </td>
-                                                <td>
-                                                    <input type="time" name="office_hours[<?php echo $day; ?>][close_time]"
-                                                           class="office-time-input" data-day="<?php echo $day; ?>"
-                                                           value="<?php echo esc_attr($close_time); ?>"
-                                                           <?php if ($is_closed) echo 'disabled'; ?>>
-                                                </td>
-                                            </tr>
-                                            <?php endfor; ?>
-                                        </tbody>
-                                    </table>
+                                    <?php
+                                    $days = Resource_Hours_Manager::DAY_NAMES;
+                                    for ($day = 0; $day <= 6; $day++):
+                                        $day_hours = isset($hours_data['office_hours'][$day]) ? $hours_data['office_hours'][$day] : null;
+
+                                        // Detect mode from existing data
+                                        $current_mode = 'simple';
+                                        $is_closed = false;
+                                        $simple_open = '09:00';
+                                        $simple_close = '17:00';
+                                        $blocks = array();
+                                        $recurring = array('pattern' => 'weekly', 'week' => 2, 'open' => '14:00', 'close' => '17:00');
+
+                                        if ($day_hours) {
+                                            if (isset($day_hours['mode'])) {
+                                                $current_mode = $day_hours['mode'];
+                                            }
+                                            $is_closed = isset($day_hours['is_closed']) ? $day_hours['is_closed'] : false;
+
+                                            if ($is_closed) {
+                                                $current_mode = 'closed';
+                                            } elseif (isset($day_hours['simple'])) {
+                                                $simple_open = substr($day_hours['simple']['open'], 0, 5);
+                                                $simple_close = substr($day_hours['simple']['close'], 0, 5);
+                                            } elseif (isset($day_hours['blocks'])) {
+                                                $blocks = $day_hours['blocks'];
+                                            } elseif (isset($day_hours['recurring'])) {
+                                                $recurring = $day_hours['recurring'];
+                                            } elseif (isset($day_hours['open_time'])) {
+                                                // Old format
+                                                $simple_open = substr($day_hours['open_time'], 0, 5);
+                                                $simple_close = substr($day_hours['close_time'], 0, 5);
+                                            }
+                                        } else {
+                                            // Default: weekends closed
+                                            if ($day == 0 || $day == 6) {
+                                                $is_closed = true;
+                                                $current_mode = 'closed';
+                                            }
+                                        }
+                                    ?>
+                                        <div class="hours-day-container" style="border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; background: #fff;" data-day="<?php echo $day; ?>" data-type="office">
+                                            <h5 style="margin-top: 0;"><?php echo $days[$day]; ?></h5>
+
+                                            <!-- Mode Selector -->
+                                            <div class="hours-mode-selector" style="margin-bottom: 10px;">
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="office_hours[<?php echo $day; ?>][mode]" value="closed"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="office"
+                                                           <?php checked($current_mode, 'closed'); ?>>
+                                                    Closed
+                                                </label>
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="office_hours[<?php echo $day; ?>][mode]" value="simple"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="office"
+                                                           <?php checked($current_mode, 'simple'); ?>>
+                                                    Regular Hours
+                                                </label>
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="office_hours[<?php echo $day; ?>][mode]" value="multiple"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="office"
+                                                           <?php checked($current_mode, 'multiple'); ?>>
+                                                    Multiple Blocks
+                                                </label>
+                                                <label>
+                                                    <input type="radio" name="office_hours[<?php echo $day; ?>][mode]" value="recurring"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="office"
+                                                           <?php checked($current_mode, 'recurring'); ?>>
+                                                    Recurring Pattern
+                                                </label>
+                                            </div>
+
+                                            <!-- Simple Hours -->
+                                            <div class="hours-simple-container" style="<?php echo $current_mode !== 'simple' ? 'display:none;' : ''; ?>">
+                                                <input type="time" name="office_hours[<?php echo $day; ?>][simple][open]"
+                                                       value="<?php echo esc_attr($simple_open); ?>" style="margin-right: 5px;">
+                                                to
+                                                <input type="time" name="office_hours[<?php echo $day; ?>][simple][close]"
+                                                       value="<?php echo esc_attr($simple_close); ?>" style="margin-left: 5px;">
+                                            </div>
+
+                                            <!-- Multiple Blocks -->
+                                            <div class="hours-multiple-container" style="<?php echo $current_mode !== 'multiple' ? 'display:none;' : ''; ?>">
+                                                <div class="hours-blocks-list" data-day="<?php echo $day; ?>" data-type="office">
+                                                    <?php if (!empty($blocks)): ?>
+                                                        <?php foreach ($blocks as $index => $block): ?>
+                                                            <div class="hours-block-row" style="margin-bottom: 8px;">
+                                                                <span style="margin-right: 5px;">Block <?php echo $index + 1; ?>:</span>
+                                                                <input type="time" name="office_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][open]"
+                                                                       value="<?php echo esc_attr(substr($block['open'], 0, 5)); ?>" style="margin-right: 5px;">
+                                                                to
+                                                                <input type="time" name="office_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][close]"
+                                                                       value="<?php echo esc_attr(substr($block['close'], 0, 5)); ?>" style="margin: 0 5px;">
+                                                                <input type="text" name="office_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][label]"
+                                                                       value="<?php echo esc_attr($block['label'] ?? ''); ?>"
+                                                                       placeholder="Label (optional)" style="width: 120px; margin-right: 5px;">
+                                                                <button type="button" class="button remove-block-btn" style="color: #a00;">Remove</button>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <button type="button" class="button add-block-btn" data-day="<?php echo $day; ?>" data-type="office">+ Add Time Block</button>
+                                            </div>
+
+                                            <!-- Recurring Pattern -->
+                                            <div class="hours-recurring-container" style="<?php echo $current_mode !== 'recurring' ? 'display:none;' : ''; ?>">
+                                                <select name="office_hours[<?php echo $day; ?>][recurring][pattern]"
+                                                        class="recurring-pattern-select" data-day="<?php echo $day; ?>" data-type="office"
+                                                        style="margin-right: 10px;">
+                                                    <option value="weekly" <?php selected($recurring['pattern'] ?? 'weekly', 'weekly'); ?>>Weekly</option>
+                                                    <option value="biweekly" <?php selected($recurring['pattern'] ?? '', 'biweekly'); ?>>Every Other Week</option>
+                                                    <option value="monthly_week" <?php selected($recurring['pattern'] ?? '', 'monthly_week'); ?>>Monthly (Specific Week)</option>
+                                                    <option value="monthly_date" <?php selected($recurring['pattern'] ?? '', 'monthly_date'); ?>>Monthly (Specific Date)</option>
+                                                </select>
+
+                                                <div class="recurring-monthly-week-fields" style="display: <?php echo ($recurring['pattern'] ?? '') === 'monthly_week' ? 'inline-block' : 'none'; ?>; margin-right: 10px;">
+                                                    <select name="office_hours[<?php echo $day; ?>][recurring][week]">
+                                                        <option value="1" <?php selected($recurring['week'] ?? 1, 1); ?>>1st</option>
+                                                        <option value="2" <?php selected($recurring['week'] ?? 1, 2); ?>>2nd</option>
+                                                        <option value="3" <?php selected($recurring['week'] ?? 1, 3); ?>>3rd</option>
+                                                        <option value="4" <?php selected($recurring['week'] ?? 1, 4); ?>>4th</option>
+                                                        <option value="5" <?php selected($recurring['week'] ?? 1, 5); ?>>Last</option>
+                                                    </select>
+                                                    <?php echo $days[$day]; ?> of the month
+                                                </div>
+
+                                                <div class="recurring-monthly-date-fields" style="display: <?php echo ($recurring['pattern'] ?? '') === 'monthly_date' ? 'inline-block' : 'none'; ?>; margin-right: 10px;">
+                                                    Day <input type="number" name="office_hours[<?php echo $day; ?>][recurring][day_of_month]"
+                                                               value="<?php echo esc_attr($recurring['day_of_month'] ?? 15); ?>"
+                                                               min="1" max="31" style="width: 60px;"> of the month
+                                                </div>
+
+                                                <div style="margin-top: 10px;">
+                                                    <input type="time" name="office_hours[<?php echo $day; ?>][recurring][open]"
+                                                           value="<?php echo esc_attr(substr($recurring['open'] ?? '14:00', 0, 5)); ?>" style="margin-right: 5px;">
+                                                    to
+                                                    <input type="time" name="office_hours[<?php echo $day; ?>][recurring][close]"
+                                                           value="<?php echo esc_attr(substr($recurring['close'] ?? '17:00', 0, 5)); ?>" style="margin-left: 5px;">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endfor; ?>
                                 </div>
 
-                                <!-- Service/Program Hours -->
+                                <!-- Service Hours Special Situations -->
+                                <div style="margin-bottom: 20px; padding: 10px; background: #fff; border-left: 3px solid #00a32a;">
+                                    <h4 style="margin-top: 0;">Service/Program Hours Special Situations</h4>
+                                    <p class="description">These apply to when services/programs are actually available</p>
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="checkbox" name="service_flags[is_24_7]" value="1"
+                                               <?php checked(!empty($hours_data['service_flags']['is_24_7'])); ?>>
+                                        Service Available 24/7
+                                    </label>
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="checkbox" name="service_flags[is_by_appointment]" value="1"
+                                               <?php checked(!empty($hours_data['service_flags']['is_by_appointment'])); ?>>
+                                        Service By Appointment Only
+                                    </label>
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="checkbox" name="service_flags[is_call_for_availability]" value="1"
+                                               <?php checked(!empty($hours_data['service_flags']['is_call_for_availability'])); ?>>
+                                        Call for Service Availability
+                                    </label>
+                                    <label style="display: block; margin: 5px 0;">
+                                        <input type="checkbox" name="service_flags[is_currently_closed]" value="1"
+                                               <?php checked(!empty($hours_data['service_flags']['is_currently_closed'])); ?>>
+                                        Service Currently Unavailable
+                                    </label>
+                                    <div style="margin-top: 10px;">
+                                        <label><strong>Service Special Notes:</strong></label>
+                                        <textarea name="service_flags[special_notes]" class="large-text" rows="2"
+                                                  placeholder="Service-specific notes, availability details, etc."><?php
+                                            echo esc_textarea(!empty($hours_data['service_flags']['special_notes']) ? $hours_data['service_flags']['special_notes'] : '');
+                                        ?></textarea>
+                                    </div>
+                                </div>
+
+                                <!-- Service/Program Hours (Full Implementation) -->
                                 <div id="service_hours_section" style="margin-bottom: 20px;">
                                     <h4 style="margin-bottom: 10px;">Service/Program Hours</h4>
                                     <p class="description" style="margin-bottom: 10px;">When services/programs are actually available</p>
 
-                                    <label style="display: block; margin-bottom: 10px;">
+                                    <label style="display: block; margin-bottom: 15px; padding: 10px; background: #fffbcc; border-left: 3px solid #ffb900;">
                                         <input type="checkbox" id="service_same_as_office" name="service_same_as_office" value="1"
                                                <?php if (!empty($hours_data['service_same_as_office'])) echo 'checked'; ?>>
-                                        Same as Office Hours
+                                        <strong>Same as Office Hours</strong> - Automatically copies all office hours settings and flags
                                     </label>
 
-                                    <table class="widefat" id="service_hours_table" style="max-width: 600px;">
-                                        <thead>
-                                            <tr>
-                                                <th style="width: 25%;">Day</th>
-                                                <th style="width: 15%;">Closed</th>
-                                                <th style="width: 30%;">Opens</th>
-                                                <th style="width: 30%;">Closes</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php
-                                            for ($day = 0; $day <= 6; $day++):
-                                                $day_hours = isset($hours_data['service_hours'][$day]) ? $hours_data['service_hours'][$day] : null;
-                                                $is_closed = $day_hours ? $day_hours['is_closed'] : ($day == 0 || $day == 6);
-                                                $open_time = $day_hours && !$is_closed ? substr($day_hours['open_time'], 0, 5) : '09:00';
-                                                $close_time = $day_hours && !$is_closed ? substr($day_hours['close_time'], 0, 5) : '17:00';
-                                            ?>
-                                            <tr>
-                                                <td><strong><?php echo $days[$day]; ?></strong></td>
-                                                <td>
-                                                    <input type="checkbox" name="service_hours[<?php echo $day; ?>][is_closed]"
-                                                           class="service-closed-checkbox" data-day="<?php echo $day; ?>"
-                                                           value="1" <?php checked($is_closed); ?>>
-                                                </td>
-                                                <td>
-                                                    <input type="time" name="service_hours[<?php echo $day; ?>][open_time]"
-                                                           class="service-time-input" data-day="<?php echo $day; ?>"
-                                                           value="<?php echo esc_attr($open_time); ?>"
-                                                           <?php if ($is_closed) echo 'disabled'; ?>>
-                                                </td>
-                                                <td>
-                                                    <input type="time" name="service_hours[<?php echo $day; ?>][close_time]"
-                                                           class="service-time-input" data-day="<?php echo $day; ?>"
-                                                           value="<?php echo esc_attr($close_time); ?>"
-                                                           <?php if ($is_closed) echo 'disabled'; ?>>
-                                                </td>
-                                            </tr>
-                                            <?php endfor; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
+                                    <?php
+                                    for ($day = 0; $day <= 6; $day++):
+                                        $day_hours = isset($hours_data['service_hours'][$day]) ? $hours_data['service_hours'][$day] : null;
 
-                                <!-- Special Notes -->
-                                <div style="margin-bottom: 10px;">
-                                    <h4>Special Notes (Optional):</h4>
-                                    <textarea name="hours_special_notes" id="hours_special_notes"
-                                              class="large-text" rows="2"
-                                              placeholder="Additional hours info, holiday closures, etc."><?php echo esc_textarea($hours_data['special_notes']); ?></textarea>
+                                        // Detect mode from existing data
+                                        $current_mode = 'simple';
+                                        $is_closed = false;
+                                        $simple_open = '09:00';
+                                        $simple_close = '17:00';
+                                        $blocks = array();
+                                        $recurring = array('pattern' => 'weekly', 'week' => 2, 'open' => '14:00', 'close' => '17:00');
+
+                                        if ($day_hours) {
+                                            if (isset($day_hours['mode'])) {
+                                                $current_mode = $day_hours['mode'];
+                                            }
+                                            $is_closed = isset($day_hours['is_closed']) ? $day_hours['is_closed'] : false;
+
+                                            if ($is_closed) {
+                                                $current_mode = 'closed';
+                                            } elseif (isset($day_hours['simple'])) {
+                                                $simple_open = substr($day_hours['simple']['open'], 0, 5);
+                                                $simple_close = substr($day_hours['simple']['close'], 0, 5);
+                                            } elseif (isset($day_hours['blocks'])) {
+                                                $blocks = $day_hours['blocks'];
+                                            } elseif (isset($day_hours['recurring'])) {
+                                                $recurring = $day_hours['recurring'];
+                                            } elseif (isset($day_hours['open_time'])) {
+                                                // Old format
+                                                $simple_open = substr($day_hours['open_time'], 0, 5);
+                                                $simple_close = substr($day_hours['close_time'], 0, 5);
+                                            }
+                                        } else {
+                                            // Default: weekends closed
+                                            if ($day == 0 || $day == 6) {
+                                                $is_closed = true;
+                                                $current_mode = 'closed';
+                                            }
+                                        }
+                                    ?>
+                                        <div class="hours-day-container" style="border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; background: #fff;" data-day="<?php echo $day; ?>" data-type="service">
+                                            <h5 style="margin-top: 0;"><?php echo $days[$day]; ?></h5>
+
+                                            <!-- Mode Selector -->
+                                            <div class="hours-mode-selector" style="margin-bottom: 10px;">
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="service_hours[<?php echo $day; ?>][mode]" value="closed"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="service"
+                                                           <?php checked($current_mode, 'closed'); ?>>
+                                                    Closed
+                                                </label>
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="service_hours[<?php echo $day; ?>][mode]" value="simple"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="service"
+                                                           <?php checked($current_mode, 'simple'); ?>>
+                                                    Regular Hours
+                                                </label>
+                                                <label style="margin-right: 15px;">
+                                                    <input type="radio" name="service_hours[<?php echo $day; ?>][mode]" value="multiple"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="service"
+                                                           <?php checked($current_mode, 'multiple'); ?>>
+                                                    Multiple Blocks
+                                                </label>
+                                                <label>
+                                                    <input type="radio" name="service_hours[<?php echo $day; ?>][mode]" value="recurring"
+                                                           class="hours-mode-radio" data-day="<?php echo $day; ?>" data-type="service"
+                                                           <?php checked($current_mode, 'recurring'); ?>>
+                                                    Recurring Pattern
+                                                </label>
+                                            </div>
+
+                                            <!-- Simple Hours -->
+                                            <div class="hours-simple-container" style="<?php echo $current_mode !== 'simple' ? 'display:none;' : ''; ?>">
+                                                <input type="time" name="service_hours[<?php echo $day; ?>][simple][open]"
+                                                       value="<?php echo esc_attr($simple_open); ?>" style="margin-right: 5px;">
+                                                to
+                                                <input type="time" name="service_hours[<?php echo $day; ?>][simple][close]"
+                                                       value="<?php echo esc_attr($simple_close); ?>" style="margin-left: 5px;">
+                                            </div>
+
+                                            <!-- Multiple Blocks -->
+                                            <div class="hours-multiple-container" style="<?php echo $current_mode !== 'multiple' ? 'display:none;' : ''; ?>">
+                                                <div class="hours-blocks-list" data-day="<?php echo $day; ?>" data-type="service">
+                                                    <?php if (!empty($blocks)): ?>
+                                                        <?php foreach ($blocks as $index => $block): ?>
+                                                            <div class="hours-block-row" style="margin-bottom: 8px;">
+                                                                <span style="margin-right: 5px;">Block <?php echo $index + 1; ?>:</span>
+                                                                <input type="time" name="service_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][open]"
+                                                                       value="<?php echo esc_attr(substr($block['open'], 0, 5)); ?>" style="margin-right: 5px;">
+                                                                to
+                                                                <input type="time" name="service_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][close]"
+                                                                       value="<?php echo esc_attr(substr($block['close'], 0, 5)); ?>" style="margin: 0 5px;">
+                                                                <input type="text" name="service_hours[<?php echo $day; ?>][blocks][<?php echo $index; ?>][label]"
+                                                                       value="<?php echo esc_attr($block['label'] ?? ''); ?>"
+                                                                       placeholder="Label (optional)" style="width: 120px; margin-right: 5px;">
+                                                                <button type="button" class="button remove-block-btn" style="color: #a00;">Remove</button>
+                                                            </div>
+                                                        <?php endforeach; ?>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <button type="button" class="button add-block-btn" data-day="<?php echo $day; ?>" data-type="service">+ Add Time Block</button>
+                                            </div>
+
+                                            <!-- Recurring Pattern -->
+                                            <div class="hours-recurring-container" style="<?php echo $current_mode !== 'recurring' ? 'display:none;' : ''; ?>">
+                                                <select name="service_hours[<?php echo $day; ?>][recurring][pattern]"
+                                                        class="recurring-pattern-select" data-day="<?php echo $day; ?>" data-type="service"
+                                                        style="margin-right: 10px;">
+                                                    <option value="weekly" <?php selected($recurring['pattern'] ?? 'weekly', 'weekly'); ?>>Weekly</option>
+                                                    <option value="biweekly" <?php selected($recurring['pattern'] ?? '', 'biweekly'); ?>>Every Other Week</option>
+                                                    <option value="monthly_week" <?php selected($recurring['pattern'] ?? '', 'monthly_week'); ?>>Monthly (Specific Week)</option>
+                                                    <option value="monthly_date" <?php selected($recurring['pattern'] ?? '', 'monthly_date'); ?>>Monthly (Specific Date)</option>
+                                                </select>
+
+                                                <div class="recurring-monthly-week-fields" style="display: <?php echo ($recurring['pattern'] ?? '') === 'monthly_week' ? 'inline-block' : 'none'; ?>; margin-right: 10px;">
+                                                    <select name="service_hours[<?php echo $day; ?>][recurring][week]">
+                                                        <option value="1" <?php selected($recurring['week'] ?? 1, 1); ?>>1st</option>
+                                                        <option value="2" <?php selected($recurring['week'] ?? 1, 2); ?>>2nd</option>
+                                                        <option value="3" <?php selected($recurring['week'] ?? 1, 3); ?>>3rd</option>
+                                                        <option value="4" <?php selected($recurring['week'] ?? 1, 4); ?>>4th</option>
+                                                        <option value="5" <?php selected($recurring['week'] ?? 1, 5); ?>>Last</option>
+                                                    </select>
+                                                    <?php echo $days[$day]; ?> of the month
+                                                </div>
+
+                                                <div class="recurring-monthly-date-fields" style="display: <?php echo ($recurring['pattern'] ?? '') === 'monthly_date' ? 'inline-block' : 'none'; ?>; margin-right: 10px;">
+                                                    Day <input type="number" name="service_hours[<?php echo $day; ?>][recurring][day_of_month]"
+                                                               value="<?php echo esc_attr($recurring['day_of_month'] ?? 15); ?>"
+                                                               min="1" max="31" style="width: 60px;"> of the month
+                                                </div>
+
+                                                <div style="margin-top: 10px;">
+                                                    <input type="time" name="service_hours[<?php echo $day; ?>][recurring][open]"
+                                                           value="<?php echo esc_attr(substr($recurring['open'] ?? '14:00', 0, 5)); ?>" style="margin-right: 5px;">
+                                                    to
+                                                    <input type="time" name="service_hours[<?php echo $day; ?>][recurring][close]"
+                                                           value="<?php echo esc_attr(substr($recurring['close'] ?? '17:00', 0, 5)); ?>" style="margin-left: 5px;">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <?php endfor; ?>
                                 </div>
 
                                 <!-- Legacy text field (hidden, for backward compatibility) -->
@@ -1835,15 +3182,187 @@ class Monday_Resources_Admin {
                 <hr style="margin: 40px 0;">
                 <?php Verification_System::render_verification_checklist_ui($resource['id']); ?>
             <?php endif; ?>
+
+            <script>
+                (function() {
+                    var filterInput = document.getElementById('services_offered_filter');
+                    var options = document.querySelectorAll('.services-offered-option');
+                    var serviceAreaWarning = document.getElementById('service-area-warning');
+                    var providerToggle = document.getElementById('provider_type_toggle');
+                    var providerPanel = document.getElementById('provider_type_panel');
+
+                    function filterServicesOffered() {
+                        if (!filterInput || !options.length) {
+                            return;
+                        }
+
+                        var query = filterInput.value.toLowerCase().trim();
+                        options.forEach(function(option) {
+                            var text = (option.getAttribute('data-filter-text') || '').toLowerCase();
+                            option.style.display = query === '' || text.indexOf(query) !== -1 ? 'block' : 'none';
+                        });
+                    }
+
+                    function updateServiceAreaWarning() {
+                        if (!serviceAreaWarning) {
+                            return;
+                        }
+                        var selectedCount = document.querySelectorAll('input[name="service_area[]"]:checked').length;
+                        serviceAreaWarning.style.display = selectedCount > 6 ? 'block' : 'none';
+                    }
+
+                    if (filterInput) {
+                        filterInput.addEventListener('input', filterServicesOffered);
+                    }
+
+                    document.querySelectorAll('input[name="service_area[]"]').forEach(function(input) {
+                        input.addEventListener('change', updateServiceAreaWarning);
+                    });
+
+                    if (providerToggle && providerPanel) {
+                        providerToggle.addEventListener('click', function() {
+                            providerPanel.style.display = providerPanel.style.display === 'none' || providerPanel.style.display === '' ? 'block' : 'none';
+                        });
+                    }
+
+                    updateServiceAreaWarning();
+                })();
+            </script>
         </div>
         <?php
+    }
+
+    /**
+     * Render hidden fields recursively for confirmation forms.
+     *
+     * @param string $name
+     * @param mixed $value
+     * @return void
+     */
+    private function render_hidden_field_recursive($name, $value) {
+        if (is_array($value)) {
+            foreach ($value as $child_key => $child_value) {
+                $child_name = $name . '[' . $child_key . ']';
+                $this->render_hidden_field_recursive($child_name, $child_value);
+            }
+            return;
+        }
+
+        if (is_object($value)) {
+            return;
+        }
+
+        echo '<input type="hidden" name="' . esc_attr($name) . '" value="' . esc_attr((string) $value) . '">' . "\n";
+    }
+
+    /**
+     * Render confirmation step when organization is a close match candidate.
+     *
+     * @param string $organization_name
+     * @param array $matches
+     * @return void
+     */
+    private function render_org_close_match_confirmation_page($organization_name, $matches) {
+        if (!current_user_can($this->get_resource_capability()) && !current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        $posted = wp_unslash($_POST);
+        if (!is_array($posted)) {
+            $posted = array();
+        }
+
+        $posted['confirm_org_close_match'] = '1';
+
+        $back_url = isset($posted['_wp_http_referer']) ? esc_url_raw((string) $posted['_wp_http_referer']) : admin_url('admin.php?page=monday-resources-manage');
+        if ($back_url === '') {
+            $back_url = admin_url('admin.php?page=monday-resources-manage');
+        }
+
+        status_header(409);
+        nocache_headers();
+        ?>
+        <div class="wrap" style="max-width: 840px; margin: 32px auto; background: #fff; border: 1px solid #d1d5db; border-radius: 8px; padding: 24px;">
+            <h1 style="margin-top: 0;">Possible Duplicate Organization</h1>
+            <p>
+                The organization name <strong><?php echo esc_html($organization_name); ?></strong> is very similar to existing organization records.
+                Please review the close matches before saving.
+            </p>
+
+            <table class="widefat striped" style="margin: 16px 0 20px;">
+                <thead>
+                    <tr>
+                        <th>Existing Organization</th>
+                        <th style="width: 140px;">Similarity Distance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($matches as $match): ?>
+                        <?php
+                        $match_name = isset($match['name']) ? (string) $match['name'] : '';
+                        $distance = isset($match['distance']) ? (int) $match['distance'] : 0;
+                        ?>
+                        <tr>
+                            <td><?php echo esc_html($match_name); ?></td>
+                            <td><?php echo esc_html((string) $distance); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <p style="margin-bottom: 16px;">If this is intentional, continue and the resource will be saved with your entered organization name.</p>
+
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="margin: 0;">
+                    <?php
+                    foreach ($posted as $key => $value) {
+                        if ($key === 'confirm_org_close_match') {
+                            continue;
+                        }
+                        $this->render_hidden_field_recursive((string) $key, $value);
+                    }
+                    ?>
+                    <input type="hidden" name="confirm_org_close_match" value="1">
+                    <button type="submit" class="button button-primary">Save Anyway</button>
+                </form>
+                <a class="button" href="<?php echo esc_url($back_url); ?>">Go Back and Edit</a>
+            </div>
+        </div>
+        <?php
+        exit;
+    }
+
+    /**
+     * AJAX organization lookup for resource forms and inline edits.
+     *
+     * @return void
+     */
+    public function ajax_org_lookup() {
+        check_ajax_referer('monday_resources_nonce', 'nonce');
+
+        if (!current_user_can($this->get_resource_capability()) && !current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Unauthorized.'), 403);
+        }
+
+        if (!class_exists('Resource_Organization_Manager')) {
+            wp_send_json_error(array('message' => 'Organization manager unavailable.'), 500);
+        }
+
+        $query = isset($_POST['q']) ? sanitize_text_field(wp_unslash($_POST['q'])) : '';
+        $limit = isset($_POST['limit']) ? (int) $_POST['limit'] : 12;
+        $limit = max(1, min(25, $limit));
+
+        $items = Resource_Organization_Manager::search_organizations($query, $limit);
+        wp_send_json_success(array(
+            'items' => $items
+        ));
     }
 
     /**
      * Save resource (create or update)
      */
     public function save_resource() {
-        if (!current_user_can('manage_options')) {
+        if (!current_user_can($this->get_resource_capability())) {
             wp_die('Unauthorized');
         }
 
@@ -1859,54 +3378,120 @@ class Monday_Resources_Admin {
         // Handle geography array (checkboxes - conferences)
         $geography = '';
         if (isset($_POST['geography']) && is_array($_POST['geography'])) {
-            $geography = implode(', ', array_map('sanitize_text_field', $_POST['geography']));
+            $geography = implode(', ', array_map('sanitize_text_field', wp_unslash($_POST['geography'])));
         }
 
         // Handle counties_served array (checkboxes)
         $counties_served = '';
         if (isset($_POST['counties_served']) && is_array($_POST['counties_served'])) {
-            $counties_served = implode(', ', array_map('sanitize_text_field', $_POST['counties_served']));
-        }
-
-        // Handle secondary_service_type array (checkboxes)
-        $secondary_service_type = '';
-        if (isset($_POST['secondary_service_type']) && is_array($_POST['secondary_service_type'])) {
-            $secondary_service_type = implode(', ', array_map('sanitize_text_field', $_POST['secondary_service_type']));
+            $counties_served = implode(', ', array_map('sanitize_text_field', wp_unslash($_POST['counties_served'])));
         }
 
         // Handle target_population array (checkboxes)
         $target_population = '';
         if (isset($_POST['target_population']) && is_array($_POST['target_population'])) {
-            $target_population = implode(', ', array_map('sanitize_text_field', $_POST['target_population']));
+            $target_population = implode(', ', array_map('sanitize_text_field', wp_unslash($_POST['target_population'])));
         }
 
-        // Use wp_unslash() to remove WordPress's automatic slashing before sanitizing
+        $service_area_slugs = array();
+        if (isset($_POST['service_area']) && class_exists('Resource_Taxonomy')) {
+            $raw_service_areas = is_array($_POST['service_area']) ? wp_unslash($_POST['service_area']) : array(wp_unslash($_POST['service_area']));
+            $service_area_slugs = Resource_Taxonomy::normalize_service_area_slugs($raw_service_areas);
+        }
+
+        if (empty($service_area_slugs)) {
+            $redirect_args = array('page' => $resource_id ? 'monday-resources-edit' : 'monday-resources-add', 'error' => 'missing_service_area');
+            if ($resource_id) {
+                $redirect_args['id'] = $resource_id;
+            }
+            wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
+            exit;
+        }
+
+        $service_area_pipe = class_exists('Resource_Taxonomy')
+            ? Resource_Taxonomy::to_pipe_slug_string($service_area_slugs)
+            : '';
+
+        $services_offered_slugs = array();
+        if (isset($_POST['services_offered']) && class_exists('Resource_Taxonomy')) {
+            $raw_services_offered = is_array($_POST['services_offered']) ? wp_unslash($_POST['services_offered']) : array();
+            $services_offered_slugs = Resource_Taxonomy::normalize_services_offered_slugs($raw_services_offered);
+        }
+
+        $services_offered_pipe = class_exists('Resource_Taxonomy')
+            ? Resource_Taxonomy::to_pipe_slug_string($services_offered_slugs)
+            : '';
+
+        $provider_type = '';
+        if (isset($_POST['provider_type']) && class_exists('Resource_Taxonomy')) {
+            $provider_type = Resource_Taxonomy::normalize_provider_type_slug(wp_unslash($_POST['provider_type']));
+        }
+
+        // Keep legacy columns synchronized during rollback window.
+        $service_area_terms = $this->get_service_area_terms();
+        $services_offered_terms = $this->get_services_offered_terms();
+        $legacy_primary_service_type = '';
+        if (!empty($service_area_slugs)) {
+            $first_service_area_slug = $service_area_slugs[0];
+            $legacy_primary_service_type = isset($service_area_terms[$first_service_area_slug]) ? $service_area_terms[$first_service_area_slug] : '';
+        }
+
+        $legacy_secondary_labels = array();
+        foreach ($services_offered_slugs as $service_slug) {
+            if (isset($services_offered_terms[$service_slug])) {
+                $legacy_secondary_labels[] = $services_offered_terms[$service_slug];
+            }
+        }
+        $legacy_secondary_service_type = implode(', ', $legacy_secondary_labels);
+
         $data = array(
-            'resource_name' => sanitize_text_field(wp_unslash($_POST['resource_name'])),
-            'organization' => sanitize_text_field(wp_unslash($_POST['organization'])),
+            'resource_name' => isset($_POST['resource_name']) ? sanitize_text_field(wp_unslash($_POST['resource_name'])) : '',
+            'organization' => isset($_POST['organization']) ? sanitize_text_field(wp_unslash($_POST['organization'])) : '',
             'is_svdp' => isset($_POST['is_svdp']) ? 1 : 0,
-            'primary_service_type' => sanitize_text_field(wp_unslash($_POST['primary_service_type'])),
-            'secondary_service_type' => $secondary_service_type,
-            'phone' => sanitize_text_field(wp_unslash($_POST['phone'])),
-            'phone_extension' => sanitize_text_field(wp_unslash($_POST['phone_extension'])),
-            'alternate_phone' => sanitize_text_field(wp_unslash($_POST['alternate_phone'])),
-            'email' => sanitize_email($_POST['email']),
-            'website' => esc_url_raw($_POST['website']),
-            'physical_address' => sanitize_textarea_field(wp_unslash($_POST['physical_address'])),
-            'what_they_provide' => sanitize_textarea_field(wp_unslash($_POST['what_they_provide'])),
-            'how_to_apply' => sanitize_textarea_field(wp_unslash($_POST['how_to_apply'])),
-            'documents_required' => sanitize_textarea_field(wp_unslash($_POST['documents_required'])),
-            'hours_of_operation' => sanitize_text_field(wp_unslash($_POST['hours_of_operation'])),
+            'primary_service_type' => $legacy_primary_service_type,
+            'secondary_service_type' => $legacy_secondary_service_type,
+            'service_area' => $service_area_pipe,
+            'services_offered' => $services_offered_pipe,
+            'provider_type' => $provider_type,
+            'phone' => isset($_POST['phone']) ? sanitize_text_field(wp_unslash($_POST['phone'])) : '',
+            'phone_extension' => isset($_POST['phone_extension']) ? sanitize_text_field(wp_unslash($_POST['phone_extension'])) : '',
+            'alternate_phone' => isset($_POST['alternate_phone']) ? sanitize_text_field(wp_unslash($_POST['alternate_phone'])) : '',
+            'email' => isset($_POST['email']) ? sanitize_email(wp_unslash($_POST['email'])) : '',
+            'website' => isset($_POST['website']) ? esc_url_raw(wp_unslash($_POST['website'])) : '',
+            'physical_address' => isset($_POST['physical_address']) ? sanitize_textarea_field(wp_unslash($_POST['physical_address'])) : '',
+            'what_they_provide' => isset($_POST['what_they_provide']) ? sanitize_textarea_field(wp_unslash($_POST['what_they_provide'])) : '',
+            'how_to_apply' => isset($_POST['how_to_apply']) ? sanitize_textarea_field(wp_unslash($_POST['how_to_apply'])) : '',
+            'documents_required' => isset($_POST['documents_required']) ? sanitize_textarea_field(wp_unslash($_POST['documents_required'])) : '',
+            'hours_of_operation' => isset($_POST['hours_of_operation']) ? sanitize_text_field(wp_unslash($_POST['hours_of_operation'])) : '',
             'target_population' => $target_population,
-            'income_requirements' => sanitize_text_field(wp_unslash($_POST['income_requirements'])),
-            'residency_requirements' => sanitize_textarea_field(wp_unslash($_POST['residency_requirements'])),
-            'other_eligibility' => sanitize_textarea_field(wp_unslash($_POST['other_eligibility'])),
-            'eligibility_notes' => sanitize_textarea_field(wp_unslash($_POST['eligibility_notes'])),
+            'income_requirements' => isset($_POST['income_requirements']) ? sanitize_text_field(wp_unslash($_POST['income_requirements'])) : '',
+            'residency_requirements' => isset($_POST['residency_requirements']) ? sanitize_textarea_field(wp_unslash($_POST['residency_requirements'])) : '',
+            'other_eligibility' => isset($_POST['other_eligibility']) ? sanitize_textarea_field(wp_unslash($_POST['other_eligibility'])) : '',
+            'eligibility_notes' => isset($_POST['eligibility_notes']) ? sanitize_textarea_field(wp_unslash($_POST['eligibility_notes'])) : '',
             'geography' => $geography,
             'counties_served' => $counties_served,
-            'wait_time' => sanitize_text_field(wp_unslash($_POST['wait_time'])),
-            'notes_and_tips' => sanitize_textarea_field(wp_unslash($_POST['notes_and_tips']))
+            'wait_time' => isset($_POST['wait_time']) ? sanitize_text_field(wp_unslash($_POST['wait_time'])) : '',
+            'notes_and_tips' => isset($_POST['notes_and_tips']) ? sanitize_textarea_field(wp_unslash($_POST['notes_and_tips'])) : ''
         );
+
+        if (class_exists('Resource_Organization_Manager')) {
+            $organization_name = trim((string) $data['organization']);
+            $confirm_close_match = !empty($_POST['confirm_org_close_match']);
+
+            if ($organization_name !== '') {
+                $threshold = (int) apply_filters('svdp_resource_org_match_threshold', 3);
+                $close_matches = Resource_Organization_Manager::find_close_matches($organization_name, $threshold, 5);
+                if (!$confirm_close_match && !empty($close_matches)) {
+                    $this->render_org_close_match_confirmation_page($organization_name, $close_matches);
+                }
+            }
+
+            if ($organization_name === '') {
+                $data['organization_id'] = null;
+            } else {
+                $data['organization_id'] = Resource_Organization_Manager::upsert_organization($organization_name);
+            }
+        }
 
         // Detect which button was clicked
         $save_and_new = isset($_POST['save_and_new']);
@@ -1945,45 +3530,39 @@ class Monday_Resources_Admin {
             // Check if "Same as Office Hours" is checked
             $service_same_as_office = isset($_POST['service_same_as_office']) ? 1 : 0;
 
-            // Build hours data structure
+            // Build hours data structure with new separate flags
             $hours_data = array(
-                'flags' => array(
-                    'is_24_7' => isset($_POST['hours_24_7']) ? 1 : 0,
-                    'is_by_appointment' => isset($_POST['hours_by_appointment']) ? 1 : 0,
-                    'is_call_for_availability' => isset($_POST['hours_call_for_availability']) ? 1 : 0,
-                    'is_currently_closed' => isset($_POST['hours_currently_closed']) ? 1 : 0
+                'office_flags' => array(
+                    'is_24_7' => isset($_POST['office_flags']['is_24_7']) ? 1 : 0,
+                    'is_by_appointment' => isset($_POST['office_flags']['is_by_appointment']) ? 1 : 0,
+                    'is_call_for_availability' => isset($_POST['office_flags']['is_call_for_availability']) ? 1 : 0,
+                    'is_currently_closed' => isset($_POST['office_flags']['is_currently_closed']) ? 1 : 0,
+                    'special_notes' => isset($_POST['office_flags']['special_notes']) ? sanitize_textarea_field(wp_unslash($_POST['office_flags']['special_notes'])) : ''
                 ),
-                'special_notes' => isset($_POST['hours_special_notes']) ? sanitize_textarea_field(wp_unslash($_POST['hours_special_notes'])) : '',
+                'service_flags' => array(
+                    'is_24_7' => isset($_POST['service_flags']['is_24_7']) ? 1 : 0,
+                    'is_by_appointment' => isset($_POST['service_flags']['is_by_appointment']) ? 1 : 0,
+                    'is_call_for_availability' => isset($_POST['service_flags']['is_call_for_availability']) ? 1 : 0,
+                    'is_currently_closed' => isset($_POST['service_flags']['is_currently_closed']) ? 1 : 0,
+                    'special_notes' => isset($_POST['service_flags']['special_notes']) ? sanitize_textarea_field(wp_unslash($_POST['service_flags']['special_notes'])) : ''
+                ),
                 'service_same_as_office' => $service_same_as_office,
                 'office_hours' => array(),
                 'service_hours' => array()
             );
 
-            // Process office hours
+            // Process office hours with new structure (mode-based)
             if (isset($_POST['office_hours']) && is_array($_POST['office_hours'])) {
-                foreach ($_POST['office_hours'] as $day => $day_hours) {
-                    $hours_data['office_hours'][$day] = array(
-                        'is_closed' => isset($day_hours['is_closed']) ? 1 : 0,
-                        'open_time' => isset($day_hours['open_time']) ? sanitize_text_field($day_hours['open_time']) . ':00' : null,
-                        'close_time' => isset($day_hours['close_time']) ? sanitize_text_field($day_hours['close_time']) . ':00' : null
-                    );
-                }
+                $hours_data['office_hours'] = $this->process_hours_data($_POST['office_hours']);
             }
 
-            // Process service hours - if "Same as Office Hours" is checked, copy office hours
+            // Process service hours
             if ($service_same_as_office) {
                 // Copy office hours to service hours
                 $hours_data['service_hours'] = $hours_data['office_hours'];
             } else {
-                // Process service hours independently
                 if (isset($_POST['service_hours']) && is_array($_POST['service_hours'])) {
-                    foreach ($_POST['service_hours'] as $day => $day_hours) {
-                        $hours_data['service_hours'][$day] = array(
-                            'is_closed' => isset($day_hours['is_closed']) ? 1 : 0,
-                            'open_time' => isset($day_hours['open_time']) ? sanitize_text_field($day_hours['open_time']) . ':00' : null,
-                            'close_time' => isset($day_hours['close_time']) ? sanitize_text_field($day_hours['close_time']) . ':00' : null
-                        );
-                    }
+                    $hours_data['service_hours'] = $this->process_hours_data($_POST['service_hours']);
                 }
             }
 
@@ -1993,5 +3572,276 @@ class Monday_Resources_Admin {
 
         wp_redirect(add_query_arg($redirect_args, admin_url('admin.php')));
         exit;
+    }
+
+    /**
+     * Process hours data from POST into structured format
+     *
+     * @param array $post_hours Raw POST hours data
+     * @return array Structured hours data
+     */
+    private function process_hours_data($post_hours) {
+        $processed = array();
+
+        foreach ($post_hours as $day => $day_data) {
+            if (!is_array($day_data)) {
+                continue;
+            }
+
+            $mode = isset($day_data['mode']) ? sanitize_text_field($day_data['mode']) : 'simple';
+
+            if ($mode === 'closed') {
+                $processed[$day] = array(
+                    'mode' => 'closed',
+                    'is_closed' => true
+                );
+
+            } elseif ($mode === 'simple') {
+                if (isset($day_data['simple']) && is_array($day_data['simple'])) {
+                    $processed[$day] = array(
+                        'mode' => 'simple',
+                        'is_closed' => false,
+                        'simple' => array(
+                            'open' => isset($day_data['simple']['open']) ? sanitize_text_field($day_data['simple']['open']) . ':00' : '09:00:00',
+                            'close' => isset($day_data['simple']['close']) ? sanitize_text_field($day_data['simple']['close']) . ':00' : '17:00:00'
+                        )
+                    );
+                }
+
+            } elseif ($mode === 'multiple') {
+                if (isset($day_data['blocks']) && is_array($day_data['blocks'])) {
+                    $blocks = array();
+                    foreach ($day_data['blocks'] as $block) {
+                        if (isset($block['open']) && isset($block['close'])) {
+                            $blocks[] = array(
+                                'open' => sanitize_text_field($block['open']) . ':00',
+                                'close' => sanitize_text_field($block['close']) . ':00',
+                                'label' => isset($block['label']) ? sanitize_text_field($block['label']) : ''
+                            );
+                        }
+                    }
+                    if (!empty($blocks)) {
+                        $processed[$day] = array(
+                            'mode' => 'multiple',
+                            'is_closed' => false,
+                            'blocks' => $blocks
+                        );
+                    }
+                }
+
+            } elseif ($mode === 'recurring') {
+                if (isset($day_data['recurring']) && is_array($day_data['recurring'])) {
+                    $recurring = $day_data['recurring'];
+                    $processed[$day] = array(
+                        'mode' => 'recurring',
+                        'is_closed' => false,
+                        'recurring' => array(
+                            'pattern' => isset($recurring['pattern']) ? sanitize_text_field($recurring['pattern']) : 'weekly',
+                            'interval' => isset($recurring['interval']) ? (int)$recurring['interval'] : 1,
+                            'week' => isset($recurring['week']) ? (int)$recurring['week'] : null,
+                            'day_of_month' => isset($recurring['day_of_month']) ? (int)$recurring['day_of_month'] : null,
+                            'open' => isset($recurring['open']) ? sanitize_text_field($recurring['open']) . ':00' : '09:00:00',
+                            'close' => isset($recurring['close']) ? sanitize_text_field($recurring['close']) . ':00' : '17:00:00'
+                        )
+                    );
+                }
+            }
+        }
+
+        return $processed;
+    }
+
+    /**
+     * Export resources AJAX handler with full filtering and field selection
+     */
+    public function export_resources() {
+        // Verify nonce
+        check_ajax_referer('export_resources');
+
+        // Check permissions
+        if (!current_user_can($this->get_resource_capability())) {
+            wp_die('Unauthorized');
+        }
+
+        global $wpdb;
+        $resources_table = $wpdb->prefix . 'resources';
+
+        // Get format
+        $format = isset($_GET['format']) ? sanitize_text_field($_GET['format']) : 'csv';
+
+        // Get export scope
+        $scope = isset($_GET['scope']) ? sanitize_text_field($_GET['scope']) : 'all';
+
+        // Get selected fields
+        $selected_fields = isset($_GET['fields']) && is_array($_GET['fields']) ? array_map('sanitize_text_field', $_GET['fields']) : null;
+
+        // Build field map based on selection
+        $field_labels = array(
+            'id' => 'ID',
+            'resource_name' => 'Resource Name',
+            'organization' => 'Organization',
+            'service_area' => 'Service Areas',
+            'services_offered' => 'Services Offered',
+            'provider_type' => 'Provider Type',
+            'phone' => 'Phone',
+            'email' => 'Email',
+            'website' => 'Website',
+            'physical_address' => 'Physical Address',
+            'what_they_provide' => 'What They Provide',
+            'how_to_apply' => 'How to Apply',
+            'documents_required' => 'Documents Required',
+            'target_population' => 'Target Population',
+            'income_requirements' => 'Income Requirements',
+            'geography' => 'Geography',
+            'office_hours' => 'Office Hours',
+            'service_hours' => 'Service Hours',
+            'last_verified_date' => 'Last Verified',
+            'verification_status' => 'Verification Status'
+        );
+
+        // Filter to selected fields only
+        if ($selected_fields) {
+            $fields = array();
+            foreach ($selected_fields as $field) {
+                if (isset($field_labels[$field])) {
+                    $fields[$field] = $field_labels[$field];
+                }
+            }
+        } else {
+            $fields = null; // Use defaults
+        }
+
+        // Get resources based on scope
+        $resources = array();
+
+        if ($scope === 'selected') {
+            // Export only selected IDs
+            $ids = isset($_GET['ids']) && is_array($_GET['ids']) ? array_map('intval', $_GET['ids']) : array();
+            if (empty($ids)) {
+                wp_die('No resources selected');
+            }
+
+            $placeholders = implode(',', array_fill(0, count($ids), '%d'));
+            $resources = $wpdb->get_results(
+                $wpdb->prepare(
+                    "SELECT * FROM $resources_table WHERE id IN ($placeholders) ORDER BY resource_name ASC",
+                    $ids
+                ),
+                ARRAY_A
+            );
+
+        } elseif ($scope === 'filtered') {
+            // Export based on current filters
+            $where = array('1=1');
+            $query_params = array();
+
+            if (isset($_GET['search']) && !empty($_GET['search'])) {
+                $search = '%' . $wpdb->esc_like(sanitize_text_field($_GET['search'])) . '%';
+                $where[] = '(resource_name LIKE %s OR organization LIKE %s OR service_area LIKE %s OR services_offered LIKE %s OR provider_type LIKE %s)';
+                $query_params[] = $search;
+                $query_params[] = $search;
+                $query_params[] = $search;
+                $query_params[] = $search;
+                $query_params[] = $search;
+            }
+
+            if (isset($_GET['status']) && !empty($_GET['status'])) {
+                $where[] = 'verification_status = %s';
+                $query_params[] = sanitize_text_field($_GET['status']);
+            }
+
+            $service_area_request = isset($_GET['service_area']) ? sanitize_text_field($_GET['service_area']) : '';
+            if ($service_area_request === '' && isset($_GET['service'])) {
+                $service_area_request = sanitize_text_field($_GET['service']);
+            }
+
+            if ($service_area_request !== '') {
+                $service_area_slug = $service_area_request;
+                if (class_exists('Resource_Taxonomy')) {
+                    $service_area_slug = Resource_Taxonomy::normalize_service_area_slug($service_area_slug);
+                }
+
+                if ($service_area_slug !== '') {
+                    $where[] = '(service_area LIKE %s OR service_area = %s)';
+                    $query_params[] = '%|' . $wpdb->esc_like($service_area_slug) . '|%';
+                    $query_params[] = $service_area_slug;
+                }
+            }
+
+            $sql = "SELECT * FROM $resources_table WHERE " . implode(' AND ', $where) . " ORDER BY resource_name ASC";
+
+            if (!empty($query_params)) {
+                $resources = $wpdb->get_results($wpdb->prepare($sql, $query_params), ARRAY_A);
+            } else {
+                $resources = $wpdb->get_results($sql, ARRAY_A);
+            }
+
+        } else {
+            // Export all resources
+            $resources = $wpdb->get_results(
+                "SELECT * FROM $resources_table ORDER BY resource_name ASC",
+                ARRAY_A
+            );
+        }
+
+        if (empty($resources)) {
+            wp_die('No resources to export');
+        }
+
+        // Enhance with hours data if hours fields are selected
+        if (!$selected_fields || in_array('office_hours', $selected_fields) || in_array('service_hours', $selected_fields)) {
+            foreach ($resources as &$resource) {
+                if (class_exists('Resource_Hours_Manager')) {
+                    $hours_data = Resource_Hours_Manager::get_hours($resource['id']);
+                    if ($hours_data) {
+                        $resource['office_hours'] = $hours_data['office_hours'];
+                        $resource['service_hours'] = $hours_data['service_hours'];
+                    }
+                }
+            }
+        }
+
+        // Generate export based on format
+        $content = null;
+        $filename = 'resources-' . date('Y-m-d') . '.';
+        $mime_type = 'text/plain';
+
+        switch ($format) {
+            case 'csv':
+                $content = Resource_Exporter::export_csv($resources, $fields);
+                $filename .= 'csv';
+                $mime_type = 'text/csv';
+                break;
+
+            case 'excel':
+                $content = Resource_Exporter::export_excel($resources, $fields);
+                if (is_wp_error($content)) {
+                    wp_die('Error: ' . $content->get_error_message());
+                }
+                $filename .= 'xlsx';
+                $mime_type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+                break;
+
+            case 'json':
+                $content = Resource_Exporter::export_json($resources);
+                $filename .= 'json';
+                $mime_type = 'application/json';
+                break;
+
+            case 'pdf':
+                $content = Resource_Exporter::export_pdf($resources, $fields);
+                if (is_wp_error($content)) {
+                    wp_die('Error: ' . $content->get_error_message());
+                }
+                $filename .= 'pdf';
+                $mime_type = 'application/pdf';
+                break;
+
+            default:
+                wp_die('Invalid format');
+        }
+
+        // Send file to browser
+        Resource_Exporter::send_download($content, $filename, $mime_type);
     }
 }

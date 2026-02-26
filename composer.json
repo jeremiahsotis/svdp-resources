@@ -1,0 +1,21 @@
+{
+    "name": "svdp/resources-plugin",
+    "description": "SVDP Community Resources WordPress Plugin",
+    "type": "wordpress-plugin",
+    "require": {
+        "php": ">=7.4",
+        "phpoffice/phpspreadsheet": "^1.29",
+        "tecnickcom/tcpdf": "^6.6"
+    },
+    "config": {
+        "platform": {
+            "php": "7.4"
+        },
+        "optimize-autoloader": true
+    },
+    "autoload": {
+        "psr-4": {
+            "SVDP\\Resources\\": "includes/"
+        }
+    }
+}

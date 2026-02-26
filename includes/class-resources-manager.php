@@ -35,86 +35,315 @@ class Resources_Manager {
     }
 
     /**
-     * Get all resources with optional filtering
+     * Get resources by explicit IDs in the same order.
+     *
+     * @param array $resource_ids
+     * @param bool $include_inactive
+     * @return array
      */
-    public static function get_all_resources($filters = array()) {
+    public static function get_resources_by_ids($resource_ids, $include_inactive = false) {
         global $wpdb;
         $table_name = $wpdb->prefix . 'resources';
 
+        $resource_ids = array_values(array_unique(array_filter(array_map('intval', (array) $resource_ids))));
+        if (empty($resource_ids)) {
+            return array();
+        }
+
+        $placeholders = implode(',', array_fill(0, count($resource_ids), '%d'));
+        $order_sql = implode(',', $resource_ids);
+        $where_status = $include_inactive ? '' : "AND status = 'active'";
+
+        $sql = "SELECT * FROM $table_name WHERE id IN ($placeholders) $where_status ORDER BY FIELD(id, $order_sql)";
+        $query = $wpdb->prepare($sql, $resource_ids);
+        $rows = $wpdb->get_results($query, ARRAY_A);
+
+        return is_array($rows) ? $rows : array();
+    }
+
+    /**
+     * Get all resources with optional filtering
+     */
+    public static function get_all_resources($filters = array()) {
+        $result = self::get_resources_paginated(
+            array_merge(
+                $filters,
+                array(
+                    'page' => 1,
+                    'per_page' => 5000
+                )
+            )
+        );
+
+        return isset($result['items']) ? $result['items'] : array();
+    }
+
+    /**
+     * Get paginated resources with total count.
+     *
+     * @param array $filters
+     * @return array{items: array, total_count: int}
+     */
+    public static function get_resources_paginated($filters = array()) {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'resources';
+
+        $page = isset($filters['page']) ? max(1, (int) $filters['page']) : 1;
+        $per_page = isset($filters['per_page']) ? max(1, min(100, (int) $filters['per_page'])) : 25;
+        $offset = ($page - 1) * $per_page;
+
+        $cache_key = self::build_paged_cache_key($filters, $page, $per_page);
+        if ($page === 1) {
+            $cached = get_transient($cache_key);
+            if (is_array($cached) && isset($cached['items']) && isset($cached['total_count'])) {
+                return $cached;
+            }
+        }
+
+        $where_values = array();
+        $where_clause = self::build_where_clause($filters, $where_values);
+
+        $count_sql = "SELECT COUNT(*) FROM $table_name WHERE $where_clause";
+        $count_query = !empty($where_values) ? $wpdb->prepare($count_sql, $where_values) : $count_sql;
+        $total_count = (int) $wpdb->get_var($count_query);
+
+        if ($total_count === 0) {
+            return array('items' => array(), 'total_count' => 0);
+        }
+
+        $data_sql = "SELECT * FROM $table_name WHERE $where_clause ORDER BY is_svdp DESC, resource_name ASC LIMIT %d OFFSET %d";
+        $data_values = array_merge($where_values, array($per_page, $offset));
+        $data_query = $wpdb->prepare($data_sql, $data_values);
+        $items = $wpdb->get_results($data_query, ARRAY_A);
+
+        $result = array(
+            'items' => $items ? $items : array(),
+            'total_count' => $total_count
+        );
+
+        if ($page === 1) {
+            set_transient($cache_key, $result, MINUTE_IN_SECONDS);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Build SQL where clause for resource queries.
+     *
+     * @param array $filters
+     * @param array $where_values
+     * @return string
+     */
+    private static function build_where_clause($filters, &$where_values) {
+        global $wpdb;
         $where = array("status = 'active'");
         $where_values = array();
 
-        // Geography filter - now supports multiple values
         if (!empty($filters['geography'])) {
-            // Handle both single string and array of strings
             $geographies = is_array($filters['geography']) ? $filters['geography'] : array($filters['geography']);
-        
-            if (!empty($geographies)) {
-                $geography_conditions = array();
-                foreach ($geographies as $geo) {
-                    $geography_conditions[] = "geography LIKE %s";
-                    $where_values[] = '%' . $wpdb->esc_like($geo) . '%';
+            $geography_conditions = array();
+            foreach ($geographies as $geo) {
+                $geo = trim((string) $geo);
+                if ($geo === '') {
+                    continue;
                 }
-                // Use OR to match any of the geography values
+                $geography_conditions[] = "geography LIKE %s";
+                $where_values[] = '%' . $wpdb->esc_like($geo) . '%';
+            }
+            if (!empty($geography_conditions)) {
                 $where[] = '(' . implode(' OR ', $geography_conditions) . ')';
             }
         }
-    
-        // Service type filter - now supports multiple values
-        if (!empty($filters['service_type'])) {
-            // Handle both single string and array of strings
-            $service_types = is_array($filters['service_type']) ? $filters['service_type'] : array($filters['service_type']);
-        
-            if (!empty($service_types)) {
-                $service_conditions = array();
-                foreach ($service_types as $service) {
-                    $service_conditions[] = "(primary_service_type LIKE %s OR secondary_service_type LIKE %s)";
-                    $where_values[] = '%' . $wpdb->esc_like($service) . '%';
-                    $where_values[] = '%' . $wpdb->esc_like($service) . '%';
+
+        if (!empty($filters['verification_status'])) {
+            $where[] = "verification_status = %s";
+            $where_values[] = sanitize_text_field($filters['verification_status']);
+        }
+
+        if (!empty($filters['service_area'])) {
+            $service_area_values = is_array($filters['service_area']) ? $filters['service_area'] : array($filters['service_area']);
+            $service_area_slugs = Resource_Taxonomy::normalize_service_area_slugs($service_area_values);
+
+            if (!empty($service_area_slugs)) {
+                $service_area_conditions = array();
+                foreach (array_values($service_area_slugs) as $service_area_slug) {
+                    // Support both new pipe-tag storage and legacy single-slug rows.
+                    $service_area_conditions[] = "(service_area LIKE %s OR service_area = %s)";
+                    $where_values[] = '%|' . $wpdb->esc_like($service_area_slug) . '|%';
+                    $where_values[] = $service_area_slug;
                 }
-                // Use OR to match any of the service types
+                $where[] = '(' . implode(' OR ', $service_area_conditions) . ')';
+            }
+        }
+
+        if (!empty($filters['provider_type'])) {
+            $provider_values = is_array($filters['provider_type']) ? $filters['provider_type'] : array($filters['provider_type']);
+            $provider_slugs = array();
+            foreach ($provider_values as $provider_value) {
+                $provider_slug = Resource_Taxonomy::normalize_provider_type_slug($provider_value);
+                if ($provider_slug !== '') {
+                    $provider_slugs[$provider_slug] = $provider_slug;
+                }
+            }
+
+            if (!empty($provider_slugs)) {
+                $provider_conditions = array();
+                foreach (array_values($provider_slugs) as $provider_slug) {
+                    $provider_conditions[] = "provider_type = %s";
+                    $where_values[] = $provider_slug;
+                }
+                $where[] = '(' . implode(' OR ', $provider_conditions) . ')';
+            }
+        }
+
+        if (!empty($filters['services_offered'])) {
+            $services_slugs = Resource_Taxonomy::normalize_services_offered_slugs($filters['services_offered']);
+            if (!empty($services_slugs)) {
+                $services_conditions = array();
+                foreach ($services_slugs as $slug) {
+                    $services_conditions[] = "services_offered LIKE %s";
+                    $where_values[] = '%|' . $wpdb->esc_like($slug) . '|%';
+                }
+                $where[] = '(' . implode(' OR ', $services_conditions) . ')';
+            }
+        }
+
+        if (!empty($filters['population'])) {
+            $population_filters = Resource_Taxonomy::normalize_population_filters($filters['population']);
+            if (!empty($population_filters)) {
+                $population_conditions = array();
+                foreach ($population_filters as $population) {
+                    $population_conditions[] = 'LOWER(target_population) LIKE %s';
+                    $where_values[] = '%' . $wpdb->esc_like($population) . '%';
+                }
+                $where[] = '(' . implode(' OR ', $population_conditions) . ')';
+            }
+        }
+
+        // Backward-compatible shortcode param behavior.
+        if (!empty($filters['service_type'])) {
+            $service_types = is_array($filters['service_type']) ? $filters['service_type'] : array($filters['service_type']);
+            $service_conditions = array();
+
+            foreach ($service_types as $service) {
+                $service = trim((string) $service);
+                if ($service === '') {
+                    continue;
+                }
+                $service_slug = Resource_Taxonomy::normalize_slug($service);
+                $service_conditions[] = "((service_area LIKE %s OR service_area = %s) OR services_offered LIKE %s OR primary_service_type LIKE %s OR secondary_service_type LIKE %s)";
+                $where_values[] = '%|' . $wpdb->esc_like($service_slug) . '|%';
+                $where_values[] = $service_slug;
+                $where_values[] = '%|' . $wpdb->esc_like($service_slug) . '|%';
+                $where_values[] = '%' . $wpdb->esc_like($service) . '%';
+                $where_values[] = '%' . $wpdb->esc_like($service) . '%';
+            }
+
+            if (!empty($service_conditions)) {
                 $where[] = '(' . implode(' OR ', $service_conditions) . ')';
             }
         }
 
-        // Verification status filter
-        if (!empty($filters['verification_status'])) {
-            $where[] = "verification_status = %s";
-            $where_values[] = $filters['verification_status'];
+        if (!empty($filters['q'])) {
+            $q = trim((string) $filters['q']);
+            if ($q !== '') {
+                $like = '%' . $wpdb->esc_like($q) . '%';
+                $search_fields = array(
+                    'resource_name',
+                    'organization',
+                    'service_area',
+                    'services_offered',
+                    'provider_type',
+                    'primary_service_type',
+                    'secondary_service_type',
+                    'target_population',
+                    'what_they_provide',
+                    'how_to_apply',
+                    'notes_and_tips'
+                );
+                $search_conditions = array();
+                foreach ($search_fields as $field) {
+                    $search_conditions[] = "$field LIKE %s";
+                    $where_values[] = $like;
+                }
+
+                $q_slug = Resource_Taxonomy::normalize_slug($q);
+                if ($q_slug !== '') {
+                    $search_conditions[] = 'service_area LIKE %s';
+                    $where_values[] = '%|' . $wpdb->esc_like($q_slug) . '|%';
+                }
+
+                $where[] = '(' . implode(' OR ', $search_conditions) . ')';
+            }
         }
 
-        // Hours filter - find resources open at specific day/time
         if (!empty($filters['open_at'])) {
             $day = isset($filters['open_at']['day']) ? intval($filters['open_at']['day']) : null;
             $time = isset($filters['open_at']['time']) ? $filters['open_at']['time'] : null;
             $hour_type = isset($filters['open_at']['type']) ? $filters['open_at']['type'] : 'service';
 
             if ($day !== null && $time !== null) {
-                // Get resource IDs that are open at this time
                 $open_resource_ids = Resource_Hours_Manager::find_open_resources($day, $time, $hour_type, $filters);
-
-                if (!empty($open_resource_ids)) {
+                if (empty($open_resource_ids)) {
+                    $where[] = '1 = 0';
+                } else {
                     $ids_placeholder = implode(',', array_fill(0, count($open_resource_ids), '%d'));
                     $where[] = "id IN ($ids_placeholder)";
-                    $where_values = array_merge($where_values, $open_resource_ids);
-                } else {
-                    // No resources open at this time - return empty
-                    return array();
+                    $where_values = array_merge($where_values, array_map('intval', $open_resource_ids));
                 }
             }
         }
 
-        // Build the query
-        $where_clause = implode(' AND ', $where);
-        $query = "SELECT * FROM $table_name WHERE $where_clause ORDER BY is_svdp DESC, primary_service_type ASC, resource_name ASC";
+        return implode(' AND ', $where);
+    }
 
-        if (!empty($where_values)) {
-            $query = $wpdb->prepare($query, $where_values);
-        }
+    /**
+     * Build cache key for page-1 pagination result.
+     *
+     * @param array $filters
+     * @param int $page
+     * @param int $per_page
+     * @return string
+     */
+    private static function build_paged_cache_key($filters, $page, $per_page) {
+        $services_offered = isset($filters['services_offered']) ? (array) $filters['services_offered'] : array();
+        $services_offered = array_values(array_unique(array_map('strval', $services_offered)));
+        sort($services_offered);
 
-        $resources = $wpdb->get_results($query, ARRAY_A);
+        $population = isset($filters['population']) ? (array) $filters['population'] : array();
+        $population = array_values(array_unique(array_map('strval', $population)));
+        sort($population);
 
-        return $resources ? $resources : array();
+        $service_area = isset($filters['service_area']) ? (array) $filters['service_area'] : array();
+        $service_area = array_values(array_unique(array_map('strval', $service_area)));
+        sort($service_area);
+
+        $provider_type = isset($filters['provider_type']) ? (array) $filters['provider_type'] : array();
+        $provider_type = array_values(array_unique(array_map('strval', $provider_type)));
+        sort($provider_type);
+
+        $service_type = isset($filters['service_type']) ? (array) $filters['service_type'] : array();
+        $service_type = array_values(array_unique(array_map('strval', $service_type)));
+        sort($service_type);
+
+        $geography = isset($filters['geography']) ? (array) $filters['geography'] : array();
+        $geography = array_values(array_unique(array_map('strval', $geography)));
+        sort($geography);
+
+        $cache_filters = array(
+            'service_area' => $service_area,
+            'services_offered' => $services_offered,
+            'provider_type' => $provider_type,
+            'population' => $population,
+            'q' => isset($filters['q']) ? $filters['q'] : '',
+            'geography' => $geography,
+            'service_type' => $service_type,
+            'verification_status' => isset($filters['verification_status']) ? (string) $filters['verification_status'] : '',
+            'open_at' => isset($filters['open_at']) ? $filters['open_at'] : array()
+        );
+
+        return 'svdp_res_paged_' . md5(wp_json_encode(array($cache_filters, (int) $page, (int) $per_page)));
     }
 
     /**
@@ -135,6 +364,7 @@ class Resources_Manager {
         );
 
         $data = wp_parse_args($data, $defaults);
+        $data = self::normalize_taxonomy_fields_in_data($data);
 
         // Insert the resource
         $result = $wpdb->insert($table_name, $data);
@@ -156,6 +386,7 @@ class Resources_Manager {
         // Add update metadata
         $data['updated_at'] = current_time('mysql');
         $data['updated_by'] = get_current_user_id();
+        $data = self::normalize_taxonomy_fields_in_data($data);
 
         $result = $wpdb->update(
             $table_name,
@@ -513,5 +744,54 @@ class Resources_Manager {
         }
     
         return esc_html($value);
+    }
+
+    /**
+     * Normalize taxonomy fields before write.
+     *
+     * @param array $data
+     * @return array
+     */
+    private static function normalize_taxonomy_fields_in_data($data) {
+        if (!is_array($data)) {
+            return $data;
+        }
+
+        if (array_key_exists('service_area', $data)) {
+            if (is_array($data['service_area'])) {
+                $slugs = Resource_Taxonomy::normalize_service_area_slugs($data['service_area']);
+            } else {
+                $value = trim((string) $data['service_area']);
+                if (strpos($value, '|') !== false) {
+                    $slugs = Resource_Taxonomy::normalize_service_area_slugs(Resource_Taxonomy::parse_pipe_slugs($value));
+                } else {
+                    $parts = preg_split('/\s*,\s*|\s*;\s*/', $value);
+                    $slugs = Resource_Taxonomy::normalize_service_area_slugs(is_array($parts) ? $parts : array($value));
+                }
+            }
+
+            $data['service_area'] = Resource_Taxonomy::to_pipe_slug_string($slugs);
+        }
+
+        if (array_key_exists('provider_type', $data)) {
+            $data['provider_type'] = Resource_Taxonomy::normalize_provider_type_slug($data['provider_type']);
+        }
+
+        if (array_key_exists('services_offered', $data)) {
+            if (is_array($data['services_offered'])) {
+                $slugs = Resource_Taxonomy::normalize_services_offered_slugs($data['services_offered']);
+                $data['services_offered'] = Resource_Taxonomy::to_pipe_slug_string($slugs);
+            } else {
+                $value = trim((string) $data['services_offered']);
+                if (strpos($value, '|') !== false) {
+                    $slugs = Resource_Taxonomy::normalize_services_offered_slugs(Resource_Taxonomy::parse_pipe_slugs($value));
+                } else {
+                    $slugs = Resource_Taxonomy::normalize_services_offered_slugs(array_filter(array_map('trim', preg_split('/\s*,\s*|\s*;\s*/', $value))));
+                }
+                $data['services_offered'] = Resource_Taxonomy::to_pipe_slug_string($slugs);
+            }
+        }
+
+        return $data;
     }
 }

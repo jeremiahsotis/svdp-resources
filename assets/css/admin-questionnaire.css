@@ -1,0 +1,562 @@
+/**
+ * Admin Questionnaire Styles
+ *
+ * Styles for questionnaire admin interface
+ * Phase 3: Question Builder UI
+ */
+
+/* ========================================
+   QUESTION BUILDER CONTAINER
+   ======================================== */
+
+.questionnaire-builder-wrap {
+    margin: 20px;
+}
+
+.questionnaire-builder-wrap .nav-tab-wrapper {
+    margin-bottom: 0;
+    border-bottom: 1px solid #ccd0d4;
+}
+
+.questionnaire-builder-wrap .tab-content {
+    min-height: 400px;
+}
+
+/* ========================================
+   QUESTION ITEMS
+   ======================================== */
+
+.question-item {
+    margin-bottom: 15px;
+    transition: all 0.2s ease;
+}
+
+.question-item:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.question-header {
+    position: relative;
+}
+
+.question-header .dashicons {
+    vertical-align: middle;
+}
+
+.question-details {
+    background: #ffffff;
+}
+
+.question-details .form-table th {
+    width: 180px;
+    padding: 15px 10px 15px 0;
+}
+
+.question-details .form-table td {
+    padding: 15px 10px;
+}
+
+/* ========================================
+   ANSWER OPTIONS
+   ======================================== */
+
+.answer-options-section {
+    background: #f9f9f9;
+    padding: 20px;
+    margin-top: 20px;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+}
+
+.answer-options-section h3 {
+    margin-top: 0;
+    color: #1d2327;
+}
+
+.answer-option-row {
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.answer-option-row:hover {
+    background: #ffffff !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.answer-option-row input[type="text"],
+.answer-option-row select {
+    width: 100%;
+}
+
+.answer-option-row label {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+/* ========================================
+   OUTCOME ITEMS
+   ======================================== */
+
+.outcome-item {
+    transition: all 0.2s ease;
+}
+
+.outcome-item:hover {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.outcome-header {
+    position: relative;
+}
+
+.outcome-header .dashicons {
+    vertical-align: middle;
+}
+
+.outcome-details {
+    background: #ffffff;
+}
+
+.outcome-details .form-table th {
+    width: 180px;
+    padding: 15px 10px 15px 0;
+}
+
+.outcome-details .form-table td {
+    padding: 15px 10px;
+}
+
+/* ========================================
+   BUTTONS AND ACTIONS
+   ======================================== */
+
+.questionnaire-builder-wrap .button-large {
+    height: auto;
+    line-height: 2;
+    padding: 8px 16px;
+    font-size: 15px;
+}
+
+.questionnaire-builder-wrap .button .dashicons {
+    margin-top: 3px;
+    margin-right: 5px;
+}
+
+.toggle-question-details,
+.toggle-outcome-details {
+    transition: transform 0.2s ease;
+}
+
+.delete-question-btn,
+.delete-outcome-btn,
+.delete-answer-option-btn {
+    color: #b32d2e;
+}
+
+.delete-question-btn:hover,
+.delete-outcome-btn:hover,
+.delete-answer-option-btn:hover {
+    color: #8a2424;
+    border-color: #b32d2e;
+}
+
+/* ========================================
+   START QUESTION SELECTOR
+   ======================================== */
+
+.start-question-selector {
+    background: #fffbcc;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-left: 4px solid #ffb900;
+}
+
+.start-question-selector .dashicons {
+    color: #ffb900;
+    vertical-align: middle;
+}
+
+.start-question-selector select {
+    min-width: 300px;
+}
+
+/* ========================================
+   EMPTY STATES
+   ======================================== */
+
+.questionnaire-builder-wrap .empty-state {
+    background: #f0f0f1;
+    padding: 40px;
+    text-align: center;
+    border: 2px dashed #c3c4c7;
+    border-radius: 4px;
+}
+
+.questionnaire-builder-wrap .empty-state p {
+    font-size: 16px;
+    color: #666;
+    margin: 0;
+}
+
+/* ========================================
+   RESPONSIVE
+   ======================================== */
+
+@media (max-width: 782px) {
+    .answer-option-row > div {
+        grid-template-columns: 1fr !important;
+    }
+
+    .answer-option-row .button {
+        width: 100%;
+        margin-top: 10px;
+    }
+
+    .start-question-selector select {
+        display: block;
+        width: 100%;
+        margin: 10px 0;
+    }
+
+    .start-question-selector .button {
+        width: 100%;
+    }
+}
+
+/* ========================================
+   LOADING AND TRANSITIONS
+   ======================================== */
+
+.questionnaire-builder-wrap .fade-out {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.questionnaire-builder-wrap .fade-in {
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+/* ========================================
+   DRAG AND DROP / SORTABLE
+   ======================================== */
+
+/* Make question headers appear draggable */
+.question-header {
+    cursor: move;
+}
+
+.question-header:hover::before {
+    content: "\f333";
+    font-family: dashicons;
+    position: absolute;
+    left: -20px;
+    color: #8c8f94;
+    font-size: 16px;
+}
+
+/* Make answer option rows appear draggable */
+.answer-option-row {
+    cursor: move;
+}
+
+.answer-option-row:hover::before {
+    content: "\f333";
+    font-family: dashicons;
+    position: absolute;
+    left: 5px;
+    top: 18px;
+    color: #8c8f94;
+    font-size: 14px;
+}
+
+/* Sortable placeholder styling */
+.sortable-placeholder {
+    background: #f0f6fc;
+    border: 2px dashed #0073aa;
+    visibility: visible !important;
+    height: 60px !important;
+    margin-bottom: 10px;
+}
+
+/* Item being dragged */
+.ui-sortable-helper {
+    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    cursor: move;
+}
+
+/* During drag, make other items slightly transparent */
+#questions-list.ui-sortable-disabled .question-item:not(.ui-sortable-helper) {
+    opacity: 0.6;
+}
+
+.answer-options-list.ui-sortable-disabled .answer-option-row:not(.ui-sortable-helper) {
+    opacity: 0.6;
+}
+
+/* ========================================
+   FORM VALIDATION
+   ======================================== */
+
+.questionnaire-builder-wrap input.error,
+.questionnaire-builder-wrap textarea.error,
+.questionnaire-builder-wrap select.error {
+    border-color: #d63638 !important;
+    box-shadow: 0 0 0 1px #d63638;
+}
+
+/* ========================================
+   QUESTION TYPE INDICATORS
+   ======================================== */
+
+.question-type-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 3px;
+    margin-left: 8px;
+}
+
+.question-type-multiple_choice {
+    background: #e7f5ff;
+    color: #0073aa;
+}
+
+.question-type-yes_no {
+    background: #f0f6fc;
+    color: #2c3338;
+}
+
+.question-type-text {
+    background: #fcf8e3;
+    color: #8a6d3b;
+}
+
+.question-type-info_only {
+    background: #f0f0f1;
+    color: #50575e;
+}
+
+/* ========================================
+   OUTCOME TYPE INDICATORS
+   ======================================== */
+
+.outcome-type-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 3px;
+    margin-left: 8px;
+}
+
+.outcome-type-resources {
+    background: #edfaef;
+    color: #1e8e3e;
+}
+
+.outcome-type-guidance {
+    background: #f0f6fc;
+    color: #0073aa;
+}
+
+.outcome-type-hybrid {
+    background: #fcf8e3;
+    color: #8a6d3b;
+}
+
+/* ========================================
+   FLOW PREVIEW TAB
+   ======================================== */
+
+#flow-diagram-container {
+    position: relative;
+    min-height: 400px;
+}
+
+#flow-mermaid-diagram {
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 400px;
+}
+
+#flow-mermaid-diagram svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Make Mermaid nodes clickable */
+#flow-mermaid-diagram .node {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+#flow-mermaid-diagram .node:hover {
+    opacity: 0.8;
+    filter: brightness(1.1);
+}
+
+#flow-mermaid-diagram .node rect,
+#flow-mermaid-diagram .node polygon,
+#flow-mermaid-diagram .node circle,
+#flow-mermaid-diagram .node ellipse {
+    transition: all 0.2s ease;
+}
+
+#flow-mermaid-diagram .node:hover rect,
+#flow-mermaid-diagram .node:hover polygon,
+#flow-mermaid-diagram .node:hover circle,
+#flow-mermaid-diagram .node:hover ellipse {
+    stroke-width: 3px;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+}
+
+/* Validation warnings styling */
+#flow-validation-warnings {
+    margin-bottom: 20px;
+}
+
+#flow-validation-warnings .notice {
+    padding: 10px 15px;
+}
+
+#flow-validation-warnings ul {
+    margin: 5px 0;
+    padding-left: 20px;
+}
+
+#flow-validation-warnings li {
+    margin: 5px 0;
+}
+
+#flow-validation-warnings a {
+    text-decoration: none;
+    color: #2271b1;
+    font-weight: 600;
+}
+
+#flow-validation-warnings a:hover {
+    text-decoration: underline;
+}
+
+/* Loading spinner */
+#flow-diagram-loading .spinner {
+    margin: 0 auto;
+    float: none;
+}
+
+/* Error state */
+#flow-diagram-error .dashicons {
+    width: 48px;
+    height: 48px;
+    font-size: 48px;
+}
+
+/* Refresh button */
+#refresh-flow-btn .dashicons {
+    margin-top: 3px;
+}
+
+/* Legend styling */
+.flow-legend {
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+.flow-legend > div {
+    display: flex;
+    align-items: center;
+}
+
+/* Responsive adjustments */
+@media (max-width: 782px) {
+    #flow-diagram-container {
+        padding: 10px;
+    }
+
+    #flow-mermaid-diagram svg {
+        width: 100% !important;
+    }
+}
+
+/* ========================================
+   PERFORMANCE ENHANCEMENTS (2025)
+   ======================================== */
+
+/* Accordion States for Questions and Outcomes */
+.question-header,
+.outcome-header {
+    transition: background-color 0.2s;
+}
+
+.question-header:hover,
+.outcome-header:hover {
+    background-color: #f0f0f1 !important;
+}
+
+.question-details,
+.outcome-details {
+    overflow: hidden;
+}
+
+/* AJAX Resource Search Interface */
+.resource-ajax-search-input:focus {
+    border-color: #0073aa;
+    box-shadow: 0 0 0 1px #0073aa;
+    outline: none;
+}
+
+.resource-search-result-item:hover {
+    background-color: #f5f5f5 !important;
+}
+
+.selected-resource-item {
+    animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Loading Spinner for Resource Search */
+.resource-search-loading .spinner {
+    visibility: visible;
+}
+
+/* Scrollbar Styling for Selected Resources */
+.selected-resources-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.selected-resources-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.selected-resources-list::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.selected-resources-list::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+/* Enhanced Sortable Placeholder */
+.sortable-placeholder {
+    height: 80px;
+    background: #f0f6fc;
+    border: 2px dashed #0073aa;
+    visibility: visible !important;
+    margin-bottom: 10px;
+}
