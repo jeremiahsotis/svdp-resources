@@ -310,9 +310,12 @@ class Monday_Resources_Admin {
         register_setting('monday_resources_settings', 'resource_target_population_options');
         register_setting('monday_resources_settings', 'resource_income_requirements_options');
         register_setting('monday_resources_settings', 'resource_wait_time_options');
+        register_setting('monday_resources_settings', 'svdp_sms_provider');
         register_setting('monday_resources_settings', 'svdp_twilio_account_sid');
         register_setting('monday_resources_settings', 'svdp_twilio_auth_token');
         register_setting('monday_resources_settings', 'svdp_twilio_from_number');
+        register_setting('monday_resources_settings', 'svdp_telnyx_api_key');
+        register_setting('monday_resources_settings', 'svdp_telnyx_from_number');
 
         // Initialize default options if not set
         if (!get_option('resource_conference_options')) {
@@ -1137,23 +1140,49 @@ class Monday_Resources_Admin {
             }
         }
 
-        if (isset($_POST['save_twilio_settings']) && check_admin_referer('manage_twilio_settings')) {
+        if (isset($_POST['save_sms_settings']) && check_admin_referer('manage_sms_settings')) {
+            $supported_sms_providers = class_exists('Resource_Snapshot_Manager')
+                ? Resource_Snapshot_Manager::get_supported_sms_providers()
+                : array('telnyx' => 'Telnyx', 'twilio' => 'Twilio');
+
+            $sms_provider = isset($_POST['svdp_sms_provider']) ? sanitize_key(wp_unslash($_POST['svdp_sms_provider'])) : 'telnyx';
+            if (!isset($supported_sms_providers[$sms_provider])) {
+                $sms_provider = 'telnyx';
+            }
+
             $twilio_account_sid = isset($_POST['svdp_twilio_account_sid']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_account_sid'])) : '';
             $twilio_auth_token = isset($_POST['svdp_twilio_auth_token']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_auth_token'])) : '';
             $twilio_from_number = isset($_POST['svdp_twilio_from_number']) ? sanitize_text_field(wp_unslash($_POST['svdp_twilio_from_number'])) : '';
+            $telnyx_api_key = isset($_POST['svdp_telnyx_api_key']) ? sanitize_text_field(wp_unslash($_POST['svdp_telnyx_api_key'])) : '';
+            $telnyx_from_number = isset($_POST['svdp_telnyx_from_number']) ? sanitize_text_field(wp_unslash($_POST['svdp_telnyx_from_number'])) : '';
 
+            update_option('svdp_sms_provider', $sms_provider);
             update_option('svdp_twilio_account_sid', $twilio_account_sid);
             update_option('svdp_twilio_auth_token', $twilio_auth_token);
             update_option('svdp_twilio_from_number', $twilio_from_number);
+            update_option('svdp_telnyx_api_key', $telnyx_api_key);
+            update_option('svdp_telnyx_from_number', $telnyx_from_number);
 
-            echo '<div class="notice notice-success is-dismissible"><p>Twilio settings saved.</p></div>';
+            echo '<div class="notice notice-success is-dismissible"><p>SMS provider settings saved.</p></div>';
         }
 
-        if (isset($_POST['clear_twilio_settings']) && check_admin_referer('manage_twilio_settings')) {
+        if (isset($_POST['clear_sms_settings']) && check_admin_referer('manage_sms_settings')) {
+            $supported_sms_providers = class_exists('Resource_Snapshot_Manager')
+                ? Resource_Snapshot_Manager::get_supported_sms_providers()
+                : array('telnyx' => 'Telnyx', 'twilio' => 'Twilio');
+
+            $sms_provider = isset($_POST['svdp_sms_provider']) ? sanitize_key(wp_unslash($_POST['svdp_sms_provider'])) : 'telnyx';
+            if (!isset($supported_sms_providers[$sms_provider])) {
+                $sms_provider = 'telnyx';
+            }
+
+            update_option('svdp_sms_provider', $sms_provider);
             update_option('svdp_twilio_account_sid', '');
             update_option('svdp_twilio_auth_token', '');
             update_option('svdp_twilio_from_number', '');
-            echo '<div class="notice notice-success is-dismissible"><p>Twilio settings cleared.</p></div>';
+            update_option('svdp_telnyx_api_key', '');
+            update_option('svdp_telnyx_from_number', '');
+            echo '<div class="notice notice-success is-dismissible"><p>SMS provider credentials cleared.</p></div>';
         }
 
         if (isset($_POST['org_backfill_batch_size'])) {
@@ -1232,11 +1261,24 @@ class Monday_Resources_Admin {
         $target_populations = get_option('resource_target_population_options', array());
         $income_requirements = get_option('resource_income_requirements_options', array());
         $wait_times = get_option('resource_wait_time_options', array());
+        $supported_sms_providers = class_exists('Resource_Snapshot_Manager')
+            ? Resource_Snapshot_Manager::get_supported_sms_providers()
+            : array('telnyx' => 'Telnyx', 'twilio' => 'Twilio');
+        $sms_provider = class_exists('Resource_Snapshot_Manager')
+            ? Resource_Snapshot_Manager::get_sms_provider()
+            : 'telnyx';
+        if (!isset($supported_sms_providers[$sms_provider])) {
+            $sms_provider = 'telnyx';
+        }
+        $sms_provider_label = isset($supported_sms_providers[$sms_provider]) ? $supported_sms_providers[$sms_provider] : 'SMS provider';
+        $sms_configured = class_exists('Resource_Snapshot_Manager') ? Resource_Snapshot_Manager::is_sms_configured() : false;
         $twilio_account_sid = get_option('svdp_twilio_account_sid', '');
         $twilio_auth_token = get_option('svdp_twilio_auth_token', '');
         $twilio_from_number = get_option('svdp_twilio_from_number', '');
-        $twilio_configured = class_exists('Resource_Snapshot_Manager') ? Resource_Snapshot_Manager::is_twilio_configured() : false;
+        $telnyx_api_key = get_option('svdp_telnyx_api_key', '');
+        $telnyx_from_number = get_option('svdp_telnyx_from_number', '');
         $twilio_using_constants = (defined('SVDP_TWILIO_ACCOUNT_SID') || defined('SVDP_TWILIO_AUTH_TOKEN') || defined('SVDP_TWILIO_FROM_NUMBER'));
+        $telnyx_using_constants = (defined('SVDP_TELNYX_API_KEY') || defined('SVDP_TELNYX_FROM_NUMBER'));
         $org_backfill_status = function_exists('monday_resources_get_organization_backfill_status')
             ? monday_resources_get_organization_backfill_status()
             : array();
@@ -1472,23 +1514,66 @@ class Monday_Resources_Admin {
 
             <!-- Snapshot Messaging Settings -->
             <div style="background: #fff; padding: 20px; margin: 20px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
-                <h2 style="margin-top: 0;">Snapshot Messaging (Twilio SMS)</h2>
-                <p>Configure Twilio credentials used by the <strong>Text This List</strong> action in the public resource directory.</p>
+                <h2 style="margin-top: 0;">Snapshot Messaging (SMS)</h2>
+                <p>Choose the SMS provider used by the <strong>Text This List</strong> action in the public resource directory, then save that provider's credentials.</p>
+                <p>
+                    Active Provider:
+                    <strong><?php echo esc_html($sms_provider_label); ?></strong>
+                </p>
                 <p>
                     Status:
-                    <?php if ($twilio_configured): ?>
+                    <?php if ($sms_configured): ?>
                         <strong style="color:#15803d;">Configured</strong>
                     <?php else: ?>
                         <strong style="color:#b91c1c;">Not configured</strong>
                     <?php endif; ?>
                 </p>
-                <?php if ($twilio_using_constants): ?>
+                <?php if ($sms_provider === 'telnyx' && $telnyx_using_constants): ?>
+                    <p class="description">Telnyx constants are defined in PHP configuration. These values are used when corresponding options are empty.</p>
+                <?php endif; ?>
+                <?php if ($sms_provider === 'twilio' && $twilio_using_constants): ?>
                     <p class="description">Twilio constants are defined in PHP configuration. These values are used when corresponding options are empty.</p>
                 <?php endif; ?>
 
                 <form method="post">
-                    <?php wp_nonce_field('manage_twilio_settings'); ?>
+                    <?php wp_nonce_field('manage_sms_settings'); ?>
                     <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="svdp_sms_provider">SMS Provider</label></th>
+                            <td>
+                                <select id="svdp_sms_provider" name="svdp_sms_provider">
+                                    <?php foreach ($supported_sms_providers as $provider_key => $provider_label): ?>
+                                        <option value="<?php echo esc_attr($provider_key); ?>" <?php selected($sms_provider, $provider_key); ?>>
+                                            <?php echo esc_html($provider_label); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="description">Select the provider used for text message delivery.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row" colspan="2" style="padding-bottom: 0;">
+                                <strong>Telnyx Credentials</strong>
+                            </th>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="svdp_telnyx_api_key">API Key</label></th>
+                            <td>
+                                <input type="text" id="svdp_telnyx_api_key" name="svdp_telnyx_api_key" value="<?php echo esc_attr($telnyx_api_key); ?>" class="regular-text">
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row"><label for="svdp_telnyx_from_number">From Number</label></th>
+                            <td>
+                                <input type="text" id="svdp_telnyx_from_number" name="svdp_telnyx_from_number" value="<?php echo esc_attr($telnyx_from_number); ?>" class="regular-text" placeholder="+12605551234">
+                                <p class="description">Use E.164 format (example: +12605551234).</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th scope="row" colspan="2" style="padding-bottom: 0;">
+                                <strong>Twilio Credentials</strong>
+                            </th>
+                        </tr>
                         <tr>
                             <th scope="row"><label for="svdp_twilio_account_sid">Account SID</label></th>
                             <td>
@@ -1510,8 +1595,8 @@ class Monday_Resources_Admin {
                         </tr>
                     </table>
                     <p>
-                        <button type="submit" name="save_twilio_settings" class="button button-primary">Save Twilio Settings</button>
-                        <button type="submit" name="clear_twilio_settings" class="button" onclick="return confirm('Clear all saved Twilio options?');">Clear Saved Options</button>
+                        <button type="submit" name="save_sms_settings" class="button button-primary">Save SMS Settings</button>
+                        <button type="submit" name="clear_sms_settings" class="button" onclick="return confirm('Clear all saved SMS provider credentials?');">Clear Saved Credentials</button>
                     </p>
                 </form>
             </div>

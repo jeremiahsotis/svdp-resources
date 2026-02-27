@@ -137,9 +137,10 @@ window.onclick = function(event) {
         const controls = document.querySelectorAll(
             '.service-area-tile, #resource-search, #narrow-results-btn, #resources-load-more, #narrow-apply-btn, #narrow-clear-btn, #snapshot-print-btn, #snapshot-email-btn, #snapshot-text-btn'
         );
+        const smsEnabled = typeof mondayResources.smsEnabled === 'boolean' ? mondayResources.smsEnabled : !!mondayResources.twilioEnabled;
 
         controls.forEach(function(control) {
-            if (control.id === 'snapshot-text-btn' && !mondayResources.twilioEnabled) {
+            if (control.id === 'snapshot-text-btn' && !smsEnabled) {
                 control.disabled = true;
                 return;
             }
@@ -196,6 +197,11 @@ window.onclick = function(event) {
         let snapshotRequest = null;
         let orgLookupRequest = null;
         const orgLookupCache = {};
+        const smsEnabled = typeof mondayResources.smsEnabled === 'boolean' ? mondayResources.smsEnabled : !!mondayResources.twilioEnabled;
+        const smsProviderLabel = mondayResources.smsProviderLabel || (mondayResources.twilioEnabled ? 'Twilio' : 'SMS provider');
+        const smsUnavailableMessage = 'Text sharing is unavailable until '
+            + String(smsProviderLabel)
+            + ' settings are configured.';
 
         function setSnapshotMessage(message, type) {
             if (!snapshotMessage) {
@@ -214,7 +220,7 @@ window.onclick = function(event) {
         function setSnapshotControlsDisabled(disabled) {
             [snapshotPrintBtn, snapshotEmailBtn, snapshotTextBtn].forEach(function(button) {
                 if (button) {
-                    if (button.id === 'snapshot-text-btn' && !mondayResources.twilioEnabled) {
+                    if (button.id === 'snapshot-text-btn' && !smsEnabled) {
                         button.disabled = true;
                         return;
                     }
@@ -351,8 +357,8 @@ window.onclick = function(event) {
                 return;
             }
 
-            if (channel === 'text' && !mondayResources.twilioEnabled) {
-                setSnapshotMessage('Text sharing is unavailable until Twilio settings are configured.', 'error');
+            if (channel === 'text' && !smsEnabled) {
+                setSnapshotMessage(smsUnavailableMessage, 'error');
                 return;
             }
 
@@ -964,10 +970,10 @@ window.onclick = function(event) {
             if (!mondayResources.canSnapshot) {
                 snapshotPanel.style.display = 'none';
             } else {
-                if (snapshotTextBtn && !mondayResources.twilioEnabled) {
+                if (snapshotTextBtn && !smsEnabled) {
                     snapshotTextBtn.disabled = true;
                     snapshotTextBtn.classList.add('is-disabled');
-                    snapshotTextBtn.title = 'Text sharing is unavailable until Twilio settings are configured.';
+                    snapshotTextBtn.title = smsUnavailableMessage;
                 }
 
                 if (snapshotPrintBtn) {

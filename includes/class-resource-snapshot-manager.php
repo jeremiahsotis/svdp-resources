@@ -374,8 +374,8 @@ class Resource_Snapshot_Manager {
         }
 
         if ($contact_type === 'text') {
-            if (!self::is_twilio_configured()) {
-                wp_send_json_error(array('message' => 'Text sharing is unavailable until Twilio settings are configured.'), 400);
+            if (!self::is_sms_configured()) {
+                wp_send_json_error(array('message' => self::get_sms_configuration_error_message()), 400);
             }
 
             $normalized_phone = self::normalize_phone_to_e164($contact_value);
@@ -524,8 +524,8 @@ class Resource_Snapshot_Manager {
         }
 
         if ($channel === 'text') {
-            if (!self::is_twilio_configured()) {
-                wp_send_json_error(array('message' => 'Text sharing is unavailable until Twilio settings are configured.'), 400);
+            if (!self::is_sms_configured()) {
+                wp_send_json_error(array('message' => self::get_sms_configuration_error_message()), 400);
             }
 
             $to = self::normalize_phone_to_e164($contact_value);
@@ -1138,13 +1138,108 @@ class Resource_Snapshot_Manager {
     }
 
     /**
-     * Send text message through Twilio REST API.
+     * Send text message using selected provider.
      *
      * @param string $to
      * @param string $message
      * @return true|WP_Error
      */
     private static function send_snapshot_text($to, $message) {
+        $provider = self::get_sms_provider();
+        if ($provider === 'telnyx') {
+            return self::send_via_telnyx($to, $message);
+        }
+        if ($provider === 'twilio') {
+            return self::send_via_twilio($to, $message);
+        }
+        return new WP_Error('unsupported_sms_provider', 'Unsupported SMS provider selected.');
+    }
+
+    /**
+     * Providers currently available for SMS sending.
+     *
+     * @return array
+     */
+    public static function get_supported_sms_providers() {
+        return array(
+            'telnyx' => 'Telnyx',
+            'twilio' => 'Twilio'
+        );
+    }
+
+    /**
+     * Active SMS provider key.
+     *
+     * @return string
+     */
+    public static function get_sms_provider() {
+        $supported = self::get_supported_sms_providers();
+        $provider = sanitize_key((string) get_option('svdp_sms_provider', 'telnyx'));
+        if (!isset($supported[$provider])) {
+            $provider = 'telnyx';
+        }
+        return $provider;
+    }
+
+    /**
+     * Human-readable active SMS provider label.
+     *
+     * @return string
+     */
+    public static function get_sms_provider_label() {
+        $supported = self::get_supported_sms_providers();
+        $provider = self::get_sms_provider();
+        return isset($supported[$provider]) ? $supported[$provider] : 'SMS provider';
+    }
+
+    /**
+     * Public configuration check used by UI controls.
+     *
+     * @return bool
+     */
+    public static function is_sms_configured() {
+        $provider = self::get_sms_provider();
+        if ($provider === 'telnyx') {
+            $credentials = self::get_telnyx_credentials();
+            return !is_wp_error($credentials);
+        }
+        if ($provider === 'twilio') {
+            $credentials = self::get_twilio_credentials();
+            return !is_wp_error($credentials);
+        }
+        return false;
+    }
+
+    /**
+     * Backward-compatible Twilio configuration check.
+     *
+     * @return bool
+     */
+    public static function is_twilio_configured() {
+        $credentials = self::get_twilio_credentials();
+        return !is_wp_error($credentials);
+    }
+
+    /**
+     * Build provider-aware configuration message for text actions.
+     *
+     * @return string
+     */
+    private static function get_sms_configuration_error_message() {
+        return sprintf(
+            'Text sharing is unavailable until %s settings are configured.',
+            self::get_sms_provider_label()
+        );
+    }
+
+    /**
+     * Send through Twilio REST API.
+     *
+     * @param string $to
+     * @param string $message
+     * @return true|WP_Error
+     */
+    private static function send_via_twilio($to, $message) {
         $credentials = self::get_twilio_credentials();
         if (is_wp_error($credentials)) {
             return $credentials;
@@ -1185,6 +1280,49 @@ class Resource_Snapshot_Manager {
     }
 
     /**
+     * Send through Telnyx REST API.
+     *
+     * @param string $to
+     * @param string $message
+     * @return true|WP_Error
+     */
+    private static function send_via_telnyx($to, $message) {
+        $credentials = self::get_telnyx_credentials();
+        if (is_wp_error($credentials)) {
+            return $credentials;
+        }
+
+        $response = wp_remote_post('https://api.telnyx.com/v2/messages', array(
+            'timeout' => 15,
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $credentials['api_key'],
+                'Content-Type' => 'application/json'
+            ),
+            'body' => wp_json_encode(array(
+                'to' => $to,
+                'from' => $credentials['from_number'],
+                'text' => $message
+            ))
+        ));
+
+        if (is_wp_error($response)) {
+            return $response;
+        }
+
+        $code = wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
+            $body = wp_remote_retrieve_body($response);
+            self::log_event('telnyx_send_failed', array(
+                'response_code' => $code,
+                'response_body' => $body
+            ));
+            return new WP_Error('telnyx_send_failed', 'Telnyx rejected the text message request.');
+        }
+
+        return true;
+    }
+
+    /**
      * Get Twilio credentials from options or constants.
      *
      * @return array|WP_Error
@@ -1216,13 +1354,30 @@ class Resource_Snapshot_Manager {
     }
 
     /**
-     * Public configuration check used by UI controls.
+     * Get Telnyx credentials from options or constants.
      *
-     * @return bool
+     * @return array|WP_Error
      */
-    public static function is_twilio_configured() {
-        $credentials = self::get_twilio_credentials();
-        return !is_wp_error($credentials);
+    private static function get_telnyx_credentials() {
+        $api_key = trim((string) get_option('svdp_telnyx_api_key', ''));
+        $from_number = trim((string) get_option('svdp_telnyx_from_number', ''));
+
+        if ($api_key === '' && defined('SVDP_TELNYX_API_KEY')) {
+            $api_key = trim((string) SVDP_TELNYX_API_KEY);
+        }
+        if ($from_number === '' && defined('SVDP_TELNYX_FROM_NUMBER')) {
+            $from_number = trim((string) SVDP_TELNYX_FROM_NUMBER);
+        }
+
+        $from_number = self::normalize_phone_to_e164($from_number);
+        if ($api_key === '' || $from_number === '') {
+            return new WP_Error('missing_telnyx_config', 'Telnyx is not configured.');
+        }
+
+        return array(
+            'api_key' => $api_key,
+            'from_number' => $from_number
+        );
     }
 
     /**

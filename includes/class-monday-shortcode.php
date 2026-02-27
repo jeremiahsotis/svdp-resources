@@ -53,7 +53,9 @@ class Monday_Resources_Shortcode {
             : 'manage_options';
         $can_snapshot = current_user_can($snapshot_cap) || current_user_can($manage_cap) || !empty($share_cap);
         $can_inline_edit = self::current_user_can_inline_edit();
-        $twilio_enabled = class_exists('Resource_Snapshot_Manager') && Resource_Snapshot_Manager::is_twilio_configured();
+        $sms_enabled = class_exists('Resource_Snapshot_Manager') && Resource_Snapshot_Manager::is_sms_configured();
+        $sms_provider = class_exists('Resource_Snapshot_Manager') ? Resource_Snapshot_Manager::get_sms_provider() : 'telnyx';
+        $sms_provider_label = class_exists('Resource_Snapshot_Manager') ? Resource_Snapshot_Manager::get_sms_provider_label() : 'SMS provider';
         $analytics_enabled = function_exists('monday_resources_is_analytics_capture_enabled')
             ? monday_resources_is_analytics_capture_enabled()
             : false;
@@ -70,7 +72,11 @@ class Monday_Resources_Shortcode {
             'sharedRouteBase' => home_url('/resources/shared/'),
             'canSnapshot' => $can_snapshot,
             'canInlineEdit' => $can_inline_edit,
-            'twilioEnabled' => $twilio_enabled,
+            'smsEnabled' => $sms_enabled,
+            'smsProvider' => $sms_provider,
+            'smsProviderLabel' => $sms_provider_label,
+            // Backward compatibility for any stale frontend script cache.
+            'twilioEnabled' => $sms_enabled,
             'analyticsEnabled' => $analytics_enabled
         ));
     }
