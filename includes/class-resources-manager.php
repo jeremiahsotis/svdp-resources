@@ -307,6 +307,7 @@ class Resources_Manager {
      * @return string
      */
     private static function build_paged_cache_key($filters, $page, $per_page) {
+        $cache_version = self::get_paged_cache_version();
         $services_offered = isset($filters['services_offered']) ? (array) $filters['services_offered'] : array();
         $services_offered = array_values(array_unique(array_map('strval', $services_offered)));
         sort($services_offered);
@@ -343,7 +344,31 @@ class Resources_Manager {
             'open_at' => isset($filters['open_at']) ? $filters['open_at'] : array()
         );
 
-        return 'svdp_res_paged_' . md5(wp_json_encode(array($cache_filters, (int) $page, (int) $per_page)));
+        return 'svdp_res_paged_' . md5(wp_json_encode(array($cache_version, $cache_filters, (int) $page, (int) $per_page)));
+    }
+
+    /**
+     * Get resource list cache version.
+     *
+     * @return int
+     */
+    private static function get_paged_cache_version() {
+        $version = (int) get_option('svdp_res_paged_cache_version', 1);
+        if ($version < 1) {
+            $version = 1;
+            update_option('svdp_res_paged_cache_version', $version, false);
+        }
+        return $version;
+    }
+
+    /**
+     * Invalidate paged resource list cache keys.
+     *
+     * @return void
+     */
+    public static function bump_paged_cache_version() {
+        $next = self::get_paged_cache_version() + 1;
+        update_option('svdp_res_paged_cache_version', $next, false);
     }
 
     /**
@@ -373,6 +398,8 @@ class Resources_Manager {
             return false;
         }
 
+        self::bump_paged_cache_version();
+
         return $wpdb->insert_id;
     }
 
@@ -396,6 +423,10 @@ class Resources_Manager {
             array('%d')
         );
 
+        if ($result !== false && (int) $result > 0) {
+            self::bump_paged_cache_version();
+        }
+
         return $result !== false;
     }
 
@@ -417,6 +448,10 @@ class Resources_Manager {
             array('%s', '%s', '%d'),
             array('%d')
         );
+
+        if ($result !== false && (int) $result > 0) {
+            self::bump_paged_cache_version();
+        }
 
         return $result !== false;
     }

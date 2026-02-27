@@ -17,6 +17,7 @@ class Monday_Resources_Admin {
         add_action('admin_post_delete_resource', array($this, 'delete_resource'));
         add_action('admin_post_save_resource', array($this, 'save_resource'));
         add_action('admin_post_bulk_action_resources', array($this, 'bulk_action_resources'));
+        add_action('admin_post_bulk_edit_resources', array($this, 'bulk_edit_resources'));
         add_action('admin_post_rollback_taxonomy_import', array($this, 'rollback_taxonomy_import'));
 
         // Issue and submission actions
@@ -538,6 +539,16 @@ class Monday_Resources_Admin {
 
         // Get verification stats
         $stats = Resources_Manager::get_verification_stats();
+        $bulk_edit_mode = isset($_GET['bulk_edit']) && $_GET['bulk_edit'] === '1';
+        $bulk_edit_ids = array();
+        if ($bulk_edit_mode) {
+            $bulk_edit_token = isset($_GET['bulk_token']) ? sanitize_key(wp_unslash($_GET['bulk_token'])) : '';
+            if ($bulk_edit_token !== '') {
+                $bulk_edit_ids = $this->load_bulk_edit_selection($bulk_edit_token);
+            } else {
+                $bulk_edit_ids = $this->parse_resource_ids_input(isset($_GET['bulk_ids']) ? wp_unslash($_GET['bulk_ids']) : '');
+            }
+        }
         ?>
         <div class="wrap">
             <h1 class="wp-heading-inline">Community Resources</h1>
@@ -545,15 +556,48 @@ class Monday_Resources_Admin {
             <button type="button" class="page-title-action" id="export-resources-btn" style="margin-left: 5px;">Export Resources</button>
             <hr class="wp-header-end">
 
-            <?php if (isset($_GET['deleted']) && $_GET['deleted'] == '1'): ?>
+            <?php if (isset($_GET['deleted']) && (int) $_GET['deleted'] > 0): ?>
+                <?php $deleted_count = (int) $_GET['deleted']; ?>
                 <div class="notice notice-success is-dismissible">
-                    <p>Resource deleted successfully.</p>
+                    <p>
+                        <?php if ($deleted_count === 1): ?>
+                            Resource deleted successfully.
+                        <?php else: ?>
+                            <?php echo esc_html((string) $deleted_count); ?> resources deleted successfully.
+                        <?php endif; ?>
+                    </p>
                 </div>
             <?php endif; ?>
 
             <?php if (isset($_GET['saved']) && $_GET['saved'] == '1'): ?>
                 <div class="notice notice-success is-dismissible">
                     <p>Resource saved successfully.</p>
+                </div>
+            <?php endif; ?>
+
+            <?php if (isset($_GET['bulk_edit_error']) && $_GET['bulk_edit_error'] !== ''): ?>
+                <?php $bulk_edit_error = sanitize_text_field(wp_unslash($_GET['bulk_edit_error'])); ?>
+                <div class="notice notice-error is-dismissible">
+                    <p><?php echo esc_html($bulk_edit_error); ?></p>
+                </div>
+            <?php endif; ?>
+
+            <?php if (isset($_GET['bulk_edited'])): ?>
+                <?php
+                $bulk_edited = max(0, (int) $_GET['bulk_edited']);
+                $bulk_failed = isset($_GET['bulk_failed']) ? max(0, (int) $_GET['bulk_failed']) : 0;
+                $bulk_skipped = isset($_GET['bulk_skipped']) ? max(0, (int) $_GET['bulk_skipped']) : 0;
+                $bulk_unchanged = isset($_GET['bulk_unchanged']) ? max(0, (int) $_GET['bulk_unchanged']) : 0;
+                $notice_class = ($bulk_failed > 0) ? 'notice-warning' : 'notice-success';
+                ?>
+                <div class="notice <?php echo esc_attr($notice_class); ?> is-dismissible">
+                    <p>
+                        Bulk edit complete.
+                        Updated: <strong><?php echo esc_html((string) $bulk_edited); ?></strong>,
+                        failed: <strong><?php echo esc_html((string) $bulk_failed); ?></strong>,
+                        skipped: <strong><?php echo esc_html((string) $bulk_skipped); ?></strong>,
+                        unchanged: <strong><?php echo esc_html((string) $bulk_unchanged); ?></strong>.
+                    </p>
                 </div>
             <?php endif; ?>
 
@@ -604,6 +648,16 @@ class Monday_Resources_Admin {
                 </p>
             </form>
 
+            <?php if ($bulk_edit_mode): ?>
+                <?php if (empty($bulk_edit_ids)): ?>
+                    <div class="notice notice-error">
+                        <p>Select at least one resource before starting bulk edit.</p>
+                    </div>
+                <?php else: ?>
+                    <?php $this->render_bulk_edit_panel($bulk_edit_ids); ?>
+                <?php endif; ?>
+            <?php endif; ?>
+
             <!-- Bulk Actions -->
             <form method="post" action="<?php echo admin_url('admin-post.php'); ?>">
                 <input type="hidden" name="action" value="bulk_action_resources">
@@ -613,6 +667,7 @@ class Monday_Resources_Admin {
                     <div class="alignleft actions bulkactions">
                         <select name="bulk_action">
                             <option value="">Bulk Actions</option>
+                            <option value="bulk_edit">Bulk Edit</option>
                             <option value="delete">Delete</option>
                         </select>
                         <input type="submit" class="button action" value="Apply">
@@ -2285,8 +2340,37 @@ class Monday_Resources_Admin {
 
         check_admin_referer('bulk_action_resources');
 
-        $bulk_action = isset($_POST['bulk_action']) ? sanitize_text_field($_POST['bulk_action']) : '';
-        $resource_ids = isset($_POST['resource_ids']) ? array_map('intval', $_POST['resource_ids']) : array();
+        $bulk_action = isset($_POST['bulk_action']) ? sanitize_text_field(wp_unslash($_POST['bulk_action'])) : '';
+        $resource_ids = $this->parse_resource_ids_input(isset($_POST['resource_ids']) ? wp_unslash($_POST['resource_ids']) : array());
+
+        if ($bulk_action === 'bulk_edit') {
+            if (empty($resource_ids)) {
+                $redirect_url = add_query_arg(
+                    array(
+                        'page' => 'monday-resources-manage',
+                        'bulk_edit_error' => 'Select at least one resource to bulk edit.'
+                    ),
+                    admin_url('admin.php')
+                );
+                wp_redirect($redirect_url);
+                exit;
+            }
+
+            $bulk_token = $this->store_bulk_edit_selection($resource_ids);
+            $redirect_args = array(
+                'page' => 'monday-resources-manage',
+                'bulk_edit' => '1'
+            );
+            if ($bulk_token !== '') {
+                $redirect_args['bulk_token'] = $bulk_token;
+            } else {
+                $redirect_args['bulk_ids'] = implode(',', $resource_ids);
+            }
+
+            $redirect_url = add_query_arg($redirect_args, admin_url('admin.php'));
+            wp_redirect($redirect_url);
+            exit;
+        }
 
         if (empty($bulk_action) || empty($resource_ids)) {
             wp_redirect(admin_url('admin.php?page=monday-resources-manage'));
@@ -2294,13 +2378,1070 @@ class Monday_Resources_Admin {
         }
 
         if ($bulk_action === 'delete') {
+            $deleted_count = 0;
             foreach ($resource_ids as $id) {
-                Resources_Manager::delete_resource($id);
+                if (Resources_Manager::delete_resource($id)) {
+                    $deleted_count++;
+                }
+            }
+
+            wp_redirect(add_query_arg('deleted', $deleted_count, admin_url('admin.php?page=monday-resources-manage')));
+            exit;
+        }
+
+        wp_redirect(admin_url('admin.php?page=monday-resources-manage'));
+        exit;
+    }
+
+    /**
+     * Bulk edit resources (preview/apply).
+     *
+     * @return void
+     */
+    public function bulk_edit_resources() {
+        if (!current_user_can($this->get_resource_capability())) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('bulk_edit_resources');
+
+        $resource_ids = $this->parse_resource_ids_input(isset($_POST['resource_ids']) ? wp_unslash($_POST['resource_ids']) : '');
+        if (empty($resource_ids)) {
+            $redirect_url = add_query_arg(
+                array(
+                    'page' => 'monday-resources-manage',
+                    'bulk_edit_error' => 'Select at least one resource before applying bulk edits.'
+                ),
+                admin_url('admin.php')
+            );
+            wp_redirect($redirect_url);
+            exit;
+        }
+
+        $mode = isset($_POST['bulk_edit_mode']) ? sanitize_key(wp_unslash($_POST['bulk_edit_mode'])) : 'preview';
+        $operations = $this->parse_bulk_edit_operations(isset($_POST['bulk_edit']) ? wp_unslash($_POST['bulk_edit']) : array());
+
+        if (is_wp_error($operations)) {
+            $message = $operations->get_error_message();
+            if ($message === '') {
+                $message = 'Bulk edit values were invalid.';
+            }
+            $bulk_token = $this->store_bulk_edit_selection($resource_ids);
+            $redirect_args = array(
+                'page' => 'monday-resources-manage',
+                'bulk_edit' => '1',
+                'bulk_edit_error' => $message
+            );
+            if ($bulk_token !== '') {
+                $redirect_args['bulk_token'] = $bulk_token;
+            } else {
+                $redirect_args['bulk_ids'] = implode(',', $resource_ids);
+            }
+
+            $redirect_url = add_query_arg(
+                $redirect_args,
+                admin_url('admin.php')
+            );
+            wp_redirect($redirect_url);
+            exit;
+        }
+
+        $plan = $this->build_bulk_edit_plan($resource_ids, $operations);
+
+        if ($mode === 'apply') {
+            $updated_count = 0;
+            $failed_count = 0;
+
+            foreach ($plan['updates'] as $update_row) {
+                $resource_id = isset($update_row['id']) ? (int) $update_row['id'] : 0;
+                $data = isset($update_row['data']) && is_array($update_row['data']) ? $update_row['data'] : array();
+                if ($resource_id <= 0 || empty($data)) {
+                    continue;
+                }
+
+                $saved = Resources_Manager::update_resource($resource_id, $data);
+                if ($saved) {
+                    $updated_count++;
+                } else {
+                    $failed_count++;
+                }
+            }
+
+            $redirect_url = add_query_arg(
+                array(
+                    'page' => 'monday-resources-manage',
+                    'bulk_edited' => $updated_count,
+                    'bulk_failed' => $failed_count,
+                    'bulk_skipped' => count($plan['missing']) + count($plan['skipped']),
+                    'bulk_unchanged' => count($plan['unchanged'])
+                ),
+                admin_url('admin.php')
+            );
+            wp_redirect($redirect_url);
+            exit;
+        }
+
+        $this->render_bulk_edit_preview_page($resource_ids, $operations, $plan);
+    }
+
+    /**
+     * Parse resource IDs from an array or CSV list.
+     *
+     * @param mixed $raw_ids
+     * @return int[]
+     */
+    private function parse_resource_ids_input($raw_ids) {
+        $ids = array();
+        if (is_array($raw_ids)) {
+            $ids = $raw_ids;
+        } elseif (is_string($raw_ids)) {
+            $ids = explode(',', $raw_ids);
+        }
+
+        $parsed = array();
+        foreach ($ids as $id) {
+            $value = (int) $id;
+            if ($value > 0) {
+                $parsed[$value] = $value;
             }
         }
 
-        wp_redirect(add_query_arg('deleted', count($resource_ids), admin_url('admin.php?page=monday-resources-manage')));
+        return array_values($parsed);
+    }
+
+    /**
+     * Persist selected bulk-edit resource IDs in a short-lived token.
+     *
+     * @param array $resource_ids
+     * @return string
+     */
+    private function store_bulk_edit_selection($resource_ids) {
+        $resource_ids = $this->parse_resource_ids_input($resource_ids);
+        if (empty($resource_ids)) {
+            return '';
+        }
+
+        $token = wp_generate_password(20, false, false);
+        if ($token === '') {
+            return '';
+        }
+        $token = strtolower($token);
+
+        set_transient('svdp_bulk_edit_selection_' . $token, $resource_ids, 15 * MINUTE_IN_SECONDS);
+        return $token;
+    }
+
+    /**
+     * Load selected bulk-edit IDs from a token.
+     *
+     * @param string $token
+     * @return array
+     */
+    private function load_bulk_edit_selection($token) {
+        $token = strtolower((string) $token);
+        $token = preg_replace('/[^a-z0-9]/', '', $token);
+        if ($token === '') {
+            return array();
+        }
+
+        $ids = get_transient('svdp_bulk_edit_selection_' . $token);
+        if (!is_array($ids)) {
+            return array();
+        }
+
+        return $this->parse_resource_ids_input($ids);
+    }
+
+    /**
+     * Bulk edit field definitions.
+     *
+     * @return array
+     */
+    private function get_bulk_edit_field_definitions() {
+        $service_area_terms = $this->get_service_area_terms();
+        $services_offered_terms = $this->get_services_offered_terms();
+        $provider_type_terms = $this->get_provider_type_terms();
+
+        $conference_map = array();
+        foreach ((array) get_option('resource_conference_options', array()) as $option) {
+            $clean = sanitize_text_field((string) $option);
+            if ($clean !== '') {
+                $conference_map[$clean] = $clean;
+            }
+        }
+
+        $county_map = array();
+        foreach ((array) get_option('resource_counties_options', array()) as $option) {
+            $clean = sanitize_text_field((string) $option);
+            if ($clean !== '') {
+                $county_map[$clean] = $clean;
+            }
+        }
+
+        $population_map = array();
+        foreach ((array) get_option('resource_target_population_options', array()) as $option) {
+            $clean = sanitize_text_field((string) $option);
+            if ($clean !== '') {
+                $population_map[$clean] = $clean;
+            }
+        }
+
+        $income_map = array();
+        foreach ((array) get_option('resource_income_requirements_options', array()) as $option) {
+            $clean = sanitize_text_field((string) $option);
+            if ($clean !== '') {
+                $income_map[$clean] = $clean;
+            }
+        }
+
+        $wait_time_map = array();
+        foreach ((array) get_option('resource_wait_time_options', array()) as $option) {
+            $clean = sanitize_text_field((string) $option);
+            if ($clean !== '') {
+                $wait_time_map[$clean] = $clean;
+            }
+        }
+
+        return array(
+            'service_area' => array(
+                'label' => 'Service Areas',
+                'type' => 'service_area_multi',
+                'operations' => array(
+                    'set' => 'Set to selected',
+                    'add' => 'Add selected',
+                    'remove' => 'Remove selected'
+                ),
+                'options' => $service_area_terms,
+                'description' => 'Required field. Rows that would end with zero Service Areas are skipped.'
+            ),
+            'services_offered' => array(
+                'label' => 'Services Offered',
+                'type' => 'services_offered_multi',
+                'operations' => array(
+                    'set' => 'Set to selected',
+                    'add' => 'Add selected',
+                    'remove' => 'Remove selected',
+                    'clear' => 'Clear all values'
+                ),
+                'options' => $services_offered_terms
+            ),
+            'provider_type' => array(
+                'label' => 'Provider Type',
+                'type' => 'provider_type_single',
+                'operations' => array(
+                    'set' => 'Set value',
+                    'clear' => 'Clear value'
+                ),
+                'options' => $provider_type_terms
+            ),
+            'geography' => array(
+                'label' => 'Conferences',
+                'type' => 'csv_multi',
+                'operations' => array(
+                    'set' => 'Set to selected',
+                    'add' => 'Add selected',
+                    'remove' => 'Remove selected',
+                    'clear' => 'Clear all values'
+                ),
+                'options' => $conference_map
+            ),
+            'counties_served' => array(
+                'label' => 'Counties Served',
+                'type' => 'csv_multi',
+                'operations' => array(
+                    'set' => 'Set to selected',
+                    'add' => 'Add selected',
+                    'remove' => 'Remove selected',
+                    'clear' => 'Clear all values'
+                ),
+                'options' => $county_map
+            ),
+            'target_population' => array(
+                'label' => 'Target Population',
+                'type' => 'csv_multi',
+                'operations' => array(
+                    'set' => 'Set to selected',
+                    'add' => 'Add selected',
+                    'remove' => 'Remove selected',
+                    'clear' => 'Clear all values'
+                ),
+                'options' => $population_map
+            ),
+            'income_requirements' => array(
+                'label' => 'Income Requirements',
+                'type' => 'single_select',
+                'operations' => array(
+                    'set' => 'Set value',
+                    'clear' => 'Clear value'
+                ),
+                'options' => $income_map
+            ),
+            'wait_time' => array(
+                'label' => 'Wait Time',
+                'type' => 'single_select',
+                'operations' => array(
+                    'set' => 'Set value',
+                    'clear' => 'Clear value'
+                ),
+                'options' => $wait_time_map
+            ),
+            'is_svdp' => array(
+                'label' => 'SVdP Resource',
+                'type' => 'boolean',
+                'operations' => array(
+                    'set_yes' => 'Set to Yes',
+                    'set_no' => 'Set to No'
+                )
+            ),
+            'phone' => array(
+                'label' => 'Phone',
+                'type' => 'text',
+                'operations' => array(
+                    'set' => 'Set value',
+                    'clear' => 'Clear value'
+                )
+            ),
+            'email' => array(
+                'label' => 'Email',
+                'type' => 'email',
+                'operations' => array(
+                    'set' => 'Set value',
+                    'clear' => 'Clear value'
+                )
+            ),
+            'physical_address' => array(
+                'label' => 'Address',
+                'type' => 'textarea',
+                'operations' => array(
+                    'set' => 'Set value',
+                    'clear' => 'Clear value'
+                )
+            ),
+            'website' => array(
+                'label' => 'Website',
+                'type' => 'url',
+                'operations' => array(
+                    'set' => 'Set value',
+                    'clear' => 'Clear value'
+                )
+            )
+        );
+    }
+
+    /**
+     * Render bulk edit panel on the manage screen.
+     *
+     * @param int[] $resource_ids
+     * @return void
+     */
+    private function render_bulk_edit_panel($resource_ids) {
+        $definitions = $this->get_bulk_edit_field_definitions();
+        $selected_count = count($resource_ids);
+        ?>
+        <div style="background: #fff; padding: 18px; margin: 15px 0; border: 1px solid #ccd0d4; border-radius: 4px;">
+            <h2 style="margin-top: 0;">Bulk Edit Selected Resources</h2>
+            <p style="margin-top: 0;">
+                Selected resources: <strong><?php echo esc_html((string) $selected_count); ?></strong>.
+                Configure only the fields you want to change.
+            </p>
+
+            <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                <input type="hidden" name="action" value="bulk_edit_resources">
+                <input type="hidden" name="resource_ids" value="<?php echo esc_attr(implode(',', $resource_ids)); ?>">
+                <?php wp_nonce_field('bulk_edit_resources'); ?>
+
+                <table class="form-table" role="presentation">
+                    <tbody>
+                        <?php foreach ($definitions as $field => $definition): ?>
+                            <tr>
+                                <th scope="row" style="width: 220px;"><?php echo esc_html($definition['label']); ?></th>
+                                <td>
+                                    <select name="bulk_edit[<?php echo esc_attr($field); ?>][operation]" style="min-width: 240px;">
+                                        <option value="">Do not change</option>
+                                        <?php foreach ($definition['operations'] as $operation_key => $operation_label): ?>
+                                            <option value="<?php echo esc_attr($operation_key); ?>"><?php echo esc_html($operation_label); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+
+                                    <?php if (in_array($definition['type'], array('service_area_multi', 'services_offered_multi', 'csv_multi'), true)): ?>
+                                        <div style="max-height: 180px; overflow-y: auto; border: 1px solid #ddd; margin-top: 10px; padding: 10px; background: #f9f9f9; max-width: 620px;">
+                                            <?php if (empty($definition['options'])): ?>
+                                                <p style="margin: 0;">No options available.</p>
+                                            <?php else: ?>
+                                                <?php foreach ($definition['options'] as $option_value => $option_label): ?>
+                                                    <label style="display: block; margin: 4px 0;">
+                                                        <input type="checkbox"
+                                                            name="bulk_edit[<?php echo esc_attr($field); ?>][values][]"
+                                                            value="<?php echo esc_attr($option_value); ?>">
+                                                        <?php echo esc_html($option_label); ?>
+                                                    </label>
+                                                <?php endforeach; ?>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php elseif (in_array($definition['type'], array('provider_type_single', 'single_select'), true)): ?>
+                                        <div style="margin-top: 10px;">
+                                            <select name="bulk_edit[<?php echo esc_attr($field); ?>][value]" style="min-width: 360px;">
+                                                <option value="">Select value...</option>
+                                                <?php foreach ($definition['options'] as $option_value => $option_label): ?>
+                                                    <option value="<?php echo esc_attr($option_value); ?>"><?php echo esc_html($option_label); ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                    <?php elseif ($definition['type'] === 'text'): ?>
+                                        <div style="margin-top: 10px;">
+                                            <input type="text" class="regular-text" name="bulk_edit[<?php echo esc_attr($field); ?>][value]">
+                                        </div>
+                                    <?php elseif ($definition['type'] === 'email'): ?>
+                                        <div style="margin-top: 10px;">
+                                            <input type="email" class="regular-text" name="bulk_edit[<?php echo esc_attr($field); ?>][value]">
+                                        </div>
+                                    <?php elseif ($definition['type'] === 'url'): ?>
+                                        <div style="margin-top: 10px;">
+                                            <input type="url" class="regular-text" name="bulk_edit[<?php echo esc_attr($field); ?>][value]">
+                                        </div>
+                                    <?php elseif ($definition['type'] === 'textarea'): ?>
+                                        <div style="margin-top: 10px;">
+                                            <textarea class="large-text" rows="3" name="bulk_edit[<?php echo esc_attr($field); ?>][value]"></textarea>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($definition['description'])): ?>
+                                        <p class="description" style="margin-top: 8px;"><?php echo esc_html($definition['description']); ?></p>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+
+                <p class="submit" style="margin-bottom: 0;">
+                    <button type="submit" class="button button-primary" name="bulk_edit_mode" value="preview">Preview Changes</button>
+                    <a href="<?php echo esc_url(admin_url('admin.php?page=monday-resources-manage')); ?>" class="button">Cancel</a>
+                </p>
+            </form>
+        </div>
+        <?php
+    }
+
+    /**
+     * Parse and validate requested bulk edit operations.
+     *
+     * @param array $payload
+     * @return array|WP_Error
+     */
+    private function parse_bulk_edit_operations($payload) {
+        if (!is_array($payload)) {
+            return new WP_Error('bulk_edit_invalid', 'Bulk edit payload is missing.');
+        }
+
+        $definitions = $this->get_bulk_edit_field_definitions();
+        $operations = array();
+        $errors = array();
+
+        foreach ($definitions as $field => $definition) {
+            $field_payload = (isset($payload[$field]) && is_array($payload[$field])) ? $payload[$field] : array();
+            $operation = isset($field_payload['operation']) ? sanitize_key((string) $field_payload['operation']) : '';
+            if ($operation === '' || $operation === 'none') {
+                continue;
+            }
+
+            if (!isset($definition['operations'][$operation])) {
+                $errors[] = 'Invalid operation selected for ' . $definition['label'] . '.';
+                continue;
+            }
+
+            $entry = array(
+                'field' => $field,
+                'label' => $definition['label'],
+                'type' => $definition['type'],
+                'operation' => $operation
+            );
+
+            if ($definition['type'] === 'service_area_multi') {
+                $values = isset($field_payload['values']) ? (array) $field_payload['values'] : array();
+                $values = Resource_Taxonomy::normalize_service_area_slugs($values);
+                if (in_array($operation, array('set', 'add', 'remove'), true) && empty($values)) {
+                    $errors[] = 'Select at least one Service Area for "' . $definition['operations'][$operation] . '".';
+                    continue;
+                }
+                $entry['values'] = $values;
+            } elseif ($definition['type'] === 'services_offered_multi') {
+                $values = isset($field_payload['values']) ? (array) $field_payload['values'] : array();
+                $values = Resource_Taxonomy::normalize_services_offered_slugs($values);
+                if (in_array($operation, array('set', 'add', 'remove'), true) && empty($values)) {
+                    $errors[] = 'Select at least one Services Offered value for "' . $definition['operations'][$operation] . '".';
+                    continue;
+                }
+                $entry['values'] = $values;
+            } elseif ($definition['type'] === 'csv_multi') {
+                $values = isset($field_payload['values']) ? (array) $field_payload['values'] : array();
+                $entry['values'] = $this->sanitize_csv_list_field_values(
+                    $values,
+                    isset($definition['options']) ? array_keys($definition['options']) : array()
+                );
+                if (in_array($operation, array('set', 'add', 'remove'), true) && empty($entry['values'])) {
+                    $errors[] = 'Select at least one value for ' . $definition['label'] . '.';
+                    continue;
+                }
+            } elseif ($definition['type'] === 'provider_type_single') {
+                if ($operation === 'clear') {
+                    $entry['value'] = '';
+                } else {
+                    $raw_value = isset($field_payload['value']) ? (string) $field_payload['value'] : '';
+                    $value = Resource_Taxonomy::normalize_provider_type_slug($raw_value);
+                    if ($value === '') {
+                        $errors[] = 'Select a valid Provider Type value.';
+                        continue;
+                    }
+                    $entry['value'] = $value;
+                }
+            } elseif ($definition['type'] === 'single_select') {
+                if ($operation === 'clear') {
+                    $entry['value'] = '';
+                } else {
+                    $value = isset($field_payload['value']) ? sanitize_text_field((string) $field_payload['value']) : '';
+                    if ($value === '') {
+                        $errors[] = 'Select a value for ' . $definition['label'] . '.';
+                        continue;
+                    }
+                    if (!empty($definition['options']) && !isset($definition['options'][$value])) {
+                        $errors[] = 'Invalid value selected for ' . $definition['label'] . '.';
+                        continue;
+                    }
+                    $entry['value'] = $value;
+                }
+            } elseif ($definition['type'] === 'text') {
+                if ($operation === 'clear') {
+                    $entry['value'] = '';
+                } else {
+                    $value = sanitize_text_field(isset($field_payload['value']) ? (string) $field_payload['value'] : '');
+                    if ($value === '') {
+                        $errors[] = 'Enter a value for ' . $definition['label'] . ' or choose "Clear value".';
+                        continue;
+                    }
+                    $entry['value'] = $value;
+                }
+            } elseif ($definition['type'] === 'textarea') {
+                if ($operation === 'clear') {
+                    $entry['value'] = '';
+                } else {
+                    $value = sanitize_textarea_field(isset($field_payload['value']) ? (string) $field_payload['value'] : '');
+                    if ($value === '') {
+                        $errors[] = 'Enter a value for ' . $definition['label'] . ' or choose "Clear value".';
+                        continue;
+                    }
+                    $entry['value'] = $value;
+                }
+            } elseif ($definition['type'] === 'email') {
+                if ($operation === 'clear') {
+                    $entry['value'] = '';
+                } else {
+                    $raw_value = isset($field_payload['value']) ? (string) $field_payload['value'] : '';
+                    $value = sanitize_email($raw_value);
+                    if ($raw_value === '') {
+                        $errors[] = 'Enter an email value or choose "Clear value".';
+                        continue;
+                    }
+                    if ($value === '') {
+                        $errors[] = 'Invalid email value for Email.';
+                        continue;
+                    }
+                    $entry['value'] = $value;
+                }
+            } elseif ($definition['type'] === 'url') {
+                if ($operation === 'clear') {
+                    $entry['value'] = '';
+                } else {
+                    $raw_value = isset($field_payload['value']) ? (string) $field_payload['value'] : '';
+                    $value = esc_url_raw($raw_value);
+                    if ($raw_value === '') {
+                        $errors[] = 'Enter a website URL or choose "Clear value".';
+                        continue;
+                    }
+                    if ($value === '') {
+                        $errors[] = 'Invalid URL value for Website.';
+                        continue;
+                    }
+                    $entry['value'] = $value;
+                }
+            } elseif ($definition['type'] === 'boolean') {
+                if (!in_array($operation, array('set_yes', 'set_no'), true)) {
+                    $errors[] = 'Select either "Set to Yes" or "Set to No" for SVdP Resource.';
+                    continue;
+                }
+            }
+
+            $operations[$field] = $entry;
+        }
+
+        if (empty($operations)) {
+            $errors[] = 'Choose at least one field operation before previewing.';
+        }
+
+        if (!empty($errors)) {
+            return new WP_Error('bulk_edit_validation', implode(' ', $errors));
+        }
+
+        return $operations;
+    }
+
+    /**
+     * Normalize selected values for comma-separated list fields.
+     *
+     * @param array $raw_values
+     * @param array $allowed_values
+     * @return array
+     */
+    private function sanitize_csv_list_field_values($raw_values, $allowed_values = array()) {
+        $allowed_map = array();
+        foreach ((array) $allowed_values as $allowed_value) {
+            $clean_allowed = sanitize_text_field((string) $allowed_value);
+            if ($clean_allowed !== '') {
+                $allowed_map[$clean_allowed] = true;
+            }
+        }
+
+        $normalized = array();
+        foreach ((array) $raw_values as $raw_value) {
+            $clean = sanitize_text_field((string) $raw_value);
+            if ($clean === '') {
+                continue;
+            }
+            if (!empty($allowed_map) && !isset($allowed_map[$clean])) {
+                continue;
+            }
+            $normalized[$clean] = $clean;
+        }
+
+        $values = array_values($normalized);
+        sort($values);
+        return $values;
+    }
+
+    /**
+     * Build a per-resource bulk edit plan.
+     *
+     * @param int[] $resource_ids
+     * @param array $operations
+     * @return array
+     */
+    private function build_bulk_edit_plan($resource_ids, $operations) {
+        $resources = Resources_Manager::get_resources_by_ids($resource_ids, false);
+        $resource_map = array();
+        foreach ((array) $resources as $resource) {
+            $resource_id = isset($resource['id']) ? (int) $resource['id'] : 0;
+            if ($resource_id > 0) {
+                $resource_map[$resource_id] = $resource;
+            }
+        }
+
+        $service_area_terms = $this->get_service_area_terms();
+        $services_offered_terms = $this->get_services_offered_terms();
+
+        $plan = array(
+            'requested_count' => count($resource_ids),
+            'found_count' => count($resource_map),
+            'missing' => array(),
+            'updates' => array(),
+            'unchanged' => array(),
+            'skipped' => array()
+        );
+
+        foreach ($resource_ids as $resource_id) {
+            $resource_id = (int) $resource_id;
+            if (!isset($resource_map[$resource_id])) {
+                $plan['missing'][] = array(
+                    'id' => $resource_id,
+                    'name' => 'Resource #' . $resource_id,
+                    'reason' => 'Resource not found or no longer active.'
+                );
+                continue;
+            }
+
+            $resource = $resource_map[$resource_id];
+            $resource_name = isset($resource['resource_name']) ? (string) $resource['resource_name'] : ('Resource #' . $resource_id);
+            $row_errors = array();
+            $update_data = array();
+            $changed_fields = array();
+
+            foreach ($operations as $field => $operation) {
+                $op = isset($operation['operation']) ? $operation['operation'] : '';
+
+                if ($field === 'service_area') {
+                    $existing_values = Resource_Taxonomy::normalize_service_area_slugs(
+                        Resource_Taxonomy::parse_pipe_slugs((string) $resource['service_area'])
+                    );
+                    if (empty($existing_values) && !empty($resource['primary_service_type'])) {
+                        $existing_values = Resource_Taxonomy::normalize_service_area_slugs((string) $resource['primary_service_type']);
+                    }
+
+                    $selected_values = isset($operation['values']) ? (array) $operation['values'] : array();
+                    $new_values = $this->apply_bulk_edit_set_operation($existing_values, $op, $selected_values);
+                    if (empty($new_values)) {
+                        $row_errors[] = 'Service Areas cannot be empty after update.';
+                        continue;
+                    }
+
+                    $new_pipe = Resource_Taxonomy::to_pipe_slug_string($new_values);
+                    if ($new_pipe !== (string) $resource['service_area']) {
+                        $update_data['service_area'] = $new_pipe;
+                        $changed_fields['service_area'] = true;
+                    }
+
+                    $first_slug = reset($new_values);
+                    $legacy_primary = ($first_slug !== false && isset($service_area_terms[$first_slug]))
+                        ? $service_area_terms[$first_slug]
+                        : '';
+                    if ($legacy_primary !== (string) $resource['primary_service_type']) {
+                        $update_data['primary_service_type'] = $legacy_primary;
+                        $changed_fields['primary_service_type'] = true;
+                    }
+                    continue;
+                }
+
+                if ($field === 'services_offered') {
+                    $existing_values = Resource_Taxonomy::normalize_services_offered_slugs(
+                        Resource_Taxonomy::parse_pipe_slugs((string) $resource['services_offered'])
+                    );
+                    $selected_values = isset($operation['values']) ? (array) $operation['values'] : array();
+                    $new_values = $this->apply_bulk_edit_set_operation($existing_values, $op, $selected_values);
+
+                    $new_pipe = Resource_Taxonomy::to_pipe_slug_string($new_values);
+                    if ($new_pipe !== (string) $resource['services_offered']) {
+                        $update_data['services_offered'] = $new_pipe;
+                        $changed_fields['services_offered'] = true;
+                    }
+
+                    $legacy_labels = array();
+                    foreach ($new_values as $slug) {
+                        if (isset($services_offered_terms[$slug])) {
+                            $legacy_labels[] = $services_offered_terms[$slug];
+                        }
+                    }
+                    $legacy_secondary = implode(', ', $legacy_labels);
+                    if ($legacy_secondary !== (string) $resource['secondary_service_type']) {
+                        $update_data['secondary_service_type'] = $legacy_secondary;
+                        $changed_fields['secondary_service_type'] = true;
+                    }
+                    continue;
+                }
+
+                if ($field === 'provider_type') {
+                    $new_value = isset($operation['value']) ? (string) $operation['value'] : '';
+                    if ($new_value !== (string) $resource['provider_type']) {
+                        $update_data['provider_type'] = $new_value;
+                        $changed_fields['provider_type'] = true;
+                    }
+                    continue;
+                }
+
+                if (in_array($field, array('geography', 'counties_served', 'target_population'), true)) {
+                    $existing_values = $this->parse_stored_csv_values(isset($resource[$field]) ? $resource[$field] : '');
+                    $selected_values = isset($operation['values']) ? (array) $operation['values'] : array();
+                    $new_values = $this->apply_bulk_edit_set_operation($existing_values, $op, $selected_values);
+
+                    if ($new_values !== $existing_values) {
+                        $update_data[$field] = implode(', ', $new_values);
+                        $changed_fields[$field] = true;
+                    }
+                    continue;
+                }
+
+                if (in_array($field, array('income_requirements', 'wait_time'), true)) {
+                    $new_value = isset($operation['value']) ? (string) $operation['value'] : '';
+                    $current_value = sanitize_text_field(isset($resource[$field]) ? (string) $resource[$field] : '');
+                    if ($new_value !== $current_value) {
+                        $update_data[$field] = $new_value;
+                        $changed_fields[$field] = true;
+                    }
+                    continue;
+                }
+
+                if ($field === 'is_svdp') {
+                    $new_value = ($op === 'set_yes') ? 1 : 0;
+                    if ((int) $resource['is_svdp'] !== $new_value) {
+                        $update_data['is_svdp'] = $new_value;
+                        $changed_fields['is_svdp'] = true;
+                    }
+                    continue;
+                }
+
+                if ($field === 'phone') {
+                    $new_value = isset($operation['value']) ? (string) $operation['value'] : '';
+                    $current_value = sanitize_text_field(isset($resource['phone']) ? (string) $resource['phone'] : '');
+                    if ($new_value !== $current_value) {
+                        $update_data['phone'] = $new_value;
+                        $changed_fields['phone'] = true;
+                    }
+                    continue;
+                }
+
+                if ($field === 'email') {
+                    $new_value = isset($operation['value']) ? (string) $operation['value'] : '';
+                    $current_value = sanitize_email(isset($resource['email']) ? (string) $resource['email'] : '');
+                    if ($new_value !== $current_value) {
+                        $update_data['email'] = $new_value;
+                        $changed_fields['email'] = true;
+                    }
+                    continue;
+                }
+
+                if ($field === 'website') {
+                    $new_value = isset($operation['value']) ? (string) $operation['value'] : '';
+                    $current_value = esc_url_raw(isset($resource['website']) ? (string) $resource['website'] : '');
+                    if ($new_value !== $current_value) {
+                        $update_data['website'] = $new_value;
+                        $changed_fields['website'] = true;
+                    }
+                    continue;
+                }
+
+                if ($field === 'physical_address') {
+                    $new_value = isset($operation['value']) ? (string) $operation['value'] : '';
+                    $current_value = sanitize_textarea_field(isset($resource['physical_address']) ? (string) $resource['physical_address'] : '');
+                    if ($new_value !== $current_value) {
+                        $update_data['physical_address'] = $new_value;
+                        $changed_fields['physical_address'] = true;
+                    }
+                }
+            }
+
+            if (!empty($row_errors)) {
+                $plan['skipped'][] = array(
+                    'id' => $resource_id,
+                    'name' => $resource_name,
+                    'reason' => implode(' ', $row_errors)
+                );
+                continue;
+            }
+
+            if (empty($update_data)) {
+                $plan['unchanged'][] = array(
+                    'id' => $resource_id,
+                    'name' => $resource_name
+                );
+                continue;
+            }
+
+            $plan['updates'][] = array(
+                'id' => $resource_id,
+                'name' => $resource_name,
+                'data' => $update_data,
+                'changed_fields' => array_keys($changed_fields)
+            );
+        }
+
+        return $plan;
+    }
+
+    /**
+     * Parse stored comma-separated values into a normalized array.
+     *
+     * @param string $stored_value
+     * @return array
+     */
+    private function parse_stored_csv_values($stored_value) {
+        $parts = array_map('trim', explode(',', (string) $stored_value));
+        $normalized = array();
+        foreach ($parts as $part) {
+            $clean = sanitize_text_field((string) $part);
+            if ($clean !== '') {
+                $normalized[$clean] = $clean;
+            }
+        }
+        $values = array_values($normalized);
+        sort($values);
+        return $values;
+    }
+
+    /**
+     * Apply bulk add/remove/set/clear operation to a value list.
+     *
+     * @param array $existing_values
+     * @param string $operation
+     * @param array $selected_values
+     * @return array
+     */
+    private function apply_bulk_edit_set_operation($existing_values, $operation, $selected_values) {
+        $existing = array_values(array_unique(array_filter(array_map('strval', (array) $existing_values))));
+        $selected = array_values(array_unique(array_filter(array_map('strval', (array) $selected_values))));
+        sort($existing);
+        sort($selected);
+
+        if ($operation === 'set') {
+            return $selected;
+        }
+        if ($operation === 'add') {
+            $merged = array_values(array_unique(array_merge($existing, $selected)));
+            sort($merged);
+            return $merged;
+        }
+        if ($operation === 'remove') {
+            $remaining = array_values(array_diff($existing, $selected));
+            sort($remaining);
+            return $remaining;
+        }
+        if ($operation === 'clear') {
+            return array();
+        }
+
+        return $existing;
+    }
+
+    /**
+     * Render bulk edit preview screen.
+     *
+     * @param array $resource_ids
+     * @param array $operations
+     * @param array $plan
+     * @return void
+     */
+    private function render_bulk_edit_preview_page($resource_ids, $operations, $plan) {
+        $requested_count = isset($plan['requested_count']) ? (int) $plan['requested_count'] : 0;
+        $found_count = isset($plan['found_count']) ? (int) $plan['found_count'] : 0;
+        $update_count = isset($plan['updates']) ? count($plan['updates']) : 0;
+        $unchanged_count = isset($plan['unchanged']) ? count($plan['unchanged']) : 0;
+        $missing_count = isset($plan['missing']) ? count($plan['missing']) : 0;
+        $skipped_count = isset($plan['skipped']) ? count($plan['skipped']) : 0;
+        $total_skipped = $missing_count + $skipped_count;
+        $bulk_token = $this->store_bulk_edit_selection($resource_ids);
+        $back_args = array(
+            'page' => 'monday-resources-manage',
+            'bulk_edit' => '1'
+        );
+        if ($bulk_token !== '') {
+            $back_args['bulk_token'] = $bulk_token;
+        } else {
+            $back_args['bulk_ids'] = implode(',', $resource_ids);
+        }
+        $back_url = add_query_arg($back_args, admin_url('admin.php'));
+        ?>
+        <div class="wrap">
+            <h1>Bulk Edit Preview</h1>
+            <p>Review the impact before applying updates.</p>
+
+            <table class="widefat striped" style="max-width: 760px; margin-top: 16px;">
+                <tbody>
+                    <tr><th style="width: 240px;">Selected</th><td><?php echo esc_html((string) $requested_count); ?></td></tr>
+                    <tr><th>Found and active</th><td><?php echo esc_html((string) $found_count); ?></td></tr>
+                    <tr><th>Will update</th><td><?php echo esc_html((string) $update_count); ?></td></tr>
+                    <tr><th>Unchanged</th><td><?php echo esc_html((string) $unchanged_count); ?></td></tr>
+                    <tr><th>Skipped</th><td><?php echo esc_html((string) $total_skipped); ?></td></tr>
+                </tbody>
+            </table>
+
+            <?php if ($update_count > 0): ?>
+                <h2 style="margin-top: 24px;">Rows To Update</h2>
+                <table class="widefat striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 80px;">ID</th>
+                            <th>Resource</th>
+                            <th>Changed Fields</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($plan['updates'] as $update_row): ?>
+                            <?php
+                            $changed_labels = array();
+                            foreach ((array) $update_row['changed_fields'] as $changed_field) {
+                                $changed_labels[] = $this->format_bulk_edit_field_label((string) $changed_field);
+                            }
+                            ?>
+                            <tr>
+                                <td><?php echo esc_html((string) $update_row['id']); ?></td>
+                                <td><?php echo esc_html((string) $update_row['name']); ?></td>
+                                <td><?php echo esc_html(implode(', ', $changed_labels)); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
+            <?php if ($total_skipped > 0): ?>
+                <h2 style="margin-top: 24px;">Skipped Rows</h2>
+                <table class="widefat striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 80px;">ID</th>
+                            <th>Resource</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ((array) $plan['missing'] as $missing_row): ?>
+                            <tr>
+                                <td><?php echo esc_html((string) $missing_row['id']); ?></td>
+                                <td><?php echo esc_html((string) $missing_row['name']); ?></td>
+                                <td><?php echo esc_html((string) $missing_row['reason']); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        <?php foreach ((array) $plan['skipped'] as $skipped_row): ?>
+                            <tr>
+                                <td><?php echo esc_html((string) $skipped_row['id']); ?></td>
+                                <td><?php echo esc_html((string) $skipped_row['name']); ?></td>
+                                <td><?php echo esc_html((string) $skipped_row['reason']); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+
+            <div class="submit" style="margin-top: 24px;">
+                <?php if ($update_count > 0): ?>
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display: inline-block; margin-right: 10px;">
+                        <input type="hidden" name="action" value="bulk_edit_resources">
+                        <input type="hidden" name="bulk_edit_mode" value="apply">
+                        <input type="hidden" name="resource_ids" value="<?php echo esc_attr(implode(',', $resource_ids)); ?>">
+                        <?php wp_nonce_field('bulk_edit_resources'); ?>
+                        <?php foreach ($operations as $field => $operation): ?>
+                            <input type="hidden" name="bulk_edit[<?php echo esc_attr($field); ?>][operation]" value="<?php echo esc_attr((string) $operation['operation']); ?>">
+                            <?php if (isset($operation['value'])): ?>
+                                <input type="hidden" name="bulk_edit[<?php echo esc_attr($field); ?>][value]" value="<?php echo esc_attr((string) $operation['value']); ?>">
+                            <?php endif; ?>
+                            <?php if (isset($operation['values']) && is_array($operation['values'])): ?>
+                                <?php foreach ($operation['values'] as $value): ?>
+                                    <input type="hidden" name="bulk_edit[<?php echo esc_attr($field); ?>][values][]" value="<?php echo esc_attr((string) $value); ?>">
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                        <button type="submit" class="button button-primary">Apply Bulk Edit</button>
+                    </form>
+                <?php endif; ?>
+                <a href="<?php echo esc_url($back_url); ?>" class="button">Back to Bulk Edit</a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=monday-resources-manage')); ?>" class="button">Cancel</a>
+            </div>
+        </div>
+        <?php
         exit;
+    }
+
+    /**
+     * Format bulk edit field key into display label.
+     *
+     * @param string $field
+     * @return string
+     */
+    private function format_bulk_edit_field_label($field) {
+        $labels = array(
+            'service_area' => 'Service Areas',
+            'services_offered' => 'Services Offered',
+            'provider_type' => 'Provider Type',
+            'geography' => 'Conferences',
+            'counties_served' => 'Counties Served',
+            'target_population' => 'Target Population',
+            'income_requirements' => 'Income Requirements',
+            'wait_time' => 'Wait Time',
+            'is_svdp' => 'SVdP Resource',
+            'phone' => 'Phone',
+            'email' => 'Email',
+            'website' => 'Website',
+            'physical_address' => 'Address',
+            'primary_service_type' => 'Primary Service Type (Legacy)',
+            'secondary_service_type' => 'Secondary Service Type (Legacy)'
+        );
+
+        return isset($labels[$field]) ? $labels[$field] : ucwords(str_replace('_', ' ', $field));
     }
 
     /**
