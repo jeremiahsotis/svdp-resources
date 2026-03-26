@@ -135,7 +135,7 @@ window.onclick = function(event) {
 
     function setControlsDisabled(disabled) {
         const controls = document.querySelectorAll(
-            '.service-area-tile, #resource-search, #narrow-results-btn, #resources-load-more, #narrow-apply-btn, #narrow-clear-btn, #snapshot-print-btn, #snapshot-email-btn, #snapshot-text-btn'
+            '.service-area-tile, #narrow-results-btn, #resources-load-more, #narrow-apply-btn, #narrow-clear-btn, #snapshot-print-btn, #snapshot-email-btn, #snapshot-text-btn'
         );
         const smsEnabled = typeof mondayResources.smsEnabled === 'boolean' ? mondayResources.smsEnabled : !!mondayResources.twilioEnabled;
 
