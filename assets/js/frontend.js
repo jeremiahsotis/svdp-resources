@@ -168,6 +168,7 @@ window.onclick = function(event) {
         };
 
         let currentRequest = null;
+        let currentRequestToken = 0;
 
         const tiles = document.querySelectorAll('.service-area-tile');
         const searchInput = document.getElementById('resource-search');
@@ -717,10 +718,65 @@ window.onclick = function(event) {
                 });
         }
 
-        function showLoading(isLoading) {
+        function captureSearchFocusState() {
+            if (!searchInput || document.activeElement !== searchInput) {
+                return null;
+            }
+
+            return {
+                value: searchInput.value,
+                selectionStart: typeof searchInput.selectionStart === 'number' ? searchInput.selectionStart : null,
+                selectionEnd: typeof searchInput.selectionEnd === 'number' ? searchInput.selectionEnd : null
+            };
+        }
+
+        function restoreSearchFocus(focusState) {
+            if (!searchInput || !focusState || document.activeElement === searchInput) {
+                return;
+            }
+
+            if (document.activeElement && document.activeElement !== document.body) {
+                return;
+            }
+
+            window.requestAnimationFrame(function() {
+                if (!searchInput || document.activeElement === searchInput) {
+                    return;
+                }
+
+                if (document.activeElement && document.activeElement !== document.body) {
+                    return;
+                }
+
+                try {
+                    searchInput.focus({ preventScroll: true });
+                } catch (error) {
+                    searchInput.focus();
+                }
+
+                if (
+                    focusState.value === searchInput.value &&
+                    focusState.selectionStart !== null &&
+                    focusState.selectionEnd !== null &&
+                    typeof searchInput.setSelectionRange === 'function'
+                ) {
+                    searchInput.setSelectionRange(focusState.selectionStart, focusState.selectionEnd);
+                }
+            });
+        }
+
+        function showLoading(isLoading, options) {
             if (loadingIndicator) {
                 loadingIndicator.classList.toggle('is-visible', isLoading);
             }
+
+            if (options && options.disableControls === false) {
+                if (!isLoading) {
+                    setControlsDisabled(false);
+                }
+                return;
+            }
+
             setControlsDisabled(isLoading);
         }
 
@@ -772,12 +828,15 @@ window.onclick = function(event) {
 
         function performRequest(options) {
             const append = Boolean(options && options.append);
+            const preserveSearchFocus = !append && document.activeElement === searchInput;
+            const searchFocusState = preserveSearchFocus ? captureSearchFocusState() : null;
+            const requestToken = ++currentRequestToken;
 
             if (currentRequest && currentRequest.readyState !== 4) {
                 currentRequest.abort();
             }
 
-            showLoading(true);
+            showLoading(true, { disableControls: !preserveSearchFocus });
 
             const payload = {
                 action: 'filter_resources',
@@ -801,6 +860,10 @@ window.onclick = function(event) {
                 data: payload
             })
                 .done(function(response) {
+                    if (requestToken !== currentRequestToken) {
+                        return;
+                    }
+
                     if (!response || !response.success || !response.data) {
                         return;
                     }
@@ -819,7 +882,13 @@ window.onclick = function(event) {
                     updateLoadMoreVisibility(response.data);
                 })
                 .always(function() {
-                    showLoading(false);
+                    if (requestToken !== currentRequestToken) {
+                        return;
+                    }
+
+                    currentRequest = null;
+                    showLoading(false, { disableControls: !preserveSearchFocus });
+                    restoreSearchFocus(searchFocusState);
                 });
         }
 
