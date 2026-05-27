@@ -130,6 +130,14 @@ class Monday_Resources_Shortcode {
                 overflow-x: hidden;
             }
             .resources-container {
+                --svdp-blue: #0073aa;
+                --svdp-blue-dark: #005f8f;
+                --resource-ink: #111827;
+                --resource-muted: #4b5563;
+                --resource-soft: #f8fafc;
+                --resource-line: #cfd8e3;
+                --resource-line-soft: #e5edf5;
+                --resource-focus: #f7c948;
                 max-width: 1200px;
                 width: 100%;
                 margin: 0 auto;
@@ -137,7 +145,9 @@ class Monday_Resources_Shortcode {
                 box-sizing: border-box;
                 overflow-x: hidden;
                 position: relative;
-                font-size: 16px;
+                font-size: 18px;
+                line-height: 1.45;
+                color: var(--resource-ink);
             }
             .resources-container * {
                 box-sizing: border-box;
@@ -266,9 +276,7 @@ class Monday_Resources_Shortcode {
             .service-area-tile:focus,
             .resources-search input:focus,
             .narrow-results-btn:focus,
-            .load-more-btn:focus,
-            .resource-toggle-button:focus,
-            .resource-report-btn:focus {
+            .load-more-btn:focus {
                 outline: 3px solid rgba(0, 115, 170, 0.35);
                 outline-offset: 1px;
             }
@@ -334,16 +342,18 @@ class Monday_Resources_Shortcode {
                 }
             }
             .svdp-badge {
-                display: inline-block;
-                background-color: #0073aa;
-                color: #fff;
-                padding: 4px 10px;
-                border-radius: 4px;
-                font-size: 0.75em;
-                font-weight: 600;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 10px;
+                display: inline-flex;
+                align-items: center;
+                min-height: 34px;
+                background-color: #eaf6fb;
+                color: #064e6b;
+                border: 2px solid #93c5d8;
+                padding: 6px 12px;
+                border-radius: 999px;
+                font-size: 0.9rem;
+                font-weight: 800;
+                letter-spacing: 0.02em;
+                line-height: 1.2;
             }
             .partner-divider {
                 grid-column: 1 / -1;
@@ -358,102 +368,149 @@ class Monday_Resources_Shortcode {
                 background-color: #f8f9fa;
             }
             .resource-card {
-                border: 1px solid #ddd;
-                border-radius: 8px;
-                padding: 28px;
+                border: 1px solid var(--resource-line);
+                border-left: 8px solid var(--svdp-blue);
+                border-radius: 18px;
                 background: #fff;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-                transition: box-shadow 0.3s ease;
+                box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+                transition: box-shadow 0.2s ease;
                 width: 100%;
                 max-width: 100%;
+                overflow: hidden;
                 overflow-wrap: break-word;
                 word-wrap: break-word;
             }
             .resource-card:hover {
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+                box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
             }
             .resource-card.is-unavailable {
-                opacity: 0.68;
-                background: #f8fafc;
-                border-color: #d7dde6;
+                background: #f9fafb;
+                border-color: #9ca3af;
+                border-left-color: #6b7280;
+            }
+            .resource-card-inner,
+            .card-inner {
+                padding: 28px;
+            }
+            .resource-status-row,
+            .resource-badges {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-bottom: 16px;
             }
             .resource-unavailable-badge {
-                display: inline-block;
-                background: #f3f4f6;
-                color: #374151;
+                display: inline-flex;
+                align-items: center;
+                min-height: 34px;
+                background: #fff4f4;
+                color: #7f1d1d;
+                border: 2px solid #b91c1c;
                 border-radius: 999px;
-                padding: 4px 10px;
-                font-size: 0.75rem;
-                font-weight: 700;
-                margin-bottom: 10px;
+                padding: 6px 12px;
+                font-size: 0.9rem;
+                font-weight: 800;
                 text-transform: uppercase;
-                letter-spacing: 0.4px;
+                letter-spacing: 0.02em;
+                line-height: 1.2;
             }
-            .resource-card h3 {
-                margin: 0 0 5px 0;
-                font-size: 1.3em;
-                color: #333;
-                border-bottom: 2px solid #0073aa;
-                padding-bottom: 10px;
+            .resource-card-header {
+                border-bottom: 4px solid var(--svdp-blue);
+                padding-bottom: 18px;
+                margin-bottom: 22px;
             }
             .resource-organization {
-                margin: 0 0 15px 0;
-                padding-bottom: 10px;
-                font-size: 0.95em;
-                color: #555;
-                font-style: italic;
-                border-bottom: 1px solid #eee;
+                margin: 0 0 8px;
+                padding: 0;
+                border: 0;
+                font-style: normal;
+                font-size: clamp(1.55rem, 1.3rem + 0.7vw, 2rem);
+                line-height: 1.15;
+                color: #1f2937;
+                font-weight: 800;
+            }
+            .resource-card h3,
+            .program-name {
+                margin: 0;
+                padding: 0;
+                border: 0;
+                font-size: clamp(1.85rem, 1.5rem + 1vw, 2.55rem);
+                line-height: 1.08;
+                color: var(--resource-ink);
+                font-weight: 900;
+            }
+            .resource-section {
+                margin-top: 28px;
+            }
+            .resource-card-header + .resource-section {
+                margin-top: 0;
+            }
+            .resource-section-heading {
+                margin: 0 0 14px;
+                padding-bottom: 8px;
+                border-bottom: 2px solid var(--resource-line-soft);
+                font-size: 1.28rem;
+                color: #1f2937;
+                line-height: 1.2;
+            }
+            .resource-field-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 14px;
             }
             .resource-field {
-                margin-bottom: 20px;
+                background: var(--resource-soft);
+                border: 1px solid var(--resource-line-soft);
+                border-radius: 14px;
+                padding: 14px 16px;
+                min-height: 76px;
+                margin: 0;
+            }
+            .resource-field.resource-phone,
+            .resource-field.resource-website {
+                border: 2px solid #b7d9e8;
+                background: #fbfdff;
             }
             .resource-field-label {
-                font-weight: bold;
-                color: #666;
-                font-size: 0.9em;
                 display: block;
                 margin-bottom: 6px;
-                line-height: 1.5;
+                color: #374151;
+                font-size: 0.82rem;
+                font-weight: 900;
+                letter-spacing: 0.05em;
+                text-transform: uppercase;
+                line-height: 1.25;
             }
             .resource-field-value {
-                color: #333;
-                font-size: 1em;
-                line-height: 1.6;
+                color: var(--resource-ink);
+                font-size: 1.08rem;
+                line-height: 1.4;
                 word-wrap: break-word;
                 overflow-wrap: break-word;
                 word-break: break-word;
             }
+            .resource-phone .resource-field-value,
+            .resource-address .resource-field-value {
+                font-size: 1.2rem;
+                font-weight: 750;
+            }
             .resource-field-value a {
-                color: #0073aa;
-                text-decoration: none;
-                word-break: break-all;
+                color: var(--svdp-blue-dark);
+                text-decoration: underline;
+                text-decoration-thickness: 2px;
+                text-underline-offset: 3px;
+                font-weight: 800;
+                word-break: break-word;
                 overflow-wrap: break-word;
             }
-            .resource-field-value a:hover {
-                text-decoration: underline;
-            }
-            .resource-section {
-                margin-bottom: 25px;
-                padding-bottom: 20px;
-                border-bottom: 1px solid #eee;
-            }
-            .resource-section:last-child {
-                border-bottom: none;
-                margin-bottom: 0;
-                padding-bottom: 0;
-            }
-            .resource-section-heading {
-                font-weight: 700;
-                font-size: 1.05em;
-                color: #0073aa;
-                margin-bottom: 15px;
-                padding-bottom: 8px;
-                border-bottom: 2px solid #e0e0e0;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
+            .resource-field-value a:hover,
+            .resource-field-value a:focus-visible {
+                color: #003f5f;
+                outline: 3px solid var(--resource-focus);
+                outline-offset: 3px;
             }
             .resource-hours {
-                margin: 15px 0;
+                margin: 0;
             }
             .hours-special-flag {
                 display: inline-block;
@@ -492,36 +549,55 @@ class Monday_Resources_Shortcode {
             }
             .resource-details-hidden {
                 display: none;
+                margin-top: 24px;
             }
-            .resource-toggle {
-                margin-top: 15px;
-                padding-top: 15px;
-                border-top: 1px solid #eee;
+            .resource-details-hidden[aria-hidden="false"] {
+                display: block;
+            }
+            .resource-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 12px;
+                margin-top: 30px;
+                padding-top: 22px;
+                border-top: 2px solid var(--resource-line-soft);
             }
             .resource-toggle-button {
-                background: none;
-                border: none;
-                color: #0073aa;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 52px;
+                padding: 12px 18px;
+                border-radius: 12px;
+                border: 2px solid var(--svdp-blue);
+                background: #fff;
+                color: var(--svdp-blue-dark);
                 cursor: pointer;
-                font-size: 0.95em;
-                padding: 0;
-                text-decoration: underline;
-                min-height: 44px;
+                font-size: 1rem;
+                font-weight: 850;
+                line-height: 1.2;
+                text-decoration: none;
             }
             .resource-inline-edit-toggle {
-                background: none;
-                border: none;
-                color: #0073aa;
-                text-decoration: underline;
-                min-height: 44px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 52px;
+                padding: 12px 18px;
+                border-radius: 12px;
+                border: 2px solid var(--svdp-blue);
+                background: #fff;
+                color: var(--svdp-blue-dark);
+                text-decoration: none;
                 cursor: pointer;
-                font-size: 0.95em;
-                padding: 0;
-                margin-top: 4px;
+                font-size: 1rem;
+                font-weight: 850;
+                line-height: 1.2;
             }
             .resource-inline-edit-panel {
                 display: none;
-                margin-top: 10px;
+                flex-basis: 100%;
+                margin-top: 6px;
                 padding: 12px;
                 border: 1px solid #dbe1ea;
                 border-radius: 8px;
@@ -611,49 +687,67 @@ class Monday_Resources_Shortcode {
                 color: #166534;
             }
             .resource-report-btn {
-                background-color: #dc3232;
-                color: #fff;
-                border: none;
-                padding: 8px 16px;
-                margin-top: 10px;
-                border-radius: 4px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 52px;
+                padding: 12px 18px;
+                border-radius: 12px;
+                border: 2px solid #9b2c2c;
+                background: #fff;
+                color: #7f1d1d;
                 cursor: pointer;
-                font-size: 0.9em;
-                transition: background-color 0.3s ease;
-                min-height: 44px;
+                font-size: 1rem;
+                font-weight: 850;
+                line-height: 1.2;
             }
-            .resource-report-btn:hover {
-                background-color: #a02222;
+            .resource-toggle-button:hover,
+            .resource-toggle-button:focus-visible,
+            .resource-inline-edit-toggle:hover,
+            .resource-inline-edit-toggle:focus-visible,
+            .resource-report-btn:hover,
+            .resource-report-btn:focus-visible {
+                outline: 4px solid var(--resource-focus);
+                outline-offset: 3px;
+                background: #eaf6fb;
+            }
+            .resource-report-btn:hover,
+            .resource-report-btn:focus-visible {
+                background: #fff4f4;
             }
             .resource-verification-status {
                 margin: 10px 0;
             }
             .verification-badge {
-                display: inline-block;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-size: 0.85em;
-                font-weight: 500;
+                display: inline-flex;
+                align-items: center;
+                min-height: 34px;
+                padding: 6px 12px;
+                border-radius: 999px;
+                font-size: 0.9rem;
+                font-weight: 800;
+                letter-spacing: 0.02em;
+                line-height: 1.2;
             }
             .verification-badge.fresh {
-                background-color: #d4edda;
-                color: #155724;
-                border: 1px solid #c3e6cb;
+                background-color: #eef8f0;
+                color: #22543d;
+                border: 2px solid #2f855a;
             }
             .verification-badge.aging {
-                background-color: #fff3cd;
-                color: #856404;
-                border: 1px solid #ffeaa7;
+                background-color: #fff8e6;
+                color: #7c4a03;
+                border: 2px solid #b7791f;
             }
             .verification-badge.stale {
-                background-color: #f8d7da;
-                color: #721c24;
-                border: 1px solid #f5c6cb;
+                background-color: #f3f4f6;
+                color: #374151;
+                border: 2px solid #d1d5db;
             }
             .verification-badge.unverified {
-                background-color: #e2e3e5;
-                color: #383d41;
-                border: 1px solid #d6d8db;
+                background-color: #f3f4f6;
+                color: #374151;
+                border: 2px solid #d1d5db;
             }
             .no-results {
                 grid-column: 1 / -1;
@@ -813,12 +907,25 @@ class Monday_Resources_Shortcode {
             @media (max-width: 768px) {
                 .resources-container {
                     padding: 0 12px;
+                    font-size: 17px;
                 }
                 .resources-grid {
                     gap: 10px;
                 }
-                .resource-card {
+                .resource-card-inner,
+                .card-inner {
                     padding: 20px;
+                }
+                .resource-field-grid {
+                    grid-template-columns: 1fr;
+                }
+                .resource-actions {
+                    flex-direction: column;
+                }
+                .resource-toggle-button,
+                .resource-inline-edit-toggle,
+                .resource-report-btn {
+                    width: 100%;
                 }
                 .snapshot-action-buttons {
                     grid-template-columns: 1fr;
@@ -1047,26 +1154,20 @@ class Monday_Resources_Shortcode {
             $card_classes = 'resource-card' . ($is_unavailable ? ' is-unavailable' : '');
             ?>
             <div class="<?php echo esc_attr($card_classes); ?>" data-resource-id="<?php echo esc_attr((string) $resource_id); ?>" data-search="<?php echo esc_attr($searchable_text); ?>" data-category="<?php echo esc_attr($combined_services); ?>" data-audience="<?php echo esc_attr($target_population); ?>" data-is-svdp="<?php echo $is_svdp ? '1' : '0'; ?>">
-                <?php if ($is_unavailable): ?>
-                    <span class="resource-unavailable-badge">No longer available</span>
-                <?php endif; ?>
-                <?php if ($is_svdp): ?>
-                    <span class="svdp-badge">SVdP Resource</span>
-                <?php endif; ?>
+                <div class="resource-card-inner card-inner">
+                    <?php
+                    $status = !empty($item['verification_status']) ? $item['verification_status'] : 'unverified';
+                    $verified_date = !empty($item['last_verified_date']) ? $item['last_verified_date'] : null;
+                    $relative_time = $verified_date ? human_time_diff(strtotime($verified_date), current_time('timestamp')) : '';
+                    ?>
+                    <div class="resource-status-row">
+                        <?php if ($is_unavailable): ?>
+                            <span class="resource-unavailable-badge">No longer available</span>
+                        <?php endif; ?>
+                        <?php if ($is_svdp): ?>
+                            <span class="svdp-badge resource-badge">SVdP Resource</span>
+                        <?php endif; ?>
 
-                <h3><?php echo esc_html($item['resource_name']); ?></h3>
-
-                <?php if (!empty($item['organization'])): ?>
-                    <?php $org_value = $is_unavailable ? esc_html((string) $item['organization']) : Resources_Manager::format_column_value($item['organization']); ?>
-                    <div class="resource-organization"><?php echo $org_value; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
-                <?php endif; ?>
-
-                <?php
-                $status = !empty($item['verification_status']) ? $item['verification_status'] : 'unverified';
-                $verified_date = !empty($item['last_verified_date']) ? $item['last_verified_date'] : null;
-                $relative_time = $verified_date ? human_time_diff(strtotime($verified_date), current_time('timestamp')) : '';
-                ?>
-                <div class="resource-verification-status">
                     <?php if ($status === 'fresh' && $verified_date): ?>
                         <span class="verification-badge fresh">&#10003; Verified <?php echo esc_html($relative_time); ?> ago</span>
                     <?php elseif ($status === 'aging' && $verified_date): ?>
@@ -1076,50 +1177,65 @@ class Monday_Resources_Shortcode {
                     <?php else: ?>
                         <span class="verification-badge unverified">Not yet verified</span>
                     <?php endif; ?>
-                </div>
-
-                <?php foreach ($always_visible as $field_name => $label): ?>
-                    <?php
-                    $field_value = self::get_field_value_for_display($item, $field_name);
-                    if ($field_value === '') {
-                        continue;
-                    }
-
-                    if ($field_name === 'phone' && !$is_unavailable) {
-                        $formatted_value = Resources_Manager::format_column_value($field_value);
-                    } else {
-                        $formatted_value = esc_html($field_value);
-                    }
-                    ?>
-                    <div class="resource-field">
-                        <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
-                        <span class="resource-field-value">
-                            <?php echo $formatted_value; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
-                            <?php if ($field_name === 'phone' && !empty($item['phone_extension'])): ?>
-                                <span style="font-style: italic; font-size: 0.8em; white-space: nowrap;">ext <?php echo esc_html($item['phone_extension']); ?></span>
-                            <?php endif; ?>
-                        </span>
                     </div>
-                <?php endforeach; ?>
 
-                <div class="resource-details-hidden" id="details-<?php echo esc_attr((string) $render_index); ?>" aria-hidden="true">
-                    <?php foreach ($hidden_details as $section): ?>
-                        <?php
-                        $has_content = false;
-                        foreach ($section['fields'] as $field_name => $label) {
-                            if (self::get_field_value_for_display($item, $field_name) !== '') {
-                                $has_content = true;
-                                break;
+                    <header class="resource-card-header card-header">
+                        <?php if (!empty($item['organization'])): ?>
+                            <?php $org_value = $is_unavailable ? esc_html((string) $item['organization']) : Resources_Manager::format_column_value($item['organization']); ?>
+                            <p class="resource-organization organization-name"><?php echo $org_value; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></p>
+                        <?php endif; ?>
+
+                        <h3 class="program-name"><?php echo esc_html($item['resource_name']); ?></h3>
+                    </header>
+
+                    <section class="resource-section" aria-label="Resource information">
+                        <div class="resource-field-grid">
+                            <?php foreach ($always_visible as $field_name => $label): ?>
+                                <?php
+                                $field_value = self::get_field_value_for_display($item, $field_name);
+                                if ($field_value === '') {
+                                    continue;
+                                }
+
+                                if ($field_name === 'phone' && !$is_unavailable) {
+                                    $formatted_value = Resources_Manager::format_column_value($field_value);
+                                } else {
+                                    $formatted_value = esc_html($field_value);
+                                }
+                                $field_classes = self::get_resource_field_classes($field_name);
+                                ?>
+                                <div class="<?php echo esc_attr($field_classes); ?>">
+                                    <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
+                                    <span class="resource-field-value">
+                                        <?php echo $formatted_value; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+                                        <?php if ($field_name === 'phone' && !empty($item['phone_extension'])): ?>
+                                            <span style="font-style: italic; font-size: 0.8em; white-space: nowrap;">ext <?php echo esc_html($item['phone_extension']); ?></span>
+                                        <?php endif; ?>
+                                    </span>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </section>
+
+                    <div class="resource-details-hidden" id="details-<?php echo esc_attr((string) $render_index); ?>" aria-hidden="true">
+                        <?php foreach ($hidden_details as $section): ?>
+                            <?php
+                            $has_content = false;
+                            foreach ($section['fields'] as $field_name => $label) {
+                                if (self::get_field_value_for_display($item, $field_name) !== '') {
+                                    $has_content = true;
+                                    break;
+                                }
                             }
-                        }
 
-                        if (!$has_content) {
-                            continue;
-                        }
-                        ?>
+                            if (!$has_content) {
+                                continue;
+                            }
+                            ?>
 
-                        <div class="resource-section">
-                            <h4 class="resource-section-heading"><?php echo esc_html($section['label']); ?></h4>
+                            <section class="resource-section">
+                                <h4 class="resource-section-heading"><?php echo esc_html($section['label']); ?></h4>
+                                <div class="resource-field-grid single">
 
                             <?php foreach ($section['fields'] as $field_name => $label): ?>
                                 <?php
@@ -1131,7 +1247,7 @@ class Monday_Resources_Shortcode {
                                     $hours_data = Resource_Hours_Manager::get_hours($item['id']);
                                     if ($hours_data) {
                                         ?>
-                                        <div class="resource-field resource-hours">
+                                        <div class="<?php echo esc_attr(self::get_resource_field_classes($field_name) . ' resource-hours'); ?>">
                                             <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                             <div class="resource-field-value">
                                                 <?php if (!empty($hours_data['flags']['is_24_7'])): ?>
@@ -1163,7 +1279,7 @@ class Monday_Resources_Shortcode {
                                         <?php
                                     } elseif (!empty($item[$field_name])) {
                                         ?>
-                                        <div class="resource-field">
+                                        <div class="<?php echo esc_attr(self::get_resource_field_classes($field_name)); ?>">
                                             <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                             <span class="resource-field-value"><?php echo esc_html($item[$field_name]); ?></span>
                                         </div>
@@ -1186,26 +1302,26 @@ class Monday_Resources_Shortcode {
                                     $formatted_value = self::strip_links($formatted_value);
                                 }
                                 ?>
-                                <div class="resource-field">
+                                <div class="<?php echo esc_attr(self::get_resource_field_classes($field_name)); ?>">
                                     <span class="resource-field-label"><?php echo esc_html($label); ?>:</span>
                                     <div class="resource-field-value"><?php echo $formatted_value; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
                                 </div>
                             <?php endforeach; ?>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
+                                </div>
+                            </section>
+                        <?php endforeach; ?>
+                    </div>
 
-                <div class="resource-toggle">
-                    <button
-                        class="resource-toggle-button"
-                        onclick="toggleDetails(<?php echo esc_attr((string) $render_index); ?>)"
-                        id="toggle-<?php echo esc_attr((string) $render_index); ?>"
-                        aria-expanded="false"
-                        aria-controls="details-<?php echo esc_attr((string) $render_index); ?>">
-                        Show Full Details
-                    </button>
-                    <?php if ($allow_inline_edit): ?>
-                        <br>
+                    <div class="resource-actions resource-toggle">
+                        <button
+                            class="resource-toggle-button"
+                            onclick="toggleDetails(<?php echo esc_attr((string) $render_index); ?>)"
+                            id="toggle-<?php echo esc_attr((string) $render_index); ?>"
+                            aria-expanded="false"
+                            aria-controls="details-<?php echo esc_attr((string) $render_index); ?>">
+                            Show Full Details
+                        </button>
+                        <?php if ($allow_inline_edit): ?>
                         <button
                             type="button"
                             class="resource-inline-edit-toggle"
@@ -1277,13 +1393,13 @@ class Monday_Resources_Shortcode {
                             </div>
                             <div class="inline-edit-message" aria-live="polite"></div>
                         </div>
-                    <?php endif; ?>
-                    <?php if (!$is_shared_snapshot): ?>
-                        <br>
-                        <button class="resource-report-btn" onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo esc_attr((string) $render_index); ?>)">
-                            Report an Issue
-                        </button>
-                    <?php endif; ?>
+                        <?php endif; ?>
+                        <?php if (!$is_shared_snapshot): ?>
+                            <button class="resource-report-btn" onclick="openReportModal('<?php echo esc_js($item['resource_name']); ?>', <?php echo esc_attr((string) $render_index); ?>)">
+                                Report an Issue
+                            </button>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
         <?php endforeach;
@@ -1510,6 +1626,28 @@ class Monday_Resources_Shortcode {
 
         $stripped = preg_replace('/<a\b[^>]*>(.*?)<\/a>/is', '$1', $html);
         return is_string($stripped) ? $stripped : $html;
+    }
+
+    /**
+     * Build field classes for card styling without changing generated content.
+     *
+     * @param string $field_name
+     * @return string
+     */
+    private static function get_resource_field_classes($field_name) {
+        $slug = sanitize_html_class(str_replace('_', '-', (string) $field_name));
+        $classes = array('resource-field');
+
+        if ($slug !== '') {
+            $classes[] = 'resource-field-' . $slug;
+            $classes[] = 'resource-' . $slug;
+        }
+
+        if ($field_name === 'physical_address') {
+            $classes[] = 'resource-address';
+        }
+
+        return implode(' ', array_unique($classes));
     }
 
     /**
