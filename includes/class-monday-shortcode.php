@@ -273,6 +273,13 @@ class Monday_Resources_Shortcode {
                 color: #005177;
                 font-weight: 700;
             }
+            .service-area-instructions {
+                margin: 4px 0 12px;
+                color: #1f2933;
+                font-size: 1.08rem;
+                font-weight: 700;
+                line-height: 1.35;
+            }
             .service-area-tile:focus,
             .resources-search input:focus,
             .narrow-results-btn:focus,
@@ -281,22 +288,43 @@ class Monday_Resources_Shortcode {
                 outline-offset: 1px;
             }
             .resources-search {
-                margin-bottom: 14px;
+                margin: 22px 0 16px;
+                padding: 18px;
+                border: 2px solid #8aa4b8;
+                border-radius: 14px;
+                background: #f1f7fb;
+                box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
             }
             .resources-search label {
                 display: block;
-                font-weight: 600;
-                margin-bottom: 8px;
-                color: #333;
+                margin-bottom: 10px;
+                color: #111827;
+                font-size: 1.12rem;
+                font-weight: 800;
+                line-height: 1.3;
             }
             .resources-search input {
                 width: 100%;
-                max-width: 640px;
-                padding: 12px;
-                font-size: 16px;
-                border: 2px solid #d2d6dc;
-                border-radius: 6px;
-                min-height: 44px;
+                max-width: none;
+                min-height: 56px;
+                padding: 14px 16px;
+                font-size: 1.08rem;
+                font-weight: 600;
+                color: #111827;
+                background: #fff;
+                border: 3px solid #334155;
+                border-radius: 12px;
+                box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+            }
+            .resources-search input::placeholder {
+                color: #4b5563;
+                opacity: 1;
+                font-weight: 500;
+            }
+            .resources-search input:focus {
+                border-color: #005f8f;
+                outline: 4px solid rgba(0, 115, 170, 0.28);
+                outline-offset: 2px;
             }
             .narrow-results-btn {
                 display: inline-flex;
@@ -329,16 +357,34 @@ class Monday_Resources_Shortcode {
             .resources-grid {
                 display: grid;
                 grid-template-columns: 1fr;
-                gap: 25px;
+                gap: 22px;
                 margin-top: 20px;
-                justify-content: center;
+                justify-content: stretch;
+                align-items: start;
+            }
+            @media (min-width: 700px) {
+                .resources-grid {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
             }
             @media (min-width: 900px) {
-                .resources-grid {
-                    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-                }
                 .service-area-tiles {
                     grid-template-columns: repeat(3, minmax(0, 1fr));
+                }
+            }
+            @media (min-width: 1100px) {
+                .resources-grid {
+                    grid-template-columns: repeat(3, minmax(0, 1fr));
+                }
+            }
+            @media (min-width: 1500px) {
+                .resources-grid {
+                    grid-template-columns: repeat(4, minmax(0, 1fr));
+                }
+            }
+            @media (min-width: 1900px) {
+                .resources-grid {
+                    grid-template-columns: repeat(5, minmax(0, 1fr));
                 }
             }
             .svdp-badge {
@@ -912,6 +958,14 @@ class Monday_Resources_Shortcode {
                 .resources-grid {
                     gap: 10px;
                 }
+                .resources-search {
+                    padding: 14px;
+                    margin: 18px 0 14px;
+                }
+                .resources-search input {
+                    min-height: 52px;
+                    font-size: 1rem;
+                }
                 .resource-card-inner,
                 .card-inner {
                     padding: 20px;
@@ -938,28 +992,9 @@ class Monday_Resources_Shortcode {
 
             <button class="submit-resource-btn" onclick="openSubmitResourceModal()">Submit a New Resource</button>
 
-            <?php if ($show_snapshot_actions): ?>
-                <div class="snapshot-actions-panel" id="snapshot-actions-panel">
-                    <h3>Share This Resource List</h3>
-                    <p class="snapshot-actions-help">Create a shareable snapshot of the currently visible resources, then print, email, or text it.</p>
-                    <div class="snapshot-actions-grid">
-                        <div>
-                            <label for="snapshot-neighbor-name">Neighbor Name</label>
-                            <input type="text" id="snapshot-neighbor-name" placeholder="Neighbor name">
-                        </div>
-                        <div>
-                            <label for="snapshot-contact-value">Email or Mobile (for Email/Text)</label>
-                            <input type="text" id="snapshot-contact-value" placeholder="name@example.com or (260) 555-1234">
-                        </div>
-                        <div class="snapshot-action-buttons">
-                            <button type="button" class="snapshot-action-btn secondary" id="snapshot-print-btn">Print</button>
-                            <button type="button" class="snapshot-action-btn" id="snapshot-email-btn">Email</button>
-                            <button type="button" class="snapshot-action-btn" id="snapshot-text-btn">Text This List</button>
-                        </div>
-                    </div>
-                    <div id="snapshot-action-message" class="snapshot-action-message" aria-live="polite"></div>
-                </div>
-            <?php endif; ?>
+            <p class="service-area-instructions" id="service-area-instructions">
+                Select one or more categories to filter the results.
+            </p>
 
             <div class="service-area-tiles" id="service-area-tiles">
                 <?php foreach ($service_area_terms as $slug => $label): ?>
@@ -995,6 +1030,29 @@ class Monday_Resources_Shortcode {
                     Load More
                 </button>
             </div>
+
+            <?php if ($show_snapshot_actions): ?>
+                <div class="snapshot-actions-panel" id="snapshot-actions-panel">
+                    <h3>Share This Resource List</h3>
+                    <p class="snapshot-actions-help">Create a shareable snapshot of the currently visible resources, then print, email, or text it.</p>
+                    <div class="snapshot-actions-grid">
+                        <div>
+                            <label for="snapshot-neighbor-name">Neighbor Name</label>
+                            <input type="text" id="snapshot-neighbor-name" placeholder="Neighbor name">
+                        </div>
+                        <div>
+                            <label for="snapshot-contact-value">Email or Mobile (for Email/Text)</label>
+                            <input type="text" id="snapshot-contact-value" placeholder="name@example.com or (260) 555-1234">
+                        </div>
+                        <div class="snapshot-action-buttons">
+                            <button type="button" class="snapshot-action-btn secondary" id="snapshot-print-btn">Print</button>
+                            <button type="button" class="snapshot-action-btn" id="snapshot-email-btn">Email</button>
+                            <button type="button" class="snapshot-action-btn" id="snapshot-text-btn">Text This List</button>
+                        </div>
+                    </div>
+                    <div id="snapshot-action-message" class="snapshot-action-message" aria-live="polite"></div>
+                </div>
+            <?php endif; ?>
 
             <div class="narrow-sheet" id="narrow-sheet" aria-hidden="true">
                 <div class="narrow-sheet-panel" role="dialog" aria-label="Narrow results">
