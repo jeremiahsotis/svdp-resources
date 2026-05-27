@@ -774,39 +774,53 @@ class Resource_Snapshot_Manager {
 
         $style = '
             <style>
-                body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f7fb; color: #1f2933; }
-                .snapshot-wrap { max-width: 1080px; margin: 0 auto; padding: 24px 16px 40px; font-size: 16px; }
+                body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f5f7fb; color: #111827; }
+                .snapshot-wrap { --svdp-blue: #0073aa; --svdp-blue-dark: #005f8f; --resource-ink: #111827; --resource-line: #cfd8e3; --resource-line-soft: #e5edf5; --resource-soft: #f8fafc; --resource-focus: #f7c948; max-width: 1080px; margin: 0 auto; padding: 24px 16px 40px; font-size: 18px; line-height: 1.45; }
                 .snapshot-wrap h1 { margin: 0 0 8px; font-size: 2rem; color: #0f172a; }
                 .snapshot-subhead { margin: 0 0 12px; color: #4b5563; font-size: 1rem; }
-                .snapshot-actions { display: flex; gap: 8px; margin: 10px 0 18px; }
-                .snapshot-action-btn { min-height: 44px; border-radius: 6px; border: 2px solid #0073aa; background: #0073aa; color: #fff; padding: 10px 14px; font-weight: 600; cursor: pointer; text-decoration: none; }
-                .snapshot-action-btn.secondary { background: #fff; color: #005177; }
+                .snapshot-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 18px; }
+                .snapshot-action-btn { min-height: 52px; border-radius: 12px; border: 2px solid #0073aa; background: #0073aa; color: #fff; padding: 12px 18px; font-weight: 800; cursor: pointer; text-decoration: none; }
+                .snapshot-action-btn.secondary { background: #fff; color: #005f8f; }
+                .snapshot-action-btn:focus-visible { outline: 4px solid #f7c948; outline-offset: 3px; }
                 .snapshot-print-qr { margin: 16px 0; text-align: center; }
                 .snapshot-print-qr p { margin-bottom: 8px; font-weight: 600; }
                 .snapshot-print-qr img { width: 170px; height: 170px; }
                 .resources-grid { display: grid; grid-template-columns: 1fr; gap: 22px; margin-top: 16px; }
-                .resource-card { border: 1px solid #ddd; border-radius: 8px; padding: 24px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.08); }
-                .resource-card h3 { margin: 0 0 8px; border-bottom: 2px solid #0073aa; padding-bottom: 8px; }
-                .resource-organization { margin: 0 0 12px; font-style: italic; border-bottom: 1px solid #eee; padding-bottom: 8px; }
-                .resource-field { margin-bottom: 14px; }
-                .resource-field-label { display: block; font-weight: 700; margin-bottom: 4px; color: #4b5563; }
-                .resource-field-value { line-height: 1.5; }
-                .resource-details-hidden { display: none; }
-                .resource-toggle-button { background: none; border: none; color: #0073aa; text-decoration: underline; cursor: pointer; min-height: 44px; padding: 0; font-size: 0.95rem; }
-                .resource-card.is-unavailable { opacity: 0.65; border-color: #d1d5db; background: #f9fafb; }
-                .resource-unavailable-badge { display: inline-block; margin-bottom: 10px; padding: 4px 9px; border-radius: 999px; background: #f3f4f6; color: #374151; font-weight: 700; font-size: 0.78rem; text-transform: uppercase; }
+                .resource-card { border: 1px solid var(--resource-line); border-left: 8px solid var(--svdp-blue); border-radius: 18px; background: #fff; box-shadow: 0 4px 14px rgba(15,23,42,0.08); overflow: hidden; overflow-wrap: break-word; }
+                .resource-card-inner, .card-inner { padding: 28px; }
+                .resource-status-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+                .resource-card-header, .card-header { border-bottom: 4px solid var(--svdp-blue); padding-bottom: 18px; margin-bottom: 22px; }
+                .resource-organization, .organization-name { margin: 0 0 8px; padding: 0; border: 0; font-style: normal; font-size: clamp(1.55rem, 1.3rem + 0.7vw, 2rem); line-height: 1.15; color: #1f2937; font-weight: 800; }
+                .resource-card h3, .program-name { margin: 0; padding: 0; border: 0; font-size: clamp(1.85rem, 1.5rem + 1vw, 2.55rem); line-height: 1.08; color: var(--resource-ink); font-weight: 900; }
+                .resource-section { margin-top: 28px; }
+                .resource-card-header + .resource-section { margin-top: 0; }
+                .resource-section-heading { margin: 0 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--resource-line-soft); font-size: 1.28rem; color: #1f2937; }
+                .resource-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+                .resource-field-grid.single { grid-template-columns: 1fr; }
+                .resource-field { background: var(--resource-soft); border: 1px solid var(--resource-line-soft); border-radius: 14px; padding: 14px 16px; min-height: 76px; margin: 0; }
+                .resource-field.resource-phone, .resource-field.resource-website { border: 2px solid #b7d9e8; background: #fbfdff; }
+                .resource-field-label { display: block; margin-bottom: 6px; color: #374151; font-size: 0.82rem; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.25; }
+                .resource-field-value { color: var(--resource-ink); font-size: 1.08rem; line-height: 1.4; word-break: break-word; }
+                .resource-phone .resource-field-value, .resource-address .resource-field-value { font-size: 1.2rem; font-weight: 750; }
+                .resource-field-value a { color: var(--svdp-blue-dark); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; font-weight: 800; }
+                .resource-field-value a:focus-visible { outline: 3px solid var(--resource-focus); outline-offset: 3px; }
+                .resource-details-hidden { display: none; margin-top: 24px; }
+                .resource-details-hidden[aria-hidden="false"] { display: block; }
+                .resource-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; padding-top: 22px; border-top: 2px solid var(--resource-line-soft); }
+                .resource-toggle-button { display: inline-flex; align-items: center; justify-content: center; min-height: 52px; padding: 12px 18px; border-radius: 12px; border: 2px solid var(--svdp-blue); background: #fff; color: var(--svdp-blue-dark); text-decoration: none; cursor: pointer; font-size: 1rem; font-weight: 850; }
+                .resource-toggle-button:focus-visible { outline: 4px solid var(--resource-focus); outline-offset: 3px; background: #eaf6fb; }
+                .resource-card.is-unavailable { border-color: #9ca3af; border-left-color: #6b7280; background: #f9fafb; }
+                .resource-unavailable-badge { display: inline-flex; align-items: center; min-height: 34px; padding: 6px 12px; border-radius: 999px; background: #fff4f4; color: #7f1d1d; border: 2px solid #b91c1c; font-weight: 800; font-size: 0.9rem; text-transform: uppercase; }
                 .partner-divider { grid-column: 1 / -1; margin: 12px 0; padding: 10px; text-align: center; border-top: 2px solid #0073aa; border-bottom: 2px solid #0073aa; color: #005177; font-weight: 600; }
-                .verification-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; margin-bottom: 10px; }
-                .verification-badge.fresh { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-                .verification-badge.aging { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
-                .verification-badge.stale { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-                .verification-badge.unverified { background: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
-                .resource-section { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid #eee; }
-                .resource-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-                .resource-section-heading { font-size: 1.02rem; margin-bottom: 10px; color: #0073aa; text-transform: uppercase; letter-spacing: 0.4px; }
+                .svdp-badge, .verification-badge { display: inline-flex; align-items: center; min-height: 34px; padding: 6px 12px; border-radius: 999px; font-size: 0.9rem; font-weight: 800; line-height: 1.2; }
+                .svdp-badge { background: #eaf6fb; color: #064e6b; border: 2px solid #93c5d8; }
+                .verification-badge.fresh { background: #eef8f0; color: #22543d; border: 2px solid #2f855a; }
+                .verification-badge.aging { background: #fff8e6; color: #7c4a03; border: 2px solid #b7791f; }
+                .verification-badge.stale, .verification-badge.unverified { background: #f3f4f6; color: #374151; border: 2px solid #d1d5db; }
                 body.is-print .snapshot-actions { display: none; }
                 body.is-print { background: #fff; }
                 @media (min-width: 900px) { .resources-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+                @media (max-width: 640px) { .snapshot-wrap { font-size: 17px; padding: 18px 12px 32px; } .resource-card-inner, .card-inner { padding: 20px; } .resource-field-grid { grid-template-columns: 1fr; } .resource-actions { flex-direction: column; } .resource-toggle-button, .snapshot-action-btn { width: 100%; } }
             </style>';
 
         $script = '<script>
@@ -1082,46 +1096,48 @@ class Resource_Snapshot_Manager {
 
             $status_badge = '';
             if ($is_unavailable) {
-                $status_badge = '<div style="display:inline-block;margin:0 0 8px;padding:4px 9px;border-radius:999px;background:#f3f4f6;color:#374151;font-size:12px;font-weight:700;text-transform:uppercase;">No longer available</div>';
+                $status_badge = '<div style="display:inline-block;margin:0 0 12px;padding:6px 12px;border-radius:999px;background:#fff4f4;color:#7f1d1d;border:2px solid #b91c1c;font-size:13px;font-weight:800;text-transform:uppercase;">No longer available</div>';
             }
 
             $contact_lines = '';
             if ($phone !== '') {
                 if ($is_unavailable) {
-                    $contact_lines .= '<div><strong>Phone:</strong> ' . esc_html($phone) . '</div>';
+                    $contact_lines .= '<div style="margin:0 0 10px;padding:12px 14px;border:1px solid #e5edf5;border-radius:12px;background:#f8fafc;"><strong style="display:block;margin:0 0 4px;color:#374151;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">Phone</strong><span style="font-size:16px;color:#111827;">' . esc_html($phone) . '</span></div>';
                 } else {
                     $digits = preg_replace('/\D+/', '', $phone);
                     if (is_string($digits) && strlen($digits) >= 10) {
-                        $contact_lines .= '<div><strong>Phone:</strong> <a href="tel:' . esc_attr('+' . $digits) . '" style="color:#0073aa;">' . esc_html($phone) . '</a></div>';
+                        $contact_lines .= '<div style="margin:0 0 10px;padding:12px 14px;border:2px solid #b7d9e8;border-radius:12px;background:#fbfdff;"><strong style="display:block;margin:0 0 4px;color:#374151;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">Phone</strong><a href="tel:' . esc_attr('+' . $digits) . '" style="color:#005f8f;text-decoration:underline;font-weight:800;">' . esc_html($phone) . '</a></div>';
                     } else {
-                        $contact_lines .= '<div><strong>Phone:</strong> ' . esc_html($phone) . '</div>';
+                        $contact_lines .= '<div style="margin:0 0 10px;padding:12px 14px;border:2px solid #b7d9e8;border-radius:12px;background:#fbfdff;"><strong style="display:block;margin:0 0 4px;color:#374151;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">Phone</strong><span style="font-size:16px;color:#111827;">' . esc_html($phone) . '</span></div>';
                     }
                 }
             }
 
             if ($website !== '') {
                 if ($is_unavailable) {
-                    $contact_lines .= '<div><strong>Website:</strong> ' . esc_html($website) . '</div>';
+                    $contact_lines .= '<div style="margin:0 0 10px;padding:12px 14px;border:1px solid #e5edf5;border-radius:12px;background:#f8fafc;"><strong style="display:block;margin:0 0 4px;color:#374151;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">Website</strong><span style="font-size:16px;color:#111827;">' . esc_html($website) . '</span></div>';
                 } else {
-                    $contact_lines .= '<div><strong>Website:</strong> <a href="' . esc_url($website) . '" style="color:#0073aa;" target="_blank" rel="noopener">' . esc_html($website) . '</a></div>';
+                    $contact_lines .= '<div style="margin:0 0 10px;padding:12px 14px;border:2px solid #b7d9e8;border-radius:12px;background:#fbfdff;"><strong style="display:block;margin:0 0 4px;color:#374151;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">Website</strong><a href="' . esc_url($website) . '" style="color:#005f8f;text-decoration:underline;font-weight:800;" target="_blank" rel="noopener">' . esc_html($website) . '</a></div>';
                 }
             }
 
             $service_lines = '';
             if (!empty($service_areas)) {
-                $service_lines .= '<div><strong>Service Areas:</strong> ' . esc_html(implode(', ', $service_areas)) . '</div>';
+                $service_lines .= '<div style="margin:0 0 10px;padding:12px 14px;border:1px solid #e5edf5;border-radius:12px;background:#f8fafc;"><strong style="display:block;margin:0 0 4px;color:#374151;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">Service Areas</strong><span style="font-size:16px;color:#111827;">' . esc_html(implode(', ', $service_areas)) . '</span></div>';
             }
             if (!empty($services)) {
-                $service_lines .= '<div><strong>Services Offered:</strong> ' . esc_html(implode(', ', $services)) . '</div>';
+                $service_lines .= '<div style="margin:0 0 10px;padding:12px 14px;border:1px solid #e5edf5;border-radius:12px;background:#f8fafc;"><strong style="display:block;margin:0 0 4px;color:#374151;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">Services Offered</strong><span style="font-size:16px;color:#111827;">' . esc_html(implode(', ', $services)) . '</span></div>';
             }
             if ($provider !== '') {
-                $service_lines .= '<div><strong>System Type:</strong> ' . esc_html($provider) . '</div>';
+                $service_lines .= '<div style="margin:0 0 10px;padding:12px 14px;border:1px solid #e5edf5;border-radius:12px;background:#f8fafc;"><strong style="display:block;margin:0 0 4px;color:#374151;font-size:12px;letter-spacing:.05em;text-transform:uppercase;">System Type</strong><span style="font-size:16px;color:#111827;">' . esc_html($provider) . '</span></div>';
             }
 
-            $cards_html .= '<div style="border:1px solid #d9dee6;border-radius:8px;padding:14px;margin:0 0 12px;background:' . ($is_unavailable ? '#f8fafc' : '#ffffff') . ';opacity:' . ($is_unavailable ? '0.72' : '1') . ';">'
+            $cards_html .= '<div style="border:1px solid ' . ($is_unavailable ? '#9ca3af' : '#cfd8e3') . ';border-left:8px solid ' . ($is_unavailable ? '#6b7280' : '#0073aa') . ';border-radius:18px;padding:20px;margin:0 0 16px;background:' . ($is_unavailable ? '#f9fafb' : '#ffffff') . ';">'
                 . $status_badge
-                . '<h3 style="margin:0 0 6px;font-size:18px;color:#0f172a;">' . esc_html($name) . '</h3>'
-                . ($organization !== '' ? '<div style="margin:0 0 8px;color:#4b5563;font-style:italic;">' . esc_html($organization) . '</div>' : '')
+                . '<div style="border-bottom:4px solid #0073aa;padding-bottom:14px;margin-bottom:16px;">'
+                . ($organization !== '' ? '<p style="margin:0 0 8px;color:#1f2937;font-size:20px;line-height:1.15;font-weight:800;">' . esc_html($organization) . '</p>' : '')
+                . '<h3 style="margin:0;font-size:24px;line-height:1.1;color:#0f172a;font-weight:900;">' . esc_html($name) . '</h3>'
+                . '</div>'
                 . $service_lines
                 . $contact_lines
                 . '</div>';
@@ -1130,7 +1146,7 @@ class Resource_Snapshot_Manager {
         return '<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif;color:#1f2933;line-height:1.5;">'
             . '<h2 style="margin:0 0 8px;color:#0f172a;">Resources for ' . esc_html($neighbor_name) . '</h2>'
             . '<p style="margin:0 0 12px;">' . esc_html($org_name) . ' shared this resource snapshot for you.</p>'
-            . '<p style="margin:0 0 12px;"><a href="' . esc_url($shared_url) . '" style="color:#0073aa;">View Online</a> | <a href="' . esc_url($print_url) . '" style="color:#0073aa;">Open Print Version</a></p>'
+            . '<p style="margin:0 0 12px;"><a href="' . esc_url($shared_url) . '" style="color:#005f8f;text-decoration:underline;font-weight:800;">View Online</a> | <a href="' . esc_url($print_url) . '" style="color:#005f8f;text-decoration:underline;font-weight:800;">Open Print Version</a></p>'
             . '<p style="margin:0 0 14px;color:#4b5563;">This list contains ' . esc_html((string) $resource_count) . ' resources. Print view includes a QR code labeled "Scan to view online".</p>'
             . $cards_html
             . '<p style="margin:14px 0 0;color:#4b5563;">If you need help, call <strong>(260) 456-3561</strong>.</p>'
